@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scoreboard Display</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background: #000;
+  color: #fff;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.scoreboard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 20px;
+}
+
+.match-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.match-title {
+  font-size: 36px;
+  font-weight: bold;
+  color: #00d9ff;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.match-subtitle {
+  font-size: 20px;
+  color: #888;
+}
+
+.score-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 50px;
+  margin-bottom: 30px;
+}
+
+.team-display {
+  text-align: center;
+  flex: 1;
+  max-width: 400px;
+}
+
+.team-name {
+  font-size: 42px;
+  font-weight: bold;
+  margin-bottom: 15px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.team-a-color {
+  color: #ff6b6b;
+  text-shadow: 0 0 30px rgba(255,107,107,0.8);
+}
+
+.team-b-color {
+  color: #4ecdc4;
+  text-shadow: 0 0 30px rgba(78,205,196,0.8);
+}
+
+.score-box {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 4px solid;
+  border-radius: 15px;
+  padding: 25px;
+  position: relative;
+}
+
+.team-a-border {
+  border-color: #ff6b6b;
+  box-shadow: 0 0 30px rgba(255,107,107,0.5);
+}
+
+.team-b-border {
+  border-color: #4ecdc4;
+  box-shadow: 0 0 30px rgba(78,205,196,0.5);
+}
+
+.score-number {
+  font-size: 120px;
+  font-weight: bold;
+  font-family: 'Arial Black', sans-serif;
+  line-height: 1;
+}
+
+.serving-indicator {
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  background: linear-gradient(135deg, #ffeb3b 0%, #00d9ff 100%);
+  color: #000;
+  padding: 10px 15px;
+  border-radius: 50%;
+  font-size: 30px;
+  border: 4px solid #fff;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.set-indicator {
+  text-align: center;
+  background: linear-gradient(135deg, #533483 0%, #9c27b0 100%);
+  padding: 20px;
+  border-radius: 15px;
+  margin-bottom: 25px;
+}
+
+.set-number {
+  font-size: 28px;
+  margin-bottom: 15px;
+  color: #00d9ff;
+  font-weight: bold;
+}
+
+.set-dots-container {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.set-dot {
+  width: 55px;
+  height: 55px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: bold;
+  background: #1a1a2e;
+  transition: all 0.3s;
+}
+
+.set-won-a {
+  background: #ff6b6b;
+  border-color: #ff6b6b;
+  box-shadow: 0 0 25px rgba(255,107,107,0.8);
+}
+
+.set-won-b {
+  background: #4ecdc4;
+  border-color: #4ecdc4;
+  box-shadow: 0 0 25px rgba(78,205,196,0.8);
+}
+
+.footer-info {
+  display: flex;
+  justify-content: space-around;
+  padding: 15px;
+  background: rgba(22,33,62,0.8);
+  border-top: 2px solid #533483;
+}
+
+.info-item {
+  text-align: center;
+}
+
+.info-label {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 5px;
+}
+
+.info-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #00d9ff;
+}
+
+.no-data {
+  text-align: center;
+  padding: 100px 40px;
+  font-size: 48px;
+  color: #888;
+}
+
+.winner-announcement {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.95);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.5s;
+}
+
+.winner-announcement.show {
+  display: flex;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.winner-content {
+  text-align: center;
+  padding: 60px;
+}
+
+.winner-trophy {
+  font-size: 150px;
+  margin-bottom: 30px;
+  animation: bounce 1s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-30px); }
+}
+
+.winner-text {
+  font-size: 80px;
+  font-weight: bold;
+  color: #ffc107;
+  margin-bottom: 30px;
+  text-transform: uppercase;
+  text-shadow: 0 0 40px rgba(255,193,7,0.8);
+}
+
+.winner-team {
+  font-size: 100px;
+  font-weight: bold;
+  margin-bottom: 20px;
+}
+
+.winner-score {
+  font-size: 50px;
+  color: #00d9ff;
+}
+</style>
+</head>
+<body>
+
+<div class="scoreboard" id="scoreboard"></div>
+
+<div class="winner-announcement" id="winnerAnnouncement">
+  <div class="winner-content">
+    <div class="winner-trophy">🏆</div>
+    <div class="winner-text">MATCH WINNER</div>
+    <div class="winner-team" id="winnerTeam"></div>
+    <div class="winner-score" id="winnerScore"></div>
+  </div>
+</div>
+
+<div style="position:fixed;bottom:0;left:0;right:0;text-align:center;padding:8px;background:rgba(0,0,0,0.8);color:#666;font-size:12px;border-top:1px solid #333">
+  DC_Volley © 2025 | Digital Volleyball Scoresheet
+</div>
+
+<script>
+var gameData = null;
+
+function loadGameData() {
+  try {
+    var data = localStorage.getItem('volleyballGameData');
+    if (data) {
+      gameData = JSON.parse(data);
+      renderScoreboard();
+      checkMatchWinner();
+    } else {
+      document.getElementById('scoreboard').innerHTML = 
+        '<div class="no-data">NO MATCH DATA AVAILABLE<br><br>Please start a match in the main scoresheet.</div>';
+    }
+  } catch (e) {
+    console.error('Error loading game data:', e);
+    document.getElementById('scoreboard').innerHTML = 
+      '<div class="no-data">ERROR LOADING MATCH DATA</div>';
+  }
+}
+
+function renderScoreboard() {
+  if (!gameData || !gameData.sets || gameData.sets.length === 0) {
+    document.getElementById('scoreboard').innerHTML = 
+      '<div class="no-data">WAITING FOR MATCH TO START...</div>';
+    return;
+  }
+  
+  var set = gameData.sets[gameData.currentSet - 1];
+  if (!set) return;
+  
+  var html = '';
+  
+  // Match Header
+  html += '<div class="match-header">';
+  html += '<div class="match-title">' + (gameData.matchInfo.competition || 'VOLLEYBALL MATCH') + '</div>';
+  if (gameData.matchInfo.venue || gameData.matchInfo.matchDate) {
+    html += '<div class="match-subtitle">';
+    html += (gameData.matchInfo.venue || '') + (gameData.matchInfo.venue && gameData.matchInfo.matchDate ? ' | ' : '') + (gameData.matchInfo.matchDate || '');
+    html += '</div>';
+  }
+  html += '</div>';
+  
+  // Score Container
+  html += '<div class="score-container">';
+  
+  // Team A
+  html += '<div class="team-display">';
+  html += '<div class="team-name team-a-color">' + gameData.matchInfo.teamAName + '</div>';
+  html += '<div class="score-box team-a-border">';
+  if (set.serving === 'A') {
+    html += '<div class="serving-indicator">🏐</div>';
+  }
+  html += '<div class="score-number team-a-color">' + set.score.A + '</div>';
+  html += '</div>';
+  html += '</div>';
+  
+  // Team B
+  html += '<div class="team-display">';
+  html += '<div class="team-name team-b-color">' + gameData.matchInfo.teamBName + '</div>';
+  html += '<div class="score-box team-b-border">';
+  if (set.serving === 'B') {
+    html += '<div class="serving-indicator">🏐</div>';
+  }
+  html += '<div class="score-number team-b-color">' + set.score.B + '</div>';
+  html += '</div>';
+  html += '</div>';
+  
+  html += '</div>';
+  
+  // Set Indicator
+  html += '<div class="set-indicator">';
+  html += '<div class="set-number">SET ' + gameData.currentSet + '</div>';
+  html += '<div class="set-dots-container">';
+  
+  var setsToWin = parseInt(gameData.matchInfo.format);
+  for (var i = 0; i < setsToWin; i++) {
+    var dotClass = 'set-dot';
+    var dotContent = (i + 1);
+    
+    if (i < gameData.sets.length && gameData.sets[i].winner) {
+      if (gameData.sets[i].winner === 'A') {
+        dotClass += ' set-won-a';
+      } else {
+        dotClass += ' set-won-b';
+      }
+    }
+    
+    html += '<div class="' + dotClass + '">' + dotContent + '</div>';
+  }
+  
+  html += '</div>';
+  
+  // Add team legend below dots
+  html += '<div style="display:flex;justify-content:center;gap:30px;margin-top:15px;font-size:16px;font-weight:bold">';
+  html += '<div style="display:flex;align-items:center;gap:8px">';
+  html += '<div style="width:25px;height:25px;border-radius:50%;background:#ff6b6b;box-shadow:0 0 12px rgba(255,107,107,0.8)"></div>';
+  html += '<span style="color:#ff6b6b">' + gameData.matchInfo.teamAName + '</span>';
+  html += '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px">';
+  html += '<div style="width:25px;height:25px;border-radius:50%;background:#4ecdc4;box-shadow:0 0 12px rgba(78,205,196,0.8)"></div>';
+  html += '<span style="color:#4ecdc4">' + gameData.matchInfo.teamBName + '</span>';
+  html += '</div>';
+  html += '</div>';
+  
+  html += '</div>';
+  
+  // Footer Info
+  html += '<div class="footer-info">';
+  
+  // Sets Won
+  var setsWonA = gameData.sets.filter(function(s) { return s.winner === 'A'; }).length;
+  var setsWonB = gameData.sets.filter(function(s) { return s.winner === 'B'; }).length;
+  
+  html += '<div class="info-item">';
+  html += '<div class="info-label">SETS WON</div>';
+  html += '<div class="info-value">' + setsWonA + ' - ' + setsWonB + '</div>';
+  html += '</div>';
+  
+  // Timeouts
+  var timeoutsUsedA = set.timeouts.A ? set.timeouts.A.length : 0;
+  var timeoutsUsedB = set.timeouts.B ? set.timeouts.B.length : 0;
+  html += '<div class="info-item">';
+  html += '<div class="info-label">TIMEOUTS REMAINING</div>';
+  html += '<div class="info-value">' + (2 - timeoutsUsedA) + ' - ' + (2 - timeoutsUsedB) + '</div>';
+  html += '</div>';
+  
+  // Subs
+  var subsUsedA = set.substitutions.A ? set.substitutions.A.length : 0;
+  var subsUsedB = set.substitutions.B ? set.substitutions.B.length : 0;
+  html += '<div class="info-item">';
+  html += '<div class="info-label">SUBS REMAINING</div>';
+  html += '<div class="info-value">' + (6 - subsUsedA) + ' - ' + (6 - subsUsedB) + '</div>';
+  html += '</div>';
+  
+  html += '</div>';
+  
+  document.getElementById('scoreboard').innerHTML = html;
+}
+
+function checkMatchWinner() {
+  if (!gameData || !gameData.sets) return;
+  
+  var setsToWin = Math.ceil(parseInt(gameData.matchInfo.format) / 2);
+  var setsWonA = gameData.sets.filter(function(s) { return s.winner === 'A'; }).length;
+  var setsWonB = gameData.sets.filter(function(s) { return s.winner === 'B'; }).length;
+  
+  if (setsWonA >= setsToWin || setsWonB >= setsToWin) {
+    var winnerTeam = setsWonA >= setsToWin ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+    var winnerSets = setsWonA >= setsToWin ? setsWonA : setsWonB;
+    var loserSets = setsWonA >= setsToWin ? setsWonB : setsWonA;
+    var teamColor = setsWonA >= setsToWin ? 'team-a-color' : 'team-b-color';
+    
+    document.getElementById('winnerTeam').textContent = winnerTeam;
+    document.getElementById('winnerTeam').className = 'winner-team ' + teamColor;
+    document.getElementById('winnerScore').textContent = 'Wins ' + winnerSets + ' - ' + loserSets;
+    document.getElementById('winnerAnnouncement').classList.add('show');
+  }
+}
+
+// Initial load
+loadGameData();
+
+// Auto-refresh every 1 second
+setInterval(loadGameData, 1000);
+</script>
+
+</body>
+</html>

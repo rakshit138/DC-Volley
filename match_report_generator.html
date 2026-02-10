@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generate FIVB Match Report</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+.container { background: white; border-radius: 15px; padding: 40px; max-width: 800px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+h1 { color: #1e3c72; margin-bottom: 10px; text-align: center; }
+.subtitle { text-align: center; color: #666; margin-bottom: 30px; }
+.btn { display: block; width: 100%; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-bottom: 15px; transition: transform 0.2s; }
+.btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
+.btn-success { background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%); }
+.btn-info { background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%); }
+.status { text-align: center; padding: 15px; border-radius: 8px; margin-top: 20px; display: none; }
+.status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.info-box { background: #e7f3ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2193b0; }
+.info-box h3 { color: #2193b0; margin-bottom: 10px; }
+.info-box p { color: #555; line-height: 1.6; }
+#reportPreview { margin-top: 30px; border-top: 2px solid #ddd; padding-top: 30px; display: none; }
+.match-summary { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+.match-summary h3 { color: #1e3c72; margin-bottom: 15px; }
+.match-summary p { margin-bottom: 8px; color: #333; }
+.match-summary strong { color: #667eea; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🏐 FIVB Match Report Generator</h1>
+  <p class="subtitle">Official Volleyball Scoresheet</p>
+  <div class="info-box">
+    <h3>📋 About This Tool</h3>
+    <p>Generates a comprehensive FIVB match report including match info, set scores, lineups, substitutions, exceptional substitutions, timeouts, sanctions, officials and signatures.</p>
+  </div>
+  <button class="btn btn-success" onclick="generateReport()">📄 Generate Match Report</button>
+  <button class="btn btn-info" onclick="downloadJSON()">💾 Download Match Data (JSON)</button>
+  <div class="status" id="status"></div>
+  <div id="reportPreview">
+    <div class="match-summary" id="matchSummary"></div>
+  </div>
+</div>
+
+<script>
+var gameData = null;
+
+function loadGameData() {
+  try {
+    var data = localStorage.getItem('volleyballGameData');
+    if (data) {
+      gameData = JSON.parse(data);
+      return true;
+    } else {
+      showStatus('No match data found. Please start a match in the main scoresheet.', 'error');
+      return false;
+    }
+  } catch (e) {
+    showStatus('Error loading match data: ' + e.message, 'error');
+    return false;
+  }
+}
+
+function showStatus(message, type) {
+  var statusEl = document.getElementById('status');
+  statusEl.textContent = message;
+  statusEl.className = 'status ' + type;
+  statusEl.style.display = 'block';
+  if (type === 'success') {
+    setTimeout(function() { statusEl.style.display = 'none'; }, 5000);
+  }
+}
+
+function generateReport() {
+  if (!loadGameData()) return;
+  showMatchPreview();
+  var reportHTML = generateHTMLReport();
+  var blob = new Blob([reportHTML], { type: 'text/html' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'FIVB_Match_Report_' + (gameData.matchInfo.teamAName || 'TeamA') + '_vs_' + (gameData.matchInfo.teamBName || 'TeamB') + '.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showStatus('Match report generated successfully! Check your downloads.', 'success');
+}
+
+function showMatchPreview() {
+  if (!gameData) return;
+  var setsWonA = gameData.sets.filter(function(s) { return s.winner === 'A'; }).length;
+  var setsWonB = gameData.sets.filter(function(s) { return s.winner === 'B'; }).length;
+  var winner = setsWonA > setsWonB ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+  var html = '<h3>Match Summary</h3>';
+  html += '<p><strong>Competition:</strong> ' + (gameData.matchInfo.competition || 'N/A') + '</p>';
+  html += '<p><strong>Venue:</strong> ' + (gameData.matchInfo.venue || 'N/A') + '</p>';
+  html += '<p><strong>Date:</strong> ' + (gameData.matchInfo.date || 'N/A') + '</p>';
+  html += '<p><strong>Result:</strong> ' + gameData.matchInfo.teamAName + ' ' + setsWonA + ' - ' + setsWonB + ' ' + gameData.matchInfo.teamBName + '</p>';
+  html += '<p><strong>Winner:</strong> ' + winner + '</p>';
+  document.getElementById('matchSummary').innerHTML = html;
+  document.getElementById('reportPreview').style.display = 'block';
+}
+
+function getPlayerName(team, jersey) {
+  if (!gameData.teams[team] || !gameData.teams[team].players) return '#' + (jersey || 'N/A');
+  var p = gameData.teams[team].players.find(function(p) { return p.jersey === jersey; });
+  return p ? '#' + jersey + ' ' + p.name : '#' + (jersey || 'N/A');
+}
+
+function scoreDisplay(scoreObj, team) {
+  if (!scoreObj || typeof scoreObj !== 'object') return 'N/A';
+  var opp = team === 'A' ? 'B' : 'A';
+  return (scoreObj[team] !== undefined ? scoreObj[team] : '?') + '-' + (scoreObj[opp] !== undefined ? scoreObj[opp] : '?');
+}
+
+function generateHTMLReport() {
+  var setsWonA = gameData.sets.filter(function(s) { return s.winner === 'A'; }).length;
+  var setsWonB = gameData.sets.filter(function(s) { return s.winner === 'B'; }).length;
+  var winner = setsWonA > setsWonB ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+
+  // DC_Volley_patched(5) uses matchInfo.subLimit
+  var subLimit = gameData.matchInfo.subLimit || gameData.matchInfo.subLimitPerSet || gameData.subLimitPerSet || 6;
+
+  // Sanctions count — read from new sanctionSystem first, fall back to legacy
+  var sanctionsCountA = 0;
+  var sanctionsCountB = 0;
+  if (gameData.sanctionSystem) {
+    sanctionsCountA = (gameData.sanctionSystem.misconduct.A || []).length + (gameData.sanctionSystem.delay.A.log || []).length;
+    sanctionsCountB = (gameData.sanctionSystem.misconduct.B || []).length + (gameData.sanctionSystem.delay.B.log || []).length;
+  } else {
+    sanctionsCountA = gameData.sanctions && gameData.sanctions.A ? gameData.sanctions.A.length : 0;
+    sanctionsCountB = gameData.sanctions && gameData.sanctions.B ? gameData.sanctions.B.length : 0;
+  }
+
+  // Officials & signatures
+  var officialSigs = (gameData.officials && gameData.officials.signatures) ? gameData.officials.signatures : {};
+
+  function sigImg(key) {
+    return officialSigs[key] ? '<img src="' + officialSigs[key] + '" style="max-width:100%;height:auto;max-height:50px;">' : '';
+  }
+
+  // Captain names (role === 'captain')
+  var captainA = '', captainB = '';
+  if (gameData.teams.A && gameData.teams.A.players) {
+    var capA = gameData.teams.A.players.find(function(p) { return p.role === 'captain'; });
+    if (capA) captainA = '#' + capA.jersey + ' ' + capA.name;
+  }
+  if (gameData.teams.B && gameData.teams.B.players) {
+    var capB = gameData.teams.B.players.find(function(p) { return p.role === 'captain'; });
+    if (capB) captainB = '#' + capB.jersey + ' ' + capB.name;
+  }
+
+  // DC_Volley1 officials: coachA, asstCoachA, medicalA, trainerA (and B)
+  var coachA='', asstCoachA='', medicalA='', trainerA='';
+  var coachB='', asstCoachB='', medicalB='', trainerB='';
+  if (gameData.officials) {
+    coachA     = gameData.officials.coachA     || '';
+    asstCoachA = gameData.officials.asstCoachA || '';
+    medicalA   = gameData.officials.medicalA   || '';
+    trainerA   = gameData.officials.trainerA   || '';
+    coachB     = gameData.officials.coachB     || '';
+    asstCoachB = gameData.officials.asstCoachB || '';
+    medicalB   = gameData.officials.medicalB   || '';
+    trainerB   = gameData.officials.trainerB   || '';
+  }
+
+  var typeNames = {
+    'W':    '🟨 Yellow Card (Warning)',
+    'P':    '🟥 Red Card (Penalty)',
+    'EXP':  '🟨🟥 Expulsion',
+    'DISQ': '🟥❌ Disqualification',
+    'DW':   '⏱ Delay Warning',
+    'DP':   '⏱🟥 Delay Penalty',
+    // legacy keys
+    'delay': '⏱ Delay Warning',
+    'delay_penalty': '⏱🟥 Delay Penalty',
+    'misconduct_warning': '🟨 Yellow Card',
+    'misconduct_penalty': '🟥 Red Card',
+    'misconduct_expulsion': '🟨🟥 Expulsion',
+    'misconduct_disqualification': '🟥❌ Disqualification'
+  };
+
+  // Helper: format score as "team_score – opp_score" from the perspective of the sanctioned team
+  function fmtScore(scoreObj, team) {
+    if (!scoreObj || scoreObj.A === undefined) return '—';
+    if (team) {
+      var myScore  = team === 'A' ? scoreObj.A : scoreObj.B;
+      var oppScore = team === 'A' ? scoreObj.B : scoreObj.A;
+      return myScore + ' – ' + oppScore;
+    }
+    return scoreObj.A + ' – ' + scoreObj.B;
+  }
+
+  // Collect all sanctions from new sanctionSystem
+  function getAllSanctions() {
+    var list = [];
+    if (gameData.sanctionSystem) {
+      ['A','B'].forEach(function(team) {
+        (gameData.sanctionSystem.misconduct[team] || []).forEach(function(r) {
+          list.push({
+            team: team,
+            set: r.set,
+            time: r.time,
+            type: r.type,
+            person: r.personType === 'coach' ? 'Coach/Staff' : '#' + r.person,
+            reason: r.reason || '',
+            notes: r.notes || '',
+            score: r.score
+          });
+        });
+        (gameData.sanctionSystem.delay[team].log || []).forEach(function(r) {
+          list.push({
+            team: team,
+            set: r.set,
+            time: r.time,
+            type: r.type,
+            person: 'Team',
+            reason: '',
+            notes: '',
+            score: r.score
+          });
+        });
+      });
+      list.sort(function(a, b) { return (a.time||'') > (b.time||'') ? 1 : -1; });
+    } else if (gameData.sanctions) {
+      // Legacy fallback
+      ['A','B'].forEach(function(team) {
+        (gameData.sanctions[team] || []).forEach(function(s) {
+          list.push({
+            team: team,
+            set: s.set,
+            time: s.time || '',
+            type: s.type,
+            person: s.player || 'Team',
+            reason: '',
+            notes: s.notes || '',
+            score: s.score
+          });
+        });
+      });
+    }
+    return list;
+  }
+
+  var html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n<title>FIVB Match Report</title>\n<style>\n';
+  html += 'body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5;}';
+  html += '.container{max-width:1100px;margin:0 auto;background:white;padding:40px;box-shadow:0 0 20px rgba(0,0,0,0.1);}';
+  html += 'h1{text-align:center;color:#1e3c72;border-bottom:3px solid #1e3c72;padding-bottom:15px;margin-bottom:20px;}';
+  html += 'h2{color:#2a5298;border-bottom:2px solid #ddd;padding-bottom:8px;margin-top:30px;margin-bottom:10px;}';
+  html += 'h3{color:#444;margin-top:18px;margin-bottom:5px;}';
+  html += 'table{width:100%;border-collapse:collapse;margin:8px 0 18px 0;}';
+  html += 'th,td{border:1px solid #ddd;padding:10px 12px;text-align:left;}';
+  html += 'th{background:#1e3c72;color:white;font-weight:bold;}';
+  html += '.team-a{background:#ffe6e6;}.team-b{background:#e6f3ff;}.center{text-align:center;}';
+  html += '.info-grid{display:grid;grid-template-columns:220px 1fr;gap:8px;margin:12px 0;}';
+  html += '.info-label{font-weight:bold;color:#555;}';
+  html += '.sig-cell{height:60px;border-bottom:2px solid #333!important;background:#fafafa;vertical-align:bottom;padding:5px 10px!important;}';
+  html += '.no-data{text-align:center;padding:12px;color:#888;font-style:italic;border:1px solid #eee;border-radius:4px;margin:5px 0;}';
+  html += '.totals-row{background:#e8f4f8;font-weight:bold;border-top:2px solid #1e3c72;}';
+  html += '.injured-row{background:#fff3cd;color:#856404;font-style:italic;}';
+  html += '@media print{body{margin:0;background:white;}.container{box-shadow:none;padding:20px;}}';
+  html += '\n</style>\n</head>\n<body>\n<div class="container">\n';
+
+  html += '<h1>🏐 FIVB Official Match Report</h1>\n';
+
+  // ── MATCH INFORMATION ──
+  html += '<h2>Match Information</h2>\n<div class="info-grid">\n';
+  html += '<div class="info-label">Competition:</div><div>' + (gameData.matchInfo.competition || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Match Number:</div><div>' + (gameData.matchInfo.matchNumber || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Venue:</div><div>' + (gameData.matchInfo.venue || 'N/A') + '</div>\n';
+  html += '<div class="info-label">City:</div><div>' + (gameData.matchInfo.city || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Country Code:</div><div>' + (gameData.matchInfo.countryCode || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Date:</div><div>' + (gameData.matchInfo.date || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Time:</div><div>' + (gameData.matchInfo.time || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Division:</div><div>' + (gameData.matchInfo.division || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Category:</div><div>' + (gameData.matchInfo.category || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Pool / Phase:</div><div>' + (gameData.matchInfo.pool || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Format:</div><div>Best of ' + (gameData.matchInfo.format || 'N/A') + '</div>\n';
+  html += '<div class="info-label">Substitution Limit:</div><div>' + subLimit + ' per set</div>\n';
+  html += '</div>\n';
+
+  // ── MATCH RESULT ──
+  html += '<h2>Match Result</h2>\n<table>\n';
+  html += '<tr><th class="team-a" style="width:35%">' + gameData.matchInfo.teamAName + '</th><th class="center" style="width:30%">Sets</th><th class="team-b" style="width:35%">' + gameData.matchInfo.teamBName + '</th></tr>\n';
+  html += '<tr><td class="team-a center" style="font-size:28px;font-weight:bold;">' + setsWonA + '</td><td class="center" style="font-size:20px;font-weight:bold;">vs</td><td class="team-b center" style="font-size:28px;font-weight:bold;">' + setsWonB + '</td></tr>\n';
+  html += '<tr><td colspan="3" class="center" style="background:#fff9c4;font-size:20px;font-weight:bold;">🏆 WINNER: ' + winner + '</td></tr>\n';
+  html += '<tr><td class="team-a center"><strong>Sanctions: ' + sanctionsCountA + '</strong></td><td class="center"><strong>Total Sanctions</strong></td><td class="team-b center"><strong>Sanctions: ' + sanctionsCountB + '</strong></td></tr>\n';
+  html += '</table>\n';
+
+  // ── SET-BY-SET SCORES ──
+  html += '<h2>Set-by-Set Scores</h2>\n<table>\n';
+  html += '<tr><th>Set</th><th class="team-a">' + gameData.matchInfo.teamAName + '</th><th class="center">Score</th><th class="team-b">' + gameData.matchInfo.teamBName + '</th><th>Duration</th><th>Winner</th></tr>\n';
+
+  var totalPointsA = 0, totalPointsB = 0, totalDuration = 0;
+  gameData.sets.forEach(function(set, idx) {
+    if (!set.winner && set.score.A === 0 && set.score.B === 0) return;
+    totalPointsA += (set.score.A || 0);
+    totalPointsB += (set.score.B || 0);
+    var durStr = 'N/A', durMins = 0;
+    if (set.endTime && set.startTime) {
+      durMins = Math.round((new Date(set.endTime) - new Date(set.startTime)) / 60000);
+      durStr = durMins + ' min';
+      totalDuration += durMins;
+    }
+    var setWinner = set.winner ? (set.winner === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName) : '-';
+    html += '<tr><td class="center"><strong>Set ' + (idx+1) + '</strong></td>';
+    html += '<td class="team-a center">' + set.score.A + '</td>';
+    html += '<td class="center">' + set.score.A + ' - ' + set.score.B + '</td>';
+    html += '<td class="team-b center">' + set.score.B + '</td>';
+    html += '<td class="center">' + durStr + '</td>';
+    html += '<td class="center">' + setWinner + '</td></tr>\n';
+  });
+  html += '<tr class="totals-row"><td class="center">TOTALS</td><td class="team-a center">' + totalPointsA + '</td><td class="center">' + totalDuration + ' min</td><td class="team-b center">' + totalPointsB + '</td><td></td><td></td></tr>\n';
+  html += '</table>\n';
+
+  // ── PER-SET DETAILS ──
+  gameData.sets.forEach(function(set, setIdx) {
+    if (!set.winner && set.score.A === 0 && set.score.B === 0) return;
+
+    var durStr = 'N/A';
+    if (set.endTime && set.startTime) {
+      var dm = Math.round((new Date(set.endTime) - new Date(set.startTime)) / 60000);
+      durStr = dm + ' min';
+    }
+    var startFmt = set.startTime ? new Date(set.startTime).toLocaleTimeString() : 'N/A';
+    var endFmt   = set.endTime   ? new Date(set.endTime).toLocaleTimeString()   : 'N/A';
+
+    html += '<h2>Set ' + (setIdx+1) + ' Details</h2>\n';
+    html += '<div class="info-grid">';
+    html += '<div class="info-label">Start Time:</div><div>' + startFmt + '</div>';
+    html += '<div class="info-label">End Time:</div><div>' + endFmt + '</div>';
+    html += '<div class="info-label">Duration:</div><div>' + durStr + '</div>';
+    html += '<div class="info-label">Final Score:</div><div>' + gameData.matchInfo.teamAName + ' ' + set.score.A + ' – ' + set.score.B + ' ' + gameData.matchInfo.teamBName + '</div>';
+    html += '</div>\n';
+
+    // Starting Lineup
+    if (set.startingLineup) {
+      html += '<h3>Starting Lineup</h3>\n<table>\n';
+      html += '<tr><th>Position</th><th class="team-a">' + gameData.matchInfo.teamAName + '</th><th class="team-b">' + gameData.matchInfo.teamBName + '</th></tr>\n';
+      for (var pos = 0; pos < 6; pos++) {
+        var jA = set.startingLineup.A ? set.startingLineup.A[pos] : null;
+        var jB = set.startingLineup.B ? set.startingLineup.B[pos] : null;
+        html += '<tr><td class="center"><strong>P' + (pos+1) + '</strong></td>';
+        html += '<td class="team-a">' + (jA ? getPlayerName('A', jA) : '-') + '</td>';
+        html += '<td class="team-b">' + (jB ? getPlayerName('B', jB) : '-') + '</td></tr>\n';
+      }
+      html += '</table>\n';
+    }
+
+    // ── SUBSTITUTIONS ──
+    var subsA = set.substitutions && set.substitutions.A ? set.substitutions.A : [];
+    var subsB = set.substitutions && set.substitutions.B ? set.substitutions.B : [];
+    html += '<h3>Substitutions</h3>\n';
+    if (subsA.length > 0 || subsB.length > 0) {
+      html += '<table>\n<tr><th>Team</th><th>Score</th><th>Player OUT</th><th>Player IN</th></tr>\n';
+      ['A','B'].forEach(function(team) {
+        var subs = team === 'A' ? subsA : subsB;
+        var teamName = team === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+        subs.forEach(function(sub) {
+          html += '<tr><td class="team-' + team.toLowerCase() + '">' + teamName + '</td>';
+          html += '<td class="center">' + scoreDisplay(sub.score, team) + '</td>';
+          html += '<td>' + getPlayerName(team, sub.playerOut) + '</td>';
+          html += '<td>' + getPlayerName(team, sub.playerIn) + '</td></tr>\n';
+        });
+      });
+      // Totals row
+      html += '<tr class="totals-row"><td colspan="2" style="color:#1e3c72;">TOTAL SUBSTITUTIONS</td>';
+      html += '<td class="team-a center">' + gameData.matchInfo.teamAName + ': ' + subsA.length + ' / ' + subLimit + '</td>';
+      html += '<td class="team-b center">' + gameData.matchInfo.teamBName + ': ' + subsB.length + ' / ' + subLimit + '</td></tr>\n';
+      html += '</table>\n';
+    } else {
+      html += '<p class="no-data">No substitutions recorded for this set.</p>\n';
+    }
+
+    // ── EXCEPTIONAL SUBSTITUTIONS ──
+    var excA = set.exceptionalSubstitutions && set.exceptionalSubstitutions.A ? set.exceptionalSubstitutions.A : [];
+    var excB = set.exceptionalSubstitutions && set.exceptionalSubstitutions.B ? set.exceptionalSubstitutions.B : [];
+    html += '<h3>Exceptional Substitutions (Injury)</h3>\n';
+    if (excA.length > 0 || excB.length > 0) {
+      html += '<table>\n<tr><th>Team</th><th>Score</th><th>Player OUT (Injured)</th><th>Player IN</th><th>Remark</th></tr>\n';
+      ['A','B'].forEach(function(team) {
+        var excSubs = team === 'A' ? excA : excB;
+        var teamName = team === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+        excSubs.forEach(function(sub) {
+          html += '<tr><td class="team-' + team.toLowerCase() + '">' + teamName + '</td>';
+          html += '<td class="center">' + scoreDisplay(sub.score, team) + '</td>';
+          html += '<td>' + getPlayerName(team, sub.playerOut) + '</td>';
+          html += '<td>' + getPlayerName(team, sub.playerIn) + '</td>';
+          html += '<td>' + (sub.remark || 'Injury') + '</td></tr>\n';
+        });
+      });
+      html += '</table>\n';
+    } else {
+      html += '<p class="no-data">No exceptional substitutions recorded for this set.</p>\n';
+    }
+
+    // ── LIBERO REPLACEMENTS ──
+    // Read from gameData.matchSummary where type === 'Libero' (this is where DC_Volley1 actually stores it)
+    var libA = [];
+    var libB = [];
+
+    if (gameData.matchSummary) {
+      // Filter libero events for this specific set
+      var liberoEventsA = gameData.matchSummary.filter(function(e) {
+        return e.type === 'Libero' && e.team === 'A' && e.setNumber === (setIdx + 1);
+      });
+      var liberoEventsB = gameData.matchSummary.filter(function(e) {
+        return e.type === 'Libero' && e.team === 'B' && e.setNumber === (setIdx + 1);
+      });
+      
+      // Parse the description to extract player info and score
+      // Format: "GHY Libero #13 A. RAJU (L2) replaces #4 D. ALOK in P1 at 0:0"
+      liberoEventsA.forEach(function(e) {
+        var match = e.description.match(/#(\d+)\s+([A-Z\.\s]+)\s*\([LI\d]+\)\s+replaces\s+#(\d+)\s+([A-Z\.\s]+)\s+in\s+(P\d+)\s+at\s+(\d+):(\d+)/);
+        if (match) {
+          libA.push({
+            libero: match[1],
+            liberoName: match[2].trim(),
+            originalPlayer: match[3],
+            originalName: match[4].trim(),
+            position: match[5],
+            scoreA: match[6],
+            scoreB: match[7]
+          });
+        }
+      });
+      
+      liberoEventsB.forEach(function(e) {
+        var match = e.description.match(/#(\d+)\s+([A-Z\.\s]+)\s*\([LI\d]+\)\s+replaces\s+#(\d+)\s+([A-Z\.\s]+)\s+in\s+(P\d+)\s+at\s+(\d+):(\d+)/);
+        if (match) {
+          libB.push({
+            libero: match[1],
+            liberoName: match[2].trim(),
+            originalPlayer: match[3],
+            originalName: match[4].trim(),
+            position: match[5],
+            scoreA: match[6],
+            scoreB: match[7]
+          });
+        }
+      });
+    }
+
+    html += '<h3>Libero Replacements</h3>\n';
+    if (libA.length > 0 || libB.length > 0) {
+      html += '<table>\n<tr><th>Team</th><th>Score</th><th>Libero IN</th><th>Player OUT</th><th>Position</th></tr>\n';
+      ['A','B'].forEach(function(team) {
+        var reps = team === 'A' ? libA : libB;
+        var teamName = team === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+        reps.forEach(function(rep) {
+          // Always show Team A score first, then Team B score (consistent order)
+          var scoreDisplay = rep.scoreA + '-' + rep.scoreB;
+          html += '<tr><td class="team-' + team.toLowerCase() + '">' + teamName + '</td>';
+          html += '<td class="center">' + scoreDisplay + '</td>';
+          html += '<td>#' + rep.libero + ' ' + rep.liberoName + '</td>';
+          html += '<td>#' + rep.originalPlayer + ' ' + rep.originalName + '</td>';
+          html += '<td class="center">' + rep.position + '</td></tr>\n';
+        });
+      });
+      html += '</table>\n';
+    } else {
+      html += '<p class="no-data">No libero replacements recorded for this set.</p>\n';
+    }
+
+    // ── TIMEOUTS ──
+    var toA = set.timeouts && set.timeouts.A ? set.timeouts.A : [];
+    var toB = set.timeouts && set.timeouts.B ? set.timeouts.B : [];
+    html += '<h3>Timeouts</h3>\n';
+    if (toA.length > 0 || toB.length > 0) {
+      html += '<table>\n<tr><th>Team</th><th>Score When Called</th></tr>\n';
+      ['A','B'].forEach(function(team) {
+        var tos = team === 'A' ? toA : toB;
+        var teamName = team === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+        tos.forEach(function(to) {
+          html += '<tr><td class="team-' + team.toLowerCase() + '">' + teamName + '</td>';
+          html += '<td class="center">' + scoreDisplay(to.score, team) + '</td></tr>\n';
+        });
+      });
+      html += '</table>\n';
+    } else {
+      html += '<p class="no-data">No timeouts recorded for this set.</p>\n';
+    }
+
+    // ── SANCTIONS (per set) ──
+    var setSanctions = getAllSanctions().filter(function(s) { return s.set === (setIdx + 1); });
+    html += '<h3>Sanctions</h3>\n';
+    if (setSanctions.length > 0) {
+      html += '<table>\n<tr><th>Time</th><th>Team</th><th>Score at Time</th><th>Player/Coach</th><th>Type</th><th>Reason / Notes</th></tr>\n';
+      setSanctions.forEach(function(s) {
+        var teamName = s.team === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+        var tdClass = 'class="team-' + s.team.toLowerCase() + '"';
+        html += '<tr>';
+        html += '<td class="center">' + (s.time || '—') + '</td>';
+        html += '<td ' + tdClass + '>' + teamName + '</td>';
+        html += '<td class="center" style="font-weight:bold;color:#1e3c72">' + fmtScore(s.score, s.team) + '</td>';
+        html += '<td class="center">' + s.person + '</td>';
+        html += '<td>' + (typeNames[s.type] || s.type || 'N/A') + '</td>';
+        html += '<td>' + (s.reason ? s.reason + (s.notes ? ' — ' + s.notes : '') : s.notes || '') + '</td>';
+        html += '</tr>\n';
+      });
+      html += '</table>\n';
+    } else {
+      html += '<p class="no-data">No sanctions recorded for this set.</p>\n';
+    }
+  }); // end per-set loop
+
+  // ── MATCH SANCTIONS SUMMARY ──
+  var allSanctions = getAllSanctions();
+  if (allSanctions.length > 0) {
+    html += '<h2>Match Sanctions Summary</h2>\n<table>\n';
+    html += '<tr><th>Set</th><th>Time</th><th>Team</th><th>Score at Time</th><th>Player/Coach</th><th>Type</th><th>Reason / Notes</th></tr>\n';
+    allSanctions.forEach(function(s) {
+      var teamName = s.team === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+      var tdClass = 'class="team-' + s.team.toLowerCase() + '"';
+      html += '<tr>';
+      html += '<td class="center">Set ' + (s.set || '?') + '</td>';
+      html += '<td class="center">' + (s.time || '—') + '</td>';
+      html += '<td ' + tdClass + '>' + teamName + '</td>';
+      html += '<td class="center" style="font-weight:bold;color:#1e3c72">' + fmtScore(s.score, s.team) + '</td>';
+      html += '<td class="center">' + s.person + '</td>';
+      html += '<td>' + (typeNames[s.type] || s.type || 'N/A') + '</td>';
+      html += '<td>' + (s.reason ? s.reason + (s.notes ? ' — ' + s.notes : '') : s.notes || '') + '</td>';
+      html += '</tr>\n';
+    });
+    html += '</table>\n';
+  }
+
+  // ── TEAM ROSTERS ──
+  html += '<h2>Team Rosters</h2>\n';
+  ['A','B'].forEach(function(team) {
+    var teamName = team === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+    var players = (gameData.teams[team] && gameData.teams[team].players) ? gameData.teams[team].players : [];
+    html += '<h3>' + teamName + '</h3>\n<table>\n';
+    html += '<tr><th>#</th><th>Player Name</th><th>Role</th></tr>\n';
+    players.forEach(function(p) {
+      var roleText = p.role === 'libero1' ? 'Libero 1' : p.role === 'libero2' ? 'Libero 2' : p.role === 'captain' ? 'Captain' : 'Player';
+      html += '<tr><td class="center team-' + team.toLowerCase() + '">' + p.jersey + '</td>';
+      html += '<td>' + p.name + '</td><td>' + roleText + '</td></tr>\n';
+    });
+    // Injured players row
+    var injured = gameData.injuredPlayers && gameData.injuredPlayers[team] ? gameData.injuredPlayers[team] : [];
+    if (injured.length > 0) {
+      html += '<tr class="injured-row"><td colspan="3">🚑 Injured / Locked: ' + injured.map(function(j){ return getPlayerName(team, j); }).join(', ') + '</td></tr>\n';
+    }
+    html += '</table>\n';
+  });
+
+  // ── MATCH OFFICIALS ──
+  html += '<h2>Match Officials</h2>\n<table>\n';
+  html += '<tr><th style="width:30%">Role</th><th style="width:40%">Name</th><th style="width:30%">Signature</th></tr>\n';
+  html += '<tr><td><strong>1st Referee</strong></td><td>' + (gameData.matchInfo.ref1 || '') + '</td><td class="sig-cell">' + sigImg('firstRefSign') + '</td></tr>\n';
+  html += '<tr><td><strong>2nd Referee</strong></td><td>' + (gameData.matchInfo.ref2 || '') + '</td><td class="sig-cell">' + sigImg('secondRefSign') + '</td></tr>\n';
+  html += '<tr><td><strong>Scorer</strong></td><td>' + (gameData.matchInfo.scorer || '') + '</td><td class="sig-cell">' + sigImg('scorerSign') + '</td></tr>\n';
+  html += '<tr><td><strong>Assistant Scorer</strong></td><td>' + (gameData.matchInfo.assistScorer || '') + '</td><td class="sig-cell">' + sigImg('assistScorerSign') + '</td></tr>\n';
+  html += '</table>\n';
+
+  // ── TEAM STAFF & SIGNATURES ──
+  html += '<h2>Team Staff & Signatures</h2>\n<table>\n';
+  html += '<tr><th style="width:20%">Team</th><th style="width:15%">Role</th><th style="width:35%">Name</th><th style="width:30%">Signature</th></tr>\n';
+
+  // Team A
+  html += '<tr class="team-a"><td rowspan="4"><strong>' + gameData.matchInfo.teamAName + '</strong></td>';
+  html += '<td><strong>Captain (Before)</strong></td><td>' + captainA + '</td><td class="sig-cell">' + sigImg('captainSignA1') + '</td></tr>\n';
+  html += '<tr class="team-a"><td><strong>Captain (After)</strong></td><td>' + captainA + '</td><td class="sig-cell">' + sigImg('captainSignA2') + '</td></tr>\n';
+  html += '<tr class="team-a"><td><strong>Coach</strong></td><td>' + coachA + (asstCoachA ? ' / Asst: ' + asstCoachA : '') + '</td><td class="sig-cell">' + sigImg('coachSignA') + '</td></tr>\n';
+  html += '<tr class="team-a"><td><strong>Medical / Trainer</strong></td><td>' + (medicalA ? 'Med: ' + medicalA : '') + (trainerA ? (medicalA ? ' | ' : '') + 'Trainer: ' + trainerA : '') + '</td><td class="sig-cell"></td></tr>\n';
+
+  // Team B
+  html += '<tr class="team-b"><td rowspan="4"><strong>' + gameData.matchInfo.teamBName + '</strong></td>';
+  html += '<td><strong>Captain (Before)</strong></td><td>' + captainB + '</td><td class="sig-cell">' + sigImg('captainSignB1') + '</td></tr>\n';
+  html += '<tr class="team-b"><td><strong>Captain (After)</strong></td><td>' + captainB + '</td><td class="sig-cell">' + sigImg('captainSignB2') + '</td></tr>\n';
+  html += '<tr class="team-b"><td><strong>Coach</strong></td><td>' + coachB + (asstCoachB ? ' / Asst: ' + asstCoachB : '') + '</td><td class="sig-cell">' + sigImg('coachSignB') + '</td></tr>\n';
+  html += '<tr class="team-b"><td><strong>Medical / Trainer</strong></td><td>' + (medicalB ? 'Med: ' + medicalB : '') + (trainerB ? (medicalB ? ' | ' : '') + 'Trainer: ' + trainerB : '') + '</td><td class="sig-cell"></td></tr>\n';
+  html += '</table>\n';
+
+  html += '<div style="text-align:center;margin-top:60px;padding-top:20px;border-top:2px solid #ddd;color:#888;">';
+  html += '<p>DC_Volley &copy; 2025 | Digital Volleyball Scoresheet</p>';
+  html += '<p>Generated: ' + new Date().toLocaleString() + '</p></div>\n';
+  html += '</div>\n</body>\n</html>';
+
+  return html;
+}
+
+function downloadJSON() {
+  if (!loadGameData()) return;
+  var dataStr = JSON.stringify(gameData, null, 2);
+  var blob = new Blob([dataStr], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'match_data_' + (gameData.matchInfo.teamAName || 'TeamA') + '_vs_' + (gameData.matchInfo.teamBName || 'TeamB') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showStatus('Match data downloaded successfully!', 'success');
+}
+
+window.addEventListener('load', function() { loadGameData(); });
+</script>
+</body>
+</html>
