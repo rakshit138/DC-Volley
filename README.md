@@ -105,63 +105,132 @@ All Firestore logic is centralized in `src/services/gameService.js`:
 ```javascript
 games/{gameCode}
 {
-  gameCode: string,              // Unique 6-character code
-  teamAName: string,             // Team A name
-  teamBName: string,              // Team B name
-  format: number,                // Best of 3 or 5
+  // Basic Game Info
+  gameCode: string,              // Unique 6-character code (document ID)
   status: 'LIVE' | 'FINISHED',   // Game status
   currentSet: number,            // Current set number (1-indexed)
+  
+  // Team Information
+  teamAName: string,             // Team A name
+  teamBName: string,             // Team B name
+  teamAColor: string,            // Team A jersey color (hex, e.g., "#ff6b6b")
+  teamBColor: string,            // Team B jersey color (hex, e.g., "#4ecdc4")
+  
+  // Match Configuration
+  format: number,                // Best of 3 or 5
+  subLimit: number,              // Substitution limit per set (6 or 8)
+  
+  // Match Information
+  competition: string,           // Competition name (e.g., "FIVB Championship 2026")
+  matchNumber: string,           // Match number (e.g., "M-001")
+  venue: string,                 // Venue name
+  city: string,                  // City name
+  countryCode: string,          // 3-letter country code (e.g., "IND", "USA")
+  division: string,              // Division (e.g., "Men", "Women")
+  category: string,             // Category (e.g., "Youth", "Junior", "Senior")
+  pool: string,                 // Pool/Phase (e.g., "Pool A")
+  matchDate: string,            // Match date (ISO format, e.g., "2026-01-15")
+  matchTime: string,            // Match time (e.g., "14:30")
+  
+  // Match Officials
+  officials: {
+    ref1: string,                // 1st Referee name
+    ref2: string,                // 2nd Referee name
+    scorer: string,              // Scorer name
+    assistScorer: string         // Assistant Scorer name
+  },
+  
+  // Coin Toss Information
+  coinToss: {
+    winner: string,              // 'team1' or 'team2'
+    choice: string,              // 'serve', 'receive', or 'side'
+    firstServer: string          // 'A' or 'B' (determined from coin toss)
+  },
+  
+  // Sets Information
   setsWon: {
     A: number,                   // Sets won by Team A
     B: number                    // Sets won by Team B
   },
   sets: [
     {
-      setNumber: number,
+      setNumber: number,         // Set number (1, 2, 3, etc.)
       score: {
-        A: number,
-        B: number
+        A: number,               // Team A score in this set
+        B: number                // Team B score in this set
       },
       serving: 'A' | 'B',        // Current serving team
       winner: 'A' | 'B' | null,  // Set winner (null if not finished)
       timeouts: {
-        A: Array,                 // Timeout records
-        B: Array
+        A: Array<{               // Timeout records for Team A
+          score: { A: number, B: number },
+          time: string,
+          // ... other timeout data
+        }>,
+        B: Array<{               // Timeout records for Team B
+          score: { A: number, B: number },
+          time: string,
+          // ... other timeout data
+        }>
       },
       substitutions: {
-        A: Array,                 // Substitution records
-        B: Array
+        A: Array<{               // Substitution records for Team A
+          playerOut: string,     // Jersey number of player going out
+          playerIn: string,      // Jersey number of player coming in
+          score: { A: number, B: number },
+          time: string,
+          // ... other substitution data
+        }>,
+        B: Array<{               // Substitution records for Team B
+          playerOut: string,
+          playerIn: string,
+          score: { A: number, B: number },
+          time: string,
+          // ... other substitution data
+        }>
       },
-      startTime: Timestamp,
-      endTime: Timestamp | null
+      startingLineup: {         // Starting lineup for this set
+        A: Array<string | null>, // Array of 6 jersey numbers (P1-P6 positions)
+        B: Array<string | null>  // Array of 6 jersey numbers (P1-P6 positions)
+      },
+      startTime: Timestamp | Date,  // Set start time
+      endTime: Timestamp | Date | null  // Set end time (null if not finished)
     }
   ],
+  
+  // Team Rosters and Lineups
   teams: {
     A: {
-      players: Array,             // Player roster (jersey, name, role)
-      lineup: Array               // Current lineup (jersey numbers)
+      players: Array<{           // Player roster for Team A
+        jersey: string,          // Jersey number
+        name: string,            // Player name
+        role: string            // 'player', 'captain', 'libero1', or 'libero2'
+      }>,
+      lineup: Array<string | null>  // Current lineup (jersey numbers for positions P1-P6)
     },
     B: {
-      players: Array,
-      lineup: Array
+      players: Array<{           // Player roster for Team B
+        jersey: string,
+        name: string,
+        role: string
+      }>,
+      lineup: Array<string | null>  // Current lineup (jersey numbers for positions P1-P6)
     }
   },
-  officials: {
-    ref1: string,                 // 1st Referee name
-    ref2: string,                 // 2nd Referee name
-    scorer: string,               // Scorer name
-    assistScorer: string          // Assistant Scorer name
-  },
-  coinToss: {
-    winner: string,               // 'team1' or 'team2'
-    choice: string,               // 'serve', 'receive', or 'side'
-    firstServer: string           // 'A' or 'B'
-  },
-  createdAt: Timestamp,
-  updatedAt: Timestamp,
-  finishedAt: Timestamp | null
+  
+  // Timestamps
+  createdAt: Timestamp,         // Game creation timestamp
+  updatedAt: Timestamp,         // Last update timestamp
+  finishedAt: Timestamp | null  // Game finish timestamp (null if not finished)
 }
 ```
+
+**Important Notes:**
+- The document ID is the `gameCode` (6-character alphanumeric code)
+- `sets` array is indexed by set number (sets[0] = Set 1, sets[1] = Set 2, etc.)
+- `lineup` arrays contain 6 elements representing positions P1-P6
+- Player `jersey` is stored as string to handle leading zeros if needed
+- All timestamps use Firestore `Timestamp` type or JavaScript `Date` objects
 
 ## 🚀 Setup Instructions
 
