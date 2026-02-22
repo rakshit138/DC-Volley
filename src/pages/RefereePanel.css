@@ -1,0 +1,277 @@
+.referee-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #fff;
+  padding: 20px;
+  font-family: Arial, sans-serif;
+}
+
+.referee-header {
+  text-align: center;
+  margin-bottom: 30px;
+  background: #16213e;
+  padding: 20px;
+  border-radius: 10px;
+  border: 3px solid #533483;
+}
+
+.referee-header h1 {
+  color: #e94560;
+  font-size: 36px;
+  margin-bottom: 10px;
+}
+
+.referee-header p {
+  color: #00d9ff;
+  font-size: 18px;
+  margin: 5px 0;
+}
+
+.referee-header strong {
+  color: #ffd700;
+  font-size: 20px;
+  letter-spacing: 2px;
+}
+
+.status-live {
+  color: #00ff00 !important;
+  text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+}
+
+.status-finished {
+  color: #ff6b6b !important;
+}
+
+.referee-score-display {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background: #16213e;
+  padding: 30px;
+  border-radius: 15px;
+  margin-bottom: 30px;
+  border: 3px solid #533483;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.referee-team-score {
+  text-align: center;
+  flex: 1;
+  min-width: 200px;
+}
+
+.referee-team-name {
+  font-size: 32px;
+  font-weight: bold;
+  margin-bottom: 15px;
+  text-transform: uppercase;
+}
+
+.team-a-color {
+  color: #ff6b6b;
+}
+
+.team-b-color {
+  color: #4ecdc4;
+}
+
+.referee-score-value {
+  font-size: 80px;
+  font-weight: bold;
+  margin-bottom: 10px;
+  font-family: monospace;
+}
+
+.referee-sets-won {
+  font-size: 18px;
+  color: #888;
+}
+
+.referee-set-info {
+  text-align: center;
+  padding: 0 20px;
+}
+
+.referee-set-number {
+  font-size: 24px;
+  color: #00d9ff;
+  font-weight: bold;
+  margin-bottom: 15px;
+}
+
+.referee-set-dots {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.referee-set-dot {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: bold;
+  background: #1a1a2e;
+}
+
+.referee-set-dot.set-won-a {
+  background: #ff6b6b;
+  border-color: #ff6b6b;
+}
+
+.referee-set-dot.set-won-b {
+  background: #4ecdc4;
+  border-color: #4ecdc4;
+}
+
+.referee-controls {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.referee-control-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.referee-btn {
+  flex: 1;
+  padding: 20px;
+  font-size: 20px;
+  font-weight: bold;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.referee-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.referee-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+}
+
+.referee-btn-point {
+  background: linear-gradient(135deg, #00d9ff 0%, #00b8d4 100%);
+  color: #000;
+  font-size: 24px;
+  padding: 25px;
+}
+
+.team-a-btn {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ff5370 100%);
+  color: #fff;
+}
+
+.team-b-btn {
+  background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+  color: #fff;
+}
+
+.referee-btn-undo {
+  background: linear-gradient(135deg, #ff9500 0%, #ff6f00 100%);
+  color: #fff;
+}
+
+.referee-btn-next-set {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+
+.referee-btn-finish {
+  background: linear-gradient(135deg, #ff3b3b 0%, #c71f1f 100%);
+  color: #fff;
+  width: 100%;
+}
+
+.referee-message {
+  text-align: center;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 20px auto;
+  max-width: 800px;
+  font-weight: bold;
+  font-size: 18px;
+}
+
+.referee-message.success {
+  background: #4caf50;
+  color: #fff;
+}
+
+.referee-message.error {
+  background: #ff3b3b;
+  color: #fff;
+}
+
+.referee-back-home {
+  display: block;
+  margin: 30px auto;
+  padding: 15px 30px;
+  background: #533483;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.referee-back-home:hover {
+  background: #3d2560;
+  transform: translateY(-2px);
+}
+
+.referee-loading,
+.referee-error,
+.referee-no-data {
+  text-align: center;
+  padding: 100px 40px;
+  font-size: 36px;
+  color: #888;
+}
+
+.referee-back-btn {
+  display: block;
+  margin: 20px auto;
+  padding: 15px 30px;
+  background: #00d9ff;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .referee-score-display {
+    flex-direction: column;
+  }
+
+  .referee-control-row {
+    flex-direction: column;
+  }
+
+  .referee-header h1 {
+    font-size: 28px;
+  }
+
+  .referee-score-value {
+    font-size: 60px;
+  }
+}

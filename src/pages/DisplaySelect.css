@@ -1,0 +1,109 @@
+.display-select-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+  padding: 20px;
+}
+
+.display-select-card {
+  background: #16213e;
+  border-radius: 15px;
+  padding: 40px;
+  max-width: 800px;
+  width: 100%;
+  border: 3px solid #533483;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.display-select-title {
+  color: #e94560;
+  font-size: 36px;
+  text-align: center;
+  margin-bottom: 10px;
+  font-weight: 900;
+}
+
+.display-select-subtitle {
+  color: #00d9ff;
+  text-align: center;
+  font-size: 18px;
+  margin-bottom: 40px;
+}
+
+.display-select-subtitle strong {
+  color: #ffd700;
+  font-size: 24px;
+  letter-spacing: 2px;
+}
+
+.display-select-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.display-option-btn {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 3px solid #533483;
+  border-radius: 15px;
+  padding: 30px 20px;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-align: center;
+  color: #fff;
+}
+
+.display-option-btn:hover {
+  transform: translateY(-5px);
+  border-color: #00d9ff;
+  box-shadow: 0 10px 30px rgba(0, 217, 255, 0.3);
+  background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
+}
+
+.display-option-icon {
+  font-size: 64px;
+  margin-bottom: 15px;
+}
+
+.display-option-title {
+  font-size: 20px;
+  font-weight: bold;
+  color: #e94560;
+  margin-bottom: 10px;
+}
+
+.display-option-desc {
+  font-size: 14px;
+  color: #888;
+}
+
+.display-select-back {
+  width: 100%;
+  padding: 15px;
+  background: #533483;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.display-select-back:hover {
+  background: #3d2560;
+  transform: translateY(-2px);
+}
+
+@media (max-width: 768px) {
+  .display-select-options {
+    grid-template-columns: 1fr;
+  }
+
+  .display-select-card {
+    padding: 30px 20px;
+  }
+}
