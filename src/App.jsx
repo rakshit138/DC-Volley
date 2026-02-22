@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { GameProvider } from './context/GameContext';
 import Home from './pages/Home';
+import GameSetup from './pages/GameSetup';
 import DisplaySelect from './pages/DisplaySelect';
 import Scoreboard from './pages/Scoreboard';
 import RefereePanel from './pages/RefereePanel';
@@ -13,6 +14,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/game-setup" element={<GameSetup />} />
           <Route path="/display-select" element={<DisplaySelect />} />
           <Route path="/scoreboard" element={<Scoreboard />} />
           <Route path="/referee" element={<RefereePanel />} />

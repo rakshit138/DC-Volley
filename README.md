@@ -18,8 +18,18 @@ This application is designed for managing volleyball matches with the following 
 ### 🏠 Home Screen (Entry Point)
 - Text input for entering game codes
 - "Join Game" button to connect to existing games
-- "Start New Game" button to create new matches
-- Automatic unique code generation
+- "Start New Game" button to navigate to comprehensive game setup
+
+### ⚙️ Game Setup Screen (New Game Creation)
+A comprehensive 6-step setup wizard:
+1. **Match Information** - Date, time, city, country, division, category, pool, competition, venue, format, substitution limit
+2. **Match Officials** - 1st Referee, 2nd Referee, Scorer, Assistant Scorer
+3. **Team Setup** - Team names and jersey colors
+4. **Coin Toss** - Winner selection, choice (serve/receive/side), team assignment to sides A/B
+5. **Team Rosters** - Up to 14 players per team with jersey numbers, names, and roles (Player, Captain, Libero 1, Libero 2)
+6. **Starting Lineups** - Select players for positions P1-P6 for each team
+
+All data is saved to Firestore when the game is created.
 
 ### 🎭 Display Selection Screen
 After joining a game, users can select:
@@ -60,6 +70,7 @@ src/
  ├── components/          # Reusable components (if needed)
  ├── pages/              # Page components
  │    ├── Home.jsx       # Entry point (game code entry)
+ │    ├── GameSetup.jsx  # Comprehensive game setup wizard
  │    ├── DisplaySelect.jsx  # Role selection screen
  │    ├── Scoreboard.jsx     # Public scoreboard view
  │    ├── RefereePanel.jsx  # Referee control panel
@@ -127,13 +138,24 @@ games/{gameCode}
   ],
   teams: {
     A: {
-      players: Array,             // Player roster
+      players: Array,             // Player roster (jersey, name, role)
       lineup: Array               // Current lineup (jersey numbers)
     },
     B: {
       players: Array,
       lineup: Array
     }
+  },
+  officials: {
+    ref1: string,                 // 1st Referee name
+    ref2: string,                 // 2nd Referee name
+    scorer: string,               // Scorer name
+    assistScorer: string          // Assistant Scorer name
+  },
+  coinToss: {
+    winner: string,               // 'team1' or 'team2'
+    choice: string,               // 'serve', 'receive', or 'side'
+    firstServer: string           // 'A' or 'B'
   },
   createdAt: Timestamp,
   updatedAt: Timestamp,

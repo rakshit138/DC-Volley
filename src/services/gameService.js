@@ -28,10 +28,10 @@ export async function createGame(gameCode, gameData) {
     gameCode,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    status: 'LIVE', // LIVE or FINISHED
-    currentSet: 1,
-    sets: [],
-    setsWon: {
+    status: gameData.status || 'LIVE', // LIVE or FINISHED
+    currentSet: gameData.currentSet || 1,
+    sets: gameData.sets || [],
+    setsWon: gameData.setsWon || {
       A: 0,
       B: 0
     }

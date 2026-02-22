@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
-import { createGame, getGameByCode } from '../services/gameService';
-import { generateGameCode } from '../utils/generateCode';
+import { getGameByCode } from '../services/gameService';
 import './Home.css';
 
 export default function Home() {
@@ -12,61 +11,9 @@ export default function Home() {
   const { setGameCode } = useGame();
   const navigate = useNavigate();
 
-  const handleStartNewGame = async () => {
-    setLoading(true);
-    setError('');
-
-    try {
-      // Generate unique game code
-      let code = generateGameCode();
-      let exists = await getGameByCode(code);
-      
-      // Ensure code is unique (retry if needed)
-      let attempts = 0;
-      while (exists && attempts < 10) {
-        code = generateGameCode();
-        exists = await getGameByCode(code);
-        attempts++;
-      }
-
-      if (exists) {
-        throw new Error('Unable to generate unique code. Please try again.');
-      }
-
-      // Create initial game data
-      const initialGameData = {
-        teamAName: 'Team A',
-        teamBName: 'Team B',
-        format: 3, // Best of 3
-        sets: [{
-          setNumber: 1,
-          score: { A: 0, B: 0 },
-          serving: 'A',
-          timeouts: { A: [], B: [] },
-          substitutions: { A: [], B: [] },
-          startTime: new Date()
-        }],
-        teams: {
-          A: {
-            players: [],
-            lineup: []
-          },
-          B: {
-            players: [],
-            lineup: []
-          }
-        }
-      };
-
-      await createGame(code, initialGameData);
-      setGameCode(code);
-      navigate('/display-select');
-    } catch (err) {
-      setError(err.message || 'Failed to create game. Please try again.');
-      console.error('Error creating game:', err);
-    } finally {
-      setLoading(false);
-    }
+  const handleStartNewGame = () => {
+    // Navigate to setup screen instead of creating game directly
+    navigate('/game-setup');
   };
 
   const handleJoinGame = async () => {
