@@ -105,7 +105,7 @@ export async function updateScore(gameCode, team, increment = 1) {
       serving: gameData.serving || 'A',
       timeouts: { A: [], B: [] },
       substitutions: { A: [], B: [] },
-      startTime: serverTimestamp()
+      startTime: new Date()
     };
   }
   
@@ -153,7 +153,7 @@ export async function updateSets(gameCode, winner) {
   // Mark current set as won
   if (sets[currentSet - 1]) {
     sets[currentSet - 1].winner = winner;
-    sets[currentSet - 1].endTime = serverTimestamp();
+    sets[currentSet - 1].endTime = new Date();
   }
   
   // Update sets won count
@@ -176,7 +176,7 @@ export async function updateSets(gameCode, winner) {
       serving: winner === 'A' ? 'B' : 'A', // Other team serves first
       timeouts: { A: [], B: [] },
       substitutions: { A: [], B: [] },
-      startTime: serverTimestamp()
+      startTime: new Date()
     };
   }
   
