@@ -56,24 +56,27 @@ export default function Home() {
           <input
             type="text"
             className="home-input"
-            placeholder="Enter Game Code"
+            placeholder="Enter 6-character Game Code"
             value={gameCodeInput}
             onChange={(e) => {
-              setGameCodeInput(e.target.value.toUpperCase().slice(0, 6));
+              const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+              setGameCodeInput(v);
               setError('');
             }}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                handleJoinGame();
-              }
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleJoinGame();
             }}
             maxLength={6}
+            minLength={6}
+            autoComplete="off"
+            inputMode="text"
             disabled={loading}
+            aria-label="6-character game code"
           />
           <button
             className="home-btn home-btn-primary"
             onClick={handleJoinGame}
-            disabled={loading || !gameCodeInput.trim()}
+            disabled={loading || gameCodeInput.length !== 6}
           >
             {loading ? 'Joining...' : 'Join Game'}
           </button>

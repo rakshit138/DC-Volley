@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<parameter name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lineup & Rotation Display - 2nd Referee</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background: #0f3460;
+  color: #fff;
+  padding: 15px;
+  overflow-y: auto;
+}
+
+.header {
+  background: #16213e;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  border: 2px solid #533483;
+  text-align: center;
+}
+
+.match-title {
+  font-size: 18px;
+  color: #e94560;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.match-info {
+  font-size: 12px;
+  color: #ccc;
+}
+
+.score-display {
+  background: #16213e;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  border: 2px solid #533483;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.team-score-box {
+  text-align: center;
+}
+
+.team-name-big {
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.team-a-color { color: #ff6b6b; }
+.team-b-color { color: #4ecdc4; }
+
+.score-big {
+  font-size: 42px;
+  font-weight: bold;
+  font-family: monospace;
+  line-height: 1;
+}
+
+.set-info {
+  text-align: center;
+}
+
+.set-number {
+  font-size: 14px;
+  color: #00d9ff;
+  margin-bottom: 6px;
+}
+
+.set-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.set-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  background: #1a1a2e;
+}
+
+.set-won-a {
+  background: #ff6b6b;
+  border-color: #ff6b6b;
+}
+
+.set-won-b {
+  background: #4ecdc4;
+  border-color: #4ecdc4;
+}
+
+.lineups-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.team-lineup {
+  background: #16213e;
+  padding: 10px;
+  border-radius: 8px;
+  border: 2px solid #533483;
+}
+
+.lineup-title {
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.court-visual {
+  background: #c67c3a;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.court-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.court-pos {
+  background: #d9984f;
+  border: 2px solid #fff;
+  border-radius: 4px;
+  padding: 8px 6px;
+  text-align: center;
+  min-height: 55px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+}
+
+.pos-label {
+  font-size: 8px;
+  font-weight: bold;
+  color: #fff;
+  background: rgba(0,0,0,0.4);
+  padding: 1px 3px;
+  border-radius: 2px;
+  margin-bottom: 3px;
+}
+
+.pos-jersey {
+  font-size: 22px;
+  color: #000;
+  font-weight: bold;
+}
+
+.pos-name {
+  font-size: 8px;
+  color: #000;
+  margin-top: 4px;
+}
+
+.libero-on-court {
+  background: #9c27b0 !important;
+  border-color: #9c27b0 !important;
+  box-shadow: 0 0 20px rgba(156,39,176,0.9);
+}
+
+.libero-on-court .pos-jersey {
+  color: #fff !important;
+}
+
+.libero-on-court .pos-name {
+  color: #fff !important;
+}
+
+.libero-on-court .pos-label {
+  background: rgba(255,255,255,0.3);
+}
+
+.server {
+  background: #ffeb3b;
+  box-shadow: 0 0 15px rgba(255,235,59,0.9);
+  border-width: 3px;
+  border-color: #ffc107;
+}
+
+.server::before {
+  content: '🏐';
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  background: linear-gradient(135deg, #ffeb3b 0%, #00d9ff 100%);
+  color: #000;
+  padding: 4px 7px;
+  border-radius: 50%;
+  font-size: 14px;
+  border: 2px solid #fff;
+}
+
+.rotation-order {
+  background: #0f3460;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.rotation-title {
+  font-size: 10px;
+  color: #00d9ff;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.rotation-list {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.rotation-item {
+  background: #16213e;
+  padding: 5px;
+  border-radius: 4px;
+  text-align: center;
+  border: 1px solid #533483;
+}
+
+.rotation-item.libero-rotation {
+  background: #9c27b0;
+  border-color: #9c27b0;
+}
+
+.rotation-pos {
+  font-size: 8px;
+  color: #e94560;
+  font-weight: bold;
+  margin-bottom: 2px;
+}
+
+.rotation-jersey {
+  font-size: 13px;
+  color: #fff;
+  font-weight: bold;
+}
+
+.rotation-name {
+  font-size: 7px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.libero-rotation .rotation-name {
+  color: #fff;
+}
+
+.liberos-section {
+  margin-top: 8px;
+  padding: 6px;
+  background: #9c27b0;
+  border-radius: 6px;
+}
+
+.liberos-title {
+  font-size: 10px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  color: #fff;
+}
+
+.libero-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.libero-item {
+  background: rgba(255,255,255,0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.on-court-indicator {
+  color: #00ff00;
+  font-size: 10px;
+  margin-left: 5px;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #533483;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 8px;
+  color: #888;
+  display: block;
+}
+
+.stat-value {
+  font-size: 13px;
+  color: #00d9ff;
+  font-weight: bold;
+  display: block;
+  margin-top: 3px;
+}
+
+.no-data {
+  text-align: center;
+  padding: 60px 20px;
+  font-size: 18px;
+  color: #888;
+}
+
+.refresh-info {
+  text-align: center;
+  font-size: 12px;
+  color: #888;
+  margin-top: 20px;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="match-title" id="matchTitle">Lineup & Rotation Display</div>
+  <div class="match-info" id="matchInfo">2nd Referee View</div>
+</div>
+
+<div id="content"></div>
+
+<div class="refresh-info">Auto-refreshes every 2 seconds to show live updates</div>
+
+<div style="text-align:center;padding:15px;color:#666;font-size:11px;background:#0f3460;border-top:2px solid #16213e;margin-top:20px">
+  DC_Volley © 2025 | Digital Volleyball Scoresheet
+</div>
+
+<script>
+var gameData = null;
+
+function loadGameData() {
+  try {
+    var data = localStorage.getItem('volleyballGameData');
+    if (data) {
+      gameData = JSON.parse(data);
+      renderDisplay();
+    } else {
+      document.getElementById('content').innerHTML = 
+        '<div class="no-data">No match data available. Please start a match in the main scoresheet.</div>';
+    }
+  } catch (e) {
+    console.error('Error loading game data:', e);
+    document.getElementById('content').innerHTML = 
+      '<div class="no-data">Error loading match data.</div>';
+  }
+}
+
+function renderDisplay() {
+  if (!gameData || !gameData.sets || gameData.sets.length === 0) {
+    document.getElementById('content').innerHTML = 
+      '<div class="no-data">Waiting for match to start...</div>';
+    return;
+  }
+  
+  var set = gameData.sets[gameData.currentSet - 1];
+  if (!set) return;
+  
+  // Update header
+  document.getElementById('matchTitle').textContent = gameData.matchInfo.competition || 'Match';
+  document.getElementById('matchInfo').textContent = 
+    (gameData.matchInfo.venue || '') + (gameData.matchInfo.venue ? ' | ' : '') + (gameData.matchInfo.matchDate || '');
+  
+  var html = '';
+  
+  // Check if sides are swapped
+  var isSwapped = gameData.swapped || false;
+  
+  // Determine display order (left team, right team)
+  var leftTeam = isSwapped ? 'B' : 'A';
+  var rightTeam = isSwapped ? 'A' : 'B';
+  
+  // Score Display
+  html += '<div class="score-display">';
+  
+  // Left team score
+  html += '<div class="team-score-box">';
+  html += '<div class="team-name-big team-' + leftTeam.toLowerCase() + '-color">' + gameData.matchInfo['team' + leftTeam + 'Name'] + '</div>';
+  html += '<div class="score-big team-' + leftTeam.toLowerCase() + '-color">' + set.score[leftTeam] + '</div>';
+  html += '</div>';
+  
+  // Set info in middle
+  html += '<div class="set-info">';
+  html += '<div class="set-number">SET ' + gameData.currentSet + '</div>';
+  html += '<div class="set-dots">';
+  
+  var totalSets = parseInt(gameData.matchInfo.format);
+  for (var i = 0; i < totalSets; i++) {
+    var dotClass = 'set-dot';
+    if (i < gameData.sets.length && gameData.sets[i].winner) {
+      dotClass += gameData.sets[i].winner === 'A' ? ' set-won-a' : ' set-won-b';
+    }
+    html += '<div class="' + dotClass + '">' + (i + 1) + '</div>';
+  }
+  
+  html += '</div>';
+  html += '</div>';
+  
+  // Right team score
+  html += '<div class="team-score-box">';
+  html += '<div class="team-name-big team-' + rightTeam.toLowerCase() + '-color">' + gameData.matchInfo['team' + rightTeam + 'Name'] + '</div>';
+  html += '<div class="score-big team-' + rightTeam.toLowerCase() + '-color">' + set.score[rightTeam] + '</div>';
+  html += '</div>';
+  
+  html += '</div>';
+  
+  // Lineups
+  html += '<div class="lineups-container">';
+  
+  // Left team lineup
+  html += '<div class="team-lineup">';
+  html += '<div class="lineup-title" style="color: ' + (leftTeam === 'A' ? '#ff6b6b' : '#4ecdc4') + '">' + gameData.matchInfo['team' + leftTeam + 'Name'] + '</div>';
+  html += renderCourt(leftTeam, set);
+  html += renderRotationOrder(leftTeam);
+  html += renderLiberos(leftTeam);
+  html += renderStats(leftTeam, set);
+  html += '</div>';
+  
+  // Right team lineup
+  html += '<div class="team-lineup">';
+  html += '<div class="lineup-title" style="color: ' + (rightTeam === 'A' ? '#ff6b6b' : '#4ecdc4') + '">' + gameData.matchInfo['team' + rightTeam + 'Name'] + '</div>';
+  html += renderCourt(rightTeam, set);
+  html += renderRotationOrder(rightTeam);
+  html += renderLiberos(rightTeam);
+  html += renderStats(rightTeam, set);
+  html += '</div>';
+  
+  html += '</div>';
+  
+  document.getElementById('content').innerHTML = html;
+}
+
+function renderCourt(team, set) {
+  var html = '<div class="court-visual"><div class="court-grid">';
+  
+  var lineup = gameData.teams[team].lineup;
+  
+  // Position order matches main UI: P4, P3, P2, P5, P6, P1
+  // lineup array: [P1, P2, P3, P4, P5, P6] = indices [0, 1, 2, 3, 4, 5]
+  // Display order needs indices: [3, 2, 1, 4, 5, 0]
+  var posOrder = [3, 2, 1, 4, 5, 0];
+  var labels = ['P4-LF', 'P3-MF', 'P2-RF', 'P5-LB', 'P6-MB', 'P1-RB'];
+  var actualPos = [4, 3, 2, 5, 6, 1]; // For checking server position
+  
+  for (var i = 0; i < 6; i++) {
+    var idx = posOrder[i];
+    var jersey = lineup[idx];
+    
+    var player = null;
+    if (jersey && gameData.teams[team].players) {
+      player = gameData.teams[team].players.find(function(p) { 
+        return p.jersey === jersey; 
+      });
+    }
+    
+    var posClass = 'court-pos';
+    
+    // Check if server (P1 = index 0 in lineup)
+    if (idx === 0 && set.serving === team) {
+      posClass += ' server';
+    }
+    
+    // Check if libero
+    var isLibero = false;
+    if (player && (player.role === 'libero1' || player.role === 'libero2')) {
+      posClass += ' libero-on-court';
+      isLibero = true;
+    }
+    
+    html += '<div class="' + posClass + '">';
+    html += '<div class="pos-label">' + labels[i] + '</div>';
+    html += '<div class="pos-jersey">';
+    if (player) {
+      html += '#' + player.jersey;
+    } else {
+      html += '-';
+    }
+    html += '</div>';
+    if (player && player.name) {
+      html += '<div class="pos-name">' + player.name.split(' ')[0] + '</div>';
+    }
+    html += '</div>';
+  }
+  
+  html += '</div></div>';
+  return html;
+}
+
+function renderRotationOrder(team) {
+  var html = '<div class="rotation-order">';
+  html += '<div class="rotation-title">Rotation Order (Next →)</div>';
+  html += '<div class="rotation-list">';
+  
+  var lineup = gameData.teams[team].lineup;
+  
+  for (var i = 0; i < 6; i++) {
+    var jersey = lineup[i];
+    var player = null;
+    var isLibero = false;
+    
+    if (jersey && gameData.teams[team].players) {
+      player = gameData.teams[team].players.find(function(p) { 
+        return p.jersey === jersey; 
+      });
+      if (player && (player.role === 'libero1' || player.role === 'libero2')) {
+        isLibero = true;
+      }
+    }
+    
+    var itemClass = 'rotation-item';
+    if (isLibero) {
+      itemClass += ' libero-rotation';
+    }
+    
+    html += '<div class="' + itemClass + '">';
+    html += '<div class="rotation-pos">P' + (i + 1) + '</div>';
+    html += '<div class="rotation-jersey">#' + (jersey || '-') + '</div>';
+    if (player && player.name) {
+      html += '<div class="rotation-name">' + player.name.split(' ')[0] + '</div>';
+    }
+    html += '</div>';
+  }
+  
+  html += '</div></div>';
+  return html;
+}
+
+function renderLiberos(team) {
+  if (!gameData.teams[team].players) return '';
+  
+  var liberos = gameData.teams[team].players.filter(function(p) {
+    return p.role === 'libero1' || p.role === 'libero2';
+  });
+  
+  if (liberos.length === 0) return '';
+  
+  var html = '<div class="liberos-section">';
+  html += '<div class="liberos-title">Liberos</div>';
+  html += '<div class="libero-list">';
+  
+  liberos.forEach(function(libero) {
+    var isOnCourt = gameData.teams[team].lineup.includes(libero.jersey);
+    
+    html += '<div class="libero-item">';
+    html += '#' + libero.jersey + ' ' + libero.name.split(' ')[0];
+    if (isOnCourt) {
+      html += '<span class="on-court-indicator">● ON COURT</span>';
+    }
+    html += '</div>';
+  });
+  
+  html += '</div></div>';
+  return html;
+}
+
+function renderStats(team, set) {
+  var timeoutsUsed = set.timeouts[team] ? set.timeouts[team].length : 0;
+  var subsUsed = set.substitutions[team] ? set.substitutions[team].length : 0;
+  
+  var html = '<div class="stats-row">';
+  html += '<div class="stat-item">';
+  html += '<span class="stat-label">Timeouts Left</span>';
+  html += '<span class="stat-value">' + (2 - timeoutsUsed) + ' / 2</span>';
+  html += '</div>';
+  html += '<div class="stat-item">';
+  html += '<span class="stat-label">Subs Left</span>';
+  html += '<span class="stat-value">' + (6 - subsUsed) + ' / 6</span>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+// Initial load
+loadGameData();
+
+// Auto-refresh every 2 seconds
+setInterval(loadGameData, 2000);
+</script>
+
+</body>
+</html>

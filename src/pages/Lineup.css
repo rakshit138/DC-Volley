@@ -15,6 +15,24 @@
   text-align: center;
 }
 
+.lineup-header.header-match {
+  padding: 12px;
+  margin-bottom: 15px;
+  border-radius: 8px;
+}
+
+.match-title {
+  font-size: 18px;
+  color: #e94560;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.match-info {
+  font-size: 12px;
+  color: #ccc;
+}
+
 .lineup-header h1 {
   color: #e94560;
   font-size: 32px;
@@ -44,14 +62,83 @@
   align-items: center;
 }
 
+.lineup-score-display.score-display-strip {
+  padding: 12px;
+  margin-bottom: 15px;
+  border-radius: 8px;
+}
+
 .lineup-score-item {
   text-align: center;
+}
+
+.lineup-score-item.team-score-box .lineup-score-team {
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.lineup-score-item.team-score-box .lineup-score-value {
+  font-size: 42px;
+  font-family: monospace;
+  line-height: 1;
+}
+
+.set-info-middle {
+  text-align: center;
+}
+
+.set-number {
+  font-size: 14px;
+  color: #00d9ff;
+  margin-bottom: 6px;
+}
+
+.set-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.set-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  background: #1a1a2e;
+}
+
+.set-dot.set-won-a {
+  background: #ff6b6b;
+  border-color: #ff6b6b;
+}
+
+.set-dot.set-won-b {
+  background: #4ecdc4;
+  border-color: #4ecdc4;
 }
 
 .lineup-score-team {
   font-size: 20px;
   font-weight: bold;
   margin-bottom: 10px;
+}
+
+.team-name-big {
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.score-big {
+  font-size: 42px;
+  font-weight: bold;
+  font-family: monospace;
+  line-height: 1;
 }
 
 .team-a-color {
@@ -75,9 +162,14 @@
 
 .lineup-courts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 20px;
   margin-bottom: 20px;
+}
+
+.lineup-courts.lineups-container {
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 15px;
 }
 
 .lineup-team-section {
@@ -95,6 +187,13 @@
   font-size: 24px;
   text-align: center;
   font-weight: bold;
+}
+
+.lineup-title {
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  text-align: center;
 }
 
 .lineup-court {
@@ -232,6 +331,72 @@
   color: #fff;
 }
 
+.liberos-section {
+  margin-top: 8px;
+  padding: 6px;
+  background: #9c27b0;
+  border-radius: 6px;
+}
+
+.liberos-title {
+  font-size: 10px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  color: #fff;
+}
+
+.libero-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.libero-item {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.on-court-indicator {
+  color: #00ff00;
+  font-size: 10px;
+  margin-left: 5px;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #533483;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 8px;
+  color: #888;
+  display: block;
+}
+
+.stat-value {
+  font-size: 13px;
+  color: #00d9ff;
+  font-weight: bold;
+  display: block;
+  margin-top: 3px;
+}
+
+.lineups-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
 .lineup-back-home {
   display: block;
   margin: 30px auto;
@@ -274,7 +439,8 @@
 }
 
 @media (max-width: 768px) {
-  .lineup-courts {
+  .lineup-courts,
+  .lineup-courts.lineups-container {
     grid-template-columns: 1fr;
   }
 

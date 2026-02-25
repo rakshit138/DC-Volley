@@ -1,0 +1,263 @@
+.sanction-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.sanction-modal-content {
+  background: #16213e;
+  padding: 24px;
+  border-radius: 10px;
+  border: 3px solid #533483;
+  max-width: 720px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.sanction-modal-title {
+  color: #ffd700;
+  font-size: 20px;
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+.sanction-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.sanction-tab {
+  padding: 14px;
+  border: 3px solid #533483;
+  border-radius: 8px;
+  background: #16213e;
+  color: #aaa;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  text-align: center;
+}
+
+.sanction-tab.active {
+  border-color: #ffd700;
+  background: #2d1f00;
+  color: #ffd700;
+}
+
+.sanction-tab:last-child.active {
+  border-color: #00d9ff;
+  background: #0f3460;
+  color: #00d9ff;
+}
+
+.tab-sub {
+  font-size: 10px;
+  color: inherit;
+  opacity: 0.9;
+}
+
+.sanction-field {
+  margin-bottom: 14px;
+}
+
+.sanction-field label {
+  display: block;
+  color: #aaa;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.sanction-team-btns,
+.sanction-person-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.sanction-team-btns button,
+.sanction-person-btns button {
+  padding: 10px 12px;
+  background: #16213e;
+  border: 2px solid #533483;
+  border-radius: 5px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.sanction-team-btns button.active,
+.sanction-person-btns button.active {
+  border-color: #00d9ff;
+  background: #0f3460;
+}
+
+.sanction-jersey-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: 2px solid #533483;
+  border-radius: 5px;
+  background: #1a1a2e;
+  color: #fff;
+  font-size: 14px;
+}
+
+.sanction-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sanction-type-grid.two-cols {
+  grid-template-columns: 1fr 1fr;
+}
+
+.sanction-type-btn {
+  padding: 12px;
+  background: #16213e;
+  border: 2px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 13px;
+  text-align: center;
+}
+
+.sanction-type-btn.selected {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.type-sub {
+  font-size: 10px;
+  color: #aaa;
+  display: block;
+  margin-top: 2px;
+}
+
+.sanction-select {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #533483;
+  border-radius: 5px;
+  background: #1a1a2e;
+  color: #fff;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.sanction-notes {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px;
+  border: 2px solid #533483;
+  border-radius: 5px;
+  background: #1a1a2e;
+  color: #fff;
+  font-size: 12px;
+  min-height: 50px;
+  resize: none;
+}
+
+.sanction-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.sanction-apply {
+  flex: 1;
+  padding: 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.sanction-apply.misconduct {
+  background: #c00;
+  color: #fff;
+}
+
+.sanction-apply.delay {
+  background: #0056b3;
+  color: #fff;
+}
+
+.sanction-apply:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sanction-cancel {
+  padding: 14px 20px;
+  background: #444;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sanction-delay-status {
+  background: #0f3460;
+  padding: 14px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+.delay-status-title {
+  font-size: 13px;
+  color: #00d9ff;
+  margin-bottom: 10px;
+  font-weight: bold;
+}
+
+.delay-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.delay-team-stat {
+  color: #ccc;
+  font-size: 13px;
+}
+
+.sanction-log {
+  margin-top: 16px;
+  background: #0f3460;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.sanction-log-title {
+  font-size: 11px;
+  color: #888;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.sanction-log-content {
+  font-size: 11px;
+  max-height: 90px;
+  overflow-y: auto;
+  color: #ccc;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

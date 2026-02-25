@@ -43,10 +43,11 @@
 
 .home-input {
   width: 100%;
+  min-width: 200px;
   padding: 18px;
   font-size: 24px;
   text-align: center;
-  letter-spacing: 4px;
+  letter-spacing: 6px;
   font-weight: bold;
   background: #0f3460;
   border: 3px solid #533483;
@@ -54,6 +55,7 @@
   color: #fff;
   text-transform: uppercase;
   transition: all 0.3s;
+  box-sizing: border-box;
 }
 
 .home-input:focus {

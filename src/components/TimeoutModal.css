@@ -1,0 +1,88 @@
+.timeout-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.timeout-modal-content {
+  background: #16213e;
+  padding: 40px;
+  border-radius: 15px;
+  text-align: center;
+  border: 4px solid #ff9500;
+  min-width: 320px;
+}
+
+.timeout-modal-team {
+  font-size: 24px;
+  color: #fff;
+  margin-bottom: 20px;
+}
+
+.timeout-modal-timer {
+  font-size: 100px;
+  font-weight: bold;
+  color: #ff9500;
+  font-family: monospace;
+  line-height: 1;
+  margin: 20px 0;
+}
+
+.timeout-modal-score-label {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 10px;
+}
+
+.timeout-modal-scores {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 40px;
+  margin-top: 16px;
+  background: #0f3460;
+  padding: 20px;
+  border-radius: 10px;
+  border: 2px solid #533483;
+}
+
+.timeout-modal-team-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeout-modal-team-name {
+  font-size: 16px;
+  font-weight: bold;
+  color: #fff;
+}
+
+.timeout-modal-points {
+  font-size: 42px;
+  font-weight: bold;
+  font-family: monospace;
+}
+
+.timeout-modal-points.team-a { color: #ff6b9d; }
+.timeout-modal-points.team-b { color: #4ecdc4; }
+
+.timeout-modal-close {
+  margin-top: 24px;
+  padding: 12px 24px;
+  background: #ff9500;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.timeout-modal-close:hover {
+  opacity: 0.9;
+}

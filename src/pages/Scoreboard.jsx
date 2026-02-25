@@ -52,6 +52,11 @@ export default function Scoreboard() {
   const scoreA = currentSetData.score?.A || 0;
   const scoreB = currentSetData.score?.B || 0;
   const serving = currentSetData.serving || 'A';
+  const timeoutsUsedA = currentSetData.timeouts?.A?.length ?? 0;
+  const timeoutsUsedB = currentSetData.timeouts?.B?.length ?? 0;
+  const subsUsedA = currentSetData.substitutions?.A?.length ?? 0;
+  const subsUsedB = currentSetData.substitutions?.B?.length ?? 0;
+  const subLimit = gameData.subLimit ?? 6;
 
   return (
     <div className="scoreboard-container">
@@ -142,9 +147,15 @@ export default function Scoreboard() {
             </div>
           </div>
           <div className="scoreboard-footer-item">
-            <div className="scoreboard-footer-label">STATUS</div>
-            <div className="scoreboard-footer-value status-live">
-              {status}
+            <div className="scoreboard-footer-label">TIMEOUTS REMAINING</div>
+            <div className="scoreboard-footer-value">
+              {2 - timeoutsUsedA} - {2 - timeoutsUsedB}
+            </div>
+          </div>
+          <div className="scoreboard-footer-item">
+            <div className="scoreboard-footer-label">SUBS REMAINING</div>
+            <div className="scoreboard-footer-value">
+              {subLimit - subsUsedA} - {subLimit - subsUsedB}
             </div>
           </div>
         </div>

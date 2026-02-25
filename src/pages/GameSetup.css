@@ -308,6 +308,44 @@
   background: #16213e;
 }
 
+.roster-input-error,
+.roster-input.roster-input-error {
+  border-color: #ff4444 !important;
+  box-shadow: 0 0 0 2px rgba(255, 68, 68, 0.5);
+  background: rgba(255, 68, 68, 0.1);
+}
+
+.roster-select.roster-input-error {
+  border-color: #ff4444 !important;
+  box-shadow: 0 0 0 2px rgba(255, 68, 68, 0.5);
+  background: #fff;
+  color: #1a1a2e;
+}
+
+.roster-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 14px 24px;
+  border-radius: 8px;
+  font-weight: bold;
+  z-index: 3000;
+  max-width: 90%;
+  text-align: center;
+  animation: rosterToastIn 0.3s ease;
+}
+.roster-toast-error {
+  background: #c00;
+  color: #fff;
+  border: 2px solid #ff4444;
+  box-shadow: 0 4px 20px rgba(255, 0, 0, 0.4);
+}
+@keyframes rosterToastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 /* Lineup Setup Styles */
 .lineup-setup-section {
   display: grid;
