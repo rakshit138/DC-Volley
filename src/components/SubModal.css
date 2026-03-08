@@ -119,3 +119,13 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.sub-modal-exceptional-warning {
+  background: #ff3b3b;
+  color: #fff;
+  padding: 12px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+  font-size: 13px;
+  line-height: 1.5;
+}

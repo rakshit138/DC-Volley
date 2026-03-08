@@ -37,7 +37,10 @@ export async function createGame(gameCode, gameData) {
     },
     sanctionSystem: gameData.sanctionSystem || {
       misconduct: { A: [], B: [] },
-      delay: { A: { count: 0, log: [] }, B: { count: 0, log: [] } }
+      delay: { A: { count: 0, log: [] }, B: { count: 0, log: [] } },
+      expelled: { A: [], B: [] }, // [{jersey, set}] - cleared next set
+      disqualified: { A: [], B: [] }, // [{jersey}] - entire match
+      coachDisqualified: { A: false, B: false }
     }
   };
 
@@ -267,6 +270,14 @@ export async function recordTimeout(gameCode, team) {
     return { ok: false, message: 'Maximum 2 timeouts per set' };
   }
 
+  // Save action to history BEFORE making changes
+  const actionHistory = gameData.actionHistory || [];
+  const actionToSave = {
+    type: 'timeout',
+    team: team,
+    setNumber: currentSet
+  };
+  
   set.timeouts[team].push({
     time: Date.now(),
     score: {
@@ -276,8 +287,15 @@ export async function recordTimeout(gameCode, team) {
   });
   sets[currentSet - 1] = set;
 
+  // Update action history (keep last 50 actions)
+  const updatedActionHistory = [...actionHistory, actionToSave];
+  if (updatedActionHistory.length > 50) {
+    updatedActionHistory.shift();
+  }
+
   await updateDoc(gameRef, {
     sets,
+    actionHistory: updatedActionHistory,
     updatedAt: serverTimestamp()
   });
   return { ok: true };
@@ -315,31 +333,127 @@ export async function recordSubstitution(gameCode, team, playerOut, playerIn) {
 
   const set = sets[currentSet - 1];
   if (!set.substitutions) set.substitutions = { A: [], B: [] };
-  if (set.substitutions[team].length >= subLimit) {
-    return { ok: false, message: `Maximum ${subLimit} substitutions per set reached` };
+  if (!set.substitutionTracking) set.substitutionTracking = { A: {}, B: {} };
+  if (!set.completedSubstitutions) set.completedSubstitutions = { A: [], B: [] };
+  
+  const playerOutStr = String(playerOut);
+  const playerInStr = String(playerIn);
+  
+  // Count completed substitutions (FIVB rule: each substitution action counts)
+  const actualSubCount = (set.substitutions[team] || []).length;
+  if (actualSubCount >= subLimit) {
+    return { ok: false, message: `Maximum ${subLimit} substitutions per set reached. Use exceptional substitution for injuries.` };
+  }
+  
+  // Rule 1: Check if playerOut has completed their substitution (cannot sub again)
+  if ((set.completedSubstitutions[team] || []).includes(playerOutStr)) {
+    return { ok: false, message: `Player #${playerOutStr} has completed their substitution and cannot be substituted again this set.` };
+  }
+  
+  // Rule 2: If playerOut is already paired, they can ONLY sub with their paired player
+  if (set.substitutionTracking[team]?.[playerOutStr]) {
+    const pairedPlayer = set.substitutionTracking[team][playerOutStr].pairedWith;
+    if (pairedPlayer !== playerInStr) {
+      return { ok: false, message: `Player #${playerOutStr} is paired with Player #${pairedPlayer}. They can ONLY substitute with Player #${pairedPlayer}.` };
+    }
+  }
+  
+  // Rule 3: If playerIn is already paired, they can ONLY sub with their paired player
+  if (set.substitutionTracking[team]?.[playerInStr]) {
+    const pairedPlayer = set.substitutionTracking[team][playerInStr].pairedWith;
+    if (pairedPlayer !== playerOutStr) {
+      return { ok: false, message: `Player #${playerInStr} is paired with Player #${pairedPlayer}. They can ONLY substitute with Player #${pairedPlayer}.` };
+    }
   }
 
+  // Save action to history BEFORE making changes
+  const actionHistory = gameData.actionHistory || [];
+  const previousLineup = teams[team].lineup ? [...teams[team].lineup] : [];
+  const previousSubstitutionTracking = set.substitutionTracking?.[team] 
+    ? JSON.parse(JSON.stringify(set.substitutionTracking[team]))
+    : {};
+  const previousCompletedSubstitutions = set.completedSubstitutions?.[team] 
+    ? [...set.completedSubstitutions[team]]
+    : [];
+  
   const lineup = [...teams[team].lineup];
   while (lineup.length < 6) lineup.push(null);
-  const posIndex = lineup.indexOf(String(playerOut));
+  const posIndex = lineup.indexOf(playerOutStr);
   if (posIndex === -1) {
     return { ok: false, message: 'Player not found on court' };
+  }
+  
+  // Check if this is a return substitution (player coming back)
+  const isReturning = set.substitutionTracking[team]?.[playerOutStr] && 
+                      set.substitutionTracking[team][playerOutStr].pairedWith === playerInStr;
+  
+  if (isReturning) {
+    // This completes the substitution for BOTH players
+    if (!set.substitutionTracking[team][playerOutStr]) {
+      set.substitutionTracking[team][playerOutStr] = {};
+    }
+    if (!set.substitutionTracking[team][playerInStr]) {
+      set.substitutionTracking[team][playerInStr] = {};
+    }
+    set.substitutionTracking[team][playerOutStr].completed = true;
+    set.substitutionTracking[team][playerInStr].completed = true;
+    
+    // Mark both as completed
+    if (!set.completedSubstitutions[team].includes(playerInStr)) {
+      set.completedSubstitutions[team].push(playerInStr);
+    }
+    if (!set.completedSubstitutions[team].includes(playerOutStr)) {
+      set.completedSubstitutions[team].push(playerOutStr);
+    }
+  } else {
+    // New pairing
+    if (!set.substitutionTracking[team]) {
+      set.substitutionTracking[team] = {};
+    }
+    set.substitutionTracking[team][playerOutStr] = {
+      pairedWith: playerInStr,
+      completed: false
+    };
+    set.substitutionTracking[team][playerInStr] = {
+      pairedWith: playerOutStr,
+      completed: false
+    };
   }
 
   set.substitutions[team].push({
     time: Date.now(),
     score: { A: set.score?.A ?? 0, B: set.score?.B ?? 0 },
-    playerOut: String(playerOut),
-    playerIn: String(playerIn),
+    playerOut: playerOutStr,
+    playerIn: playerInStr,
     position: posIndex + 1
   });
-  lineup[posIndex] = String(playerIn);
+  lineup[posIndex] = playerInStr;
   teams[team].lineup = lineup;
   sets[currentSet - 1] = set;
+
+  // Save action to history
+  const actionToSave = {
+    type: 'substitution',
+    team: team,
+    playerOut: playerOutStr,
+    playerIn: playerInStr,
+    position: posIndex + 1,
+    setNumber: currentSet,
+    previousLineup: previousLineup,
+    previousSubstitutionTracking: previousSubstitutionTracking,
+    previousCompletedSubstitutions: previousCompletedSubstitutions
+  };
+  
+  // Update action history (keep last 50 actions)
+  const updatedActionHistory = [...actionHistory, actionToSave];
+  if (updatedActionHistory.length > 50) {
+    updatedActionHistory.shift();
+  }
 
   await updateDoc(gameRef, {
     sets,
     teams,
+    actionHistory: updatedActionHistory,
     updatedAt: serverTimestamp()
   });
   return { ok: true };
@@ -407,13 +521,37 @@ export async function rotateLineup(gameCode, team) {
   const gameData = gameSnap.data();
   const teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
   if (!teams[team] || !Array.isArray(teams[team].lineup)) throw new Error('Team or lineup not found');
+  
+  // Save action to history BEFORE making changes
+  const actionHistory = gameData.actionHistory || [];
+  const previousLineup = teams[team].lineup ? [...teams[team].lineup] : [];
+  const previousLiberoReplacements = gameData.liberoReplacements?.[team] 
+    ? JSON.parse(JSON.stringify(gameData.liberoReplacements[team]))
+    : [];
+  
   const lineup = [...teams[team].lineup];
   if (lineup.length === 0) throw new Error('Lineup is empty');
   const first = lineup.shift();
   lineup.push(first);
   teams[team].lineup = lineup;
+  
+  // Save action to history
+  const actionToSave = {
+    type: 'rotation',
+    team: team,
+    previousLineup: previousLineup,
+    previousLiberoReplacements: previousLiberoReplacements
+  };
+  
+  // Update action history (keep last 50 actions)
+  const updatedActionHistory = [...actionHistory, actionToSave];
+  if (updatedActionHistory.length > 50) {
+    updatedActionHistory.shift();
+  }
+  
   await updateDoc(gameRef, {
     teams,
+    actionHistory: updatedActionHistory,
     updatedAt: serverTimestamp()
   });
 }
@@ -454,9 +592,10 @@ export async function recordLiberoReplacement(gameCode, team, positionIndex, lib
 }
 
 /**
- * Undoes the last score change
+ * Undoes the last action (point, timeout, substitution, libero, rotation, etc.)
+ * Matches original HTML undoPoint() function exactly
  * @param {string} gameCode - Game code
- * @returns {Promise<void>}
+ * @returns {Promise<{ ok: boolean, message?: string }>}
  */
 export async function undoLastPoint(gameCode) {
   const gameRef = doc(db, GAMES_COLLECTION, gameCode);
@@ -467,32 +606,210 @@ export async function undoLastPoint(gameCode) {
   }
   
   const gameData = gameSnap.data();
-  const currentSet = gameData.currentSet || 1;
-  const sets = gameData.sets || [];
+  const actionHistory = gameData.actionHistory || [];
   
-  if (!sets[currentSet - 1]) {
-    throw new Error('No set data found');
+  if (actionHistory.length === 0) {
+    return { ok: false, message: 'No actions to undo' };
   }
   
-  const set = sets[currentSet - 1];
+  const currentSet = gameData.currentSet || 1;
+  let sets = [...(gameData.sets || [])];
+  let teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
   
-  // Simple undo: decrement the serving team's score
-  // In a more complex implementation, you might track history
-  const servingTeam = set.serving || 'A';
-  const currentScore = set.score[servingTeam] || 0;
+  // Check if we're at start of Set 2+ with 0 points (special case: revert to previous set)
+  const currentSetData = sets[currentSet - 1];
+  if (currentSetData && currentSet > 1 && currentSetData.score?.A === 0 && currentSetData.score?.B === 0) {
+    sets.pop();
+    const newCurrentSet = currentSet - 1;
+    const prevSet = sets[newCurrentSet - 1];
+    
+    if (prevSet) {
+      delete prevSet.winner;
+      delete prevSet.endTime;
+      
+      if (prevSet.startingLineup) {
+        teams.A.lineup = prevSet.startingLineup.A ? [...prevSet.startingLineup.A] : [];
+        teams.B.lineup = prevSet.startingLineup.B ? [...prevSet.startingLineup.B] : [];
+      }
+      
+      const liberoReplacements = { A: [], B: [] };
+      
+      await updateDoc(gameRef, {
+        sets,
+        teams,
+        liberoReplacements,
+        currentSet: newCurrentSet,
+        actionHistory: actionHistory.slice(0, -1),
+        updatedAt: serverTimestamp()
+      });
+      
+      return { ok: true, message: `Undone: Canceled Set ${currentSet}, returned to Set ${newCurrentSet}` };
+    }
+  }
   
-  if (currentScore > 0) {
-    set.score[servingTeam] = currentScore - 1;
-    // Toggle serving team
-    set.serving = servingTeam === 'A' ? 'B' : 'A';
+  // Get last action
+  const lastAction = actionHistory[actionHistory.length - 1];
+  const updatedActionHistory = actionHistory.slice(0, -1);
+  
+  if (lastAction.type === 'point') {
+    const set = sets[currentSet - 1];
+    if (!set) {
+      return { ok: false, message: 'No current set' };
+    }
+    
+    set.score = { ...lastAction.previousScore };
+    set.serving = lastAction.previousServing;
+    teams.A.lineup = lastAction.previousLineupA ? [...lastAction.previousLineupA] : [];
+    teams.B.lineup = lastAction.previousLineupB ? [...lastAction.previousLineupB] : [];
+    
+    const liberoReplacements = {
+      A: lastAction.previousLiberoReplacementsA ? JSON.parse(JSON.stringify(lastAction.previousLiberoReplacementsA)) : [],
+      B: lastAction.previousLiberoReplacementsB ? JSON.parse(JSON.stringify(lastAction.previousLiberoReplacementsB)) : []
+    };
+    
+    const matchSummary = gameData.matchSummary || [];
+    const restoredSummary = lastAction.previousSummaryLength !== undefined 
+      ? matchSummary.slice(0, lastAction.previousSummaryLength)
+      : matchSummary;
+    
+    let sanctionSystem = gameData.sanctionSystem;
+    if (lastAction.sanctionSnapshot) {
+      sanctionSystem = JSON.parse(JSON.stringify(lastAction.sanctionSnapshot));
+    }
+    
+    let setsWon = gameData.setsWon || { A: 0, B: 0 };
+    if (set.winner) {
+      const winner = set.winner;
+      delete set.winner;
+      delete set.endTime;
+      if (setsWon[winner] > 0) {
+        setsWon[winner] = setsWon[winner] - 1;
+      }
+    }
     
     sets[currentSet - 1] = set;
     
     await updateDoc(gameRef, {
       sets,
+      setsWon,
+      teams,
+      liberoReplacements,
+      matchSummary: restoredSummary,
+      sanctionSystem,
+      actionHistory: updatedActionHistory,
+      status: 'LIVE',
+      currentSet: currentSet,
       updatedAt: serverTimestamp()
     });
+    
+    return { ok: true, message: `Undone: Point for Team ${lastAction.team}, score restored to ${lastAction.previousScore.A}-${lastAction.previousScore.B}` };
+  } else if (lastAction.type === 'timeout') {
+    const set = sets[currentSet - 1];
+    if (set && set.timeouts && set.timeouts[lastAction.team]) {
+      set.timeouts[lastAction.team].pop();
+      sets[currentSet - 1] = set;
+      
+      await updateDoc(gameRef, {
+        sets,
+        actionHistory: updatedActionHistory,
+        updatedAt: serverTimestamp()
+      });
+      
+      return { ok: true, message: `Undone: Timeout for Team ${lastAction.team}` };
+    }
+  } else if (lastAction.type === 'substitution') {
+    const set = sets[currentSet - 1];
+    if (set && set.substitutions && set.substitutions[lastAction.team]) {
+      set.substitutions[lastAction.team].pop();
+      teams[lastAction.team].lineup = lastAction.previousLineup ? [...lastAction.previousLineup] : teams[lastAction.team].lineup;
+      
+      if (lastAction.previousSubstitutionTracking) {
+        if (!set.substitutionTracking) set.substitutionTracking = { A: {}, B: {} };
+        set.substitutionTracking[lastAction.team] = JSON.parse(JSON.stringify(lastAction.previousSubstitutionTracking));
+      }
+      
+      if (lastAction.previousCompletedSubstitutions) {
+        if (!set.completedSubstitutions) set.completedSubstitutions = { A: [], B: [] };
+        set.completedSubstitutions[lastAction.team] = [...lastAction.previousCompletedSubstitutions];
+      }
+      
+      sets[currentSet - 1] = set;
+      
+      await updateDoc(gameRef, {
+        sets,
+        teams,
+        actionHistory: updatedActionHistory,
+        updatedAt: serverTimestamp()
+      });
+      
+      return { ok: true, message: `Undone: Substitution for Team ${lastAction.team}` };
+    }
+  } else if (lastAction.type === 'libero') {
+    // Remove libero replacement from tracking
+    const liberoReplacements = gameData.liberoReplacements || { A: [], B: [] };
+    liberoReplacements[lastAction.team] = (liberoReplacements[lastAction.team] || []).filter(r => 
+      !(r.libero === String(lastAction.libero) && r.originalPlayer === String(lastAction.originalPlayer))
+    );
+    
+    // Restore original player in lineup
+    const posIndex = teams[lastAction.team].lineup.indexOf(String(lastAction.libero));
+    if (posIndex !== -1) {
+      teams[lastAction.team].lineup[posIndex] = String(lastAction.originalPlayer);
+    }
+    
+    await updateDoc(gameRef, {
+      teams,
+      liberoReplacements,
+      actionHistory: updatedActionHistory,
+      updatedAt: serverTimestamp()
+    });
+    
+    return { ok: true, message: `Undone: Libero replacement for Team ${lastAction.team}` };
+  } else if (lastAction.type === 'exceptionalSubstitution') {
+    const set = sets[currentSet - 1];
+    if (set && set.exceptionalSubstitutions && set.exceptionalSubstitutions[lastAction.team]) {
+      // Remove last exceptional substitution
+      set.exceptionalSubstitutions[lastAction.team].pop();
+      
+      // Restore lineup
+      teams[lastAction.team].lineup = lastAction.previousLineup ? [...lastAction.previousLineup] : teams[lastAction.team].lineup;
+      
+      sets[currentSet - 1] = set;
+      
+      await updateDoc(gameRef, {
+        sets,
+        teams,
+        actionHistory: updatedActionHistory,
+        updatedAt: serverTimestamp()
+      });
+      
+      return { ok: true, message: `Undone: Exceptional substitution for Team ${lastAction.team}` };
+    }
+  } else if (lastAction.type === 'rotation') {
+    teams[lastAction.team].lineup = lastAction.previousLineup ? [...lastAction.previousLineup] : teams[lastAction.team].lineup;
+    
+    const liberoReplacements = gameData.liberoReplacements || { A: [], B: [] };
+    if (lastAction.previousLiberoReplacements) {
+      liberoReplacements[lastAction.team] = JSON.parse(JSON.stringify(lastAction.previousLiberoReplacements));
+    }
+    
+    await updateDoc(gameRef, {
+      teams,
+      liberoReplacements,
+      actionHistory: updatedActionHistory,
+      updatedAt: serverTimestamp()
+    });
+    
+    return { ok: true, message: `Undone: Manual rotation for Team ${lastAction.team}` };
   }
+  
+  // If action type not handled, just remove from history
+  await updateDoc(gameRef, {
+    actionHistory: updatedActionHistory,
+    updatedAt: serverTimestamp()
+  });
+  
+  return { ok: true, message: 'Action undone' };
 }
 
 /**
@@ -516,7 +833,9 @@ export async function recordSanction(gameCode, team, module, payload) {
   const score = { A: set.score.A || 0, B: set.score.B || 0 };
   const sanctionSystem = gameData.sanctionSystem || {
     misconduct: { A: [], B: [] },
-    delay: { A: { count: 0, log: [] }, B: { count: 0, log: [] } }
+    delay: { A: { count: 0, log: [] }, B: { count: 0, log: [] } },
+    disqualified: { A: [], B: [] },
+    coachDisqualified: { A: false, B: false }
   };
 
   const opp = team === 'A' ? 'B' : 'A';
@@ -536,6 +855,19 @@ export async function recordSanction(gameCode, team, module, payload) {
     });
     sanctionSystem.misconduct = sanctionSystem.misconduct || { A: [], B: [] };
     sanctionSystem.misconduct[team] = list;
+    
+    // If DISQ (disqualification), add to disqualified list
+    if (payload.type === 'DISQ' && payload.personType === 'player') {
+      sanctionSystem.disqualified = sanctionSystem.disqualified || { A: [], B: [] };
+      const disqList = [...(sanctionSystem.disqualified[team] || [])];
+      if (!disqList.find(e => String(e.jersey) === String(payload.person))) {
+        disqList.push({ jersey: String(payload.person), set: currentSet, time: new Date().toISOString() });
+        sanctionSystem.disqualified[team] = disqList;
+      }
+    } else if (payload.type === 'DISQ' && payload.personType === 'coach') {
+      sanctionSystem.coachDisqualified = sanctionSystem.coachDisqualified || { A: false, B: false };
+      sanctionSystem.coachDisqualified[team] = true;
+    }
   } else {
     const delayData = sanctionSystem.delay?.[team] || { count: 0, log: [] };
     const log = [...(delayData.log || [])];
@@ -549,13 +881,644 @@ export async function recordSanction(gameCode, team, module, payload) {
     sanctionSystem.delay[team] = { count: (delayData.count || 0) + 1, log };
   }
 
-  const updateData = { sanctionSystem, updatedAt: serverTimestamp() };
+  // If awarding penalty point, handle it like a regular point (save history, rotate, check set completion)
   if (addPointForOpponent) {
+    // Save action to history BEFORE making changes (like original HTML awardPenaltyPoint)
+    const actionHistory = gameData.actionHistory || [];
+    const previousScore = { A: set.score?.A || 0, B: set.score?.B || 0 };
+    const previousServing = set.serving || 'A';
+    const previousLineupA = teams.A?.lineup ? [...teams.A.lineup] : [];
+    const previousLineupB = teams.B?.lineup ? [...teams.B.lineup] : [];
+    const previousLiberoReplacementsA = gameData.liberoReplacements?.A ? JSON.parse(JSON.stringify(gameData.liberoReplacements.A)) : [];
+    const previousLiberoReplacementsB = gameData.liberoReplacements?.B ? JSON.parse(JSON.stringify(gameData.liberoReplacements.B)) : [];
+    const previousSummaryLength = (gameData.matchSummary || []).length;
+    
+    // Create sanction snapshot for undo
+    const sanctionSnapshot = JSON.parse(JSON.stringify({
+      misconduct: sanctionSystem.misconduct,
+      delay: sanctionSystem.delay,
+      expelled: sanctionSystem.expelled || { A: [], B: [] },
+      disqualified: sanctionSystem.disqualified,
+      coachExpelled: sanctionSystem.coachExpelled || { A: false, B: false },
+      coachDisqualified: sanctionSystem.coachDisqualified,
+      sanctionsA: gameData.sanctionsA || 0,
+      sanctionsB: gameData.sanctionsB || 0
+    }));
+    
+    const actionToSave = {
+      type: 'point',
+      team: opp,
+      previousScore: previousScore,
+      previousServing: previousServing,
+      previousLineupA: previousLineupA,
+      previousLineupB: previousLineupB,
+      previousLiberoReplacementsA: previousLiberoReplacementsA,
+      previousLiberoReplacementsB: previousLiberoReplacementsB,
+      setNumber: currentSet,
+      previousSummaryLength: previousSummaryLength,
+      sanctionSnapshot: sanctionSnapshot
+    };
+    
+    // Increment opponent's score
     set.score[opp] = (set.score[opp] || 0) + 1;
+    
+    // If service is changing, rotate the team that now gets to serve (FIVB rule)
+    const serviceChanged = set.serving !== opp;
+    if (serviceChanged) {
+      set.serving = opp;
+      // Rotate the team that gained serve (clockwise: P1→P6, P2→P1, etc.)
+      if (teams[opp] && Array.isArray(teams[opp].lineup) && teams[opp].lineup.length > 0) {
+        const lineup = [...teams[opp].lineup];
+        while (lineup.length < 6) lineup.push(null);
+        const first = lineup.shift();
+        lineup.push(first);
+        teams[opp].lineup = lineup;
+      }
+    }
+    
+    // Check for set completion (same logic as addPoint)
+    const format = Number(gameData.format) || 3;
+    const scoreA = set.score.A || 0;
+    const scoreB = set.score.B || 0;
+    const isDecidingSet = (format === 5 && currentSet === 5) || (format === 3 && currentSet === 3);
+    const target = isDecidingSet ? 15 : 25;
+    const lead = 2;
+    
+    let completed = false;
+    let winner = null;
+    
+    if ((scoreA >= target && scoreA - scoreB >= lead) || 
+        (scoreB >= target && scoreB - scoreA >= lead)) {
+      completed = true;
+      winner = scoreA > scoreB ? 'A' : 'B';
+      
+      // Mark set as won
+      set.winner = winner;
+      set.endTime = new Date();
+      
+      // Update sets won
+      const setsWon = gameData.setsWon || { A: 0, B: 0 };
+      setsWon[winner] = (setsWon[winner] || 0) + 1;
+      
+      // Check if match is finished
+      const setsToWin = Math.ceil(format / 2);
+      const isFinished = setsWon[winner] >= setsToWin;
+      
+      sets[currentSet - 1] = set;
+      
+      // Update action history
+      const updatedActionHistory = [...actionHistory, actionToSave];
+      if (updatedActionHistory.length > 50) {
+        updatedActionHistory.shift();
+      }
+      
+      await updateDoc(gameRef, {
+        sets,
+        setsWon,
+        teams,
+        sanctionSystem,
+        actionHistory: updatedActionHistory,
+        status: isFinished ? 'FINISHED' : 'LIVE',
+        currentSet: isFinished ? currentSet : currentSet + 1,
+        updatedAt: serverTimestamp()
+      });
+      
+      return { ok: true, addPoint: true, setCompleted: true, winner, matchFinished: isFinished };
+    }
+    
     sets[currentSet - 1] = set;
-    updateData.sets = sets;
+    
+    // Update action history
+    const updatedActionHistory = [...actionHistory, actionToSave];
+    if (updatedActionHistory.length > 50) {
+      updatedActionHistory.shift();
+    }
+    
+    await updateDoc(gameRef, {
+      sets,
+      teams,
+      sanctionSystem,
+      actionHistory: updatedActionHistory,
+      updatedAt: serverTimestamp()
+    });
+    
+    return { ok: true, addPoint: true, serviceChanged };
   }
 
-  await updateDoc(gameRef, updateData);
-  return { ok: true, addPoint: addPointForOpponent };
+  // No penalty point - just update sanction system
+  await updateDoc(gameRef, { sanctionSystem, updatedAt: serverTimestamp() });
+  return { ok: true, addPoint: false };
+}
+
+/**
+ * Adds a point to a team with automatic rotation and set completion logic
+ * @param {string} gameCode - Game code
+ * @param {string} team - 'A' or 'B'
+ * @param {boolean} rallyActive - Whether rally is active
+ * @returns {Promise<{ completed: boolean, winner?: string }>}
+ */
+export async function addPoint(gameCode, team, rallyActive = false) {
+  if (!rallyActive) {
+    throw new Error('Rally must be active to add points');
+  }
+
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  
+  if (!gameSnap.exists()) {
+    throw new Error('Game not found');
+  }
+  
+  const gameData = gameSnap.data();
+  const currentSet = gameData.currentSet || 1;
+  const format = Number(gameData.format) || 3;
+  let sets = [...(gameData.sets || [])];
+  let teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
+  
+  if (!sets[currentSet - 1]) {
+    throw new Error('No current set');
+  }
+  
+  const set = sets[currentSet - 1];
+  const opponent = team === 'A' ? 'B' : 'A';
+  
+  // Save action to history BEFORE making changes (like original HTML)
+  const actionHistory = gameData.actionHistory || [];
+  const previousScore = { A: set.score?.A || 0, B: set.score?.B || 0 };
+  const previousServing = set.serving || 'A';
+  const previousLineupA = teams.A?.lineup ? [...teams.A.lineup] : [];
+  const previousLineupB = teams.B?.lineup ? [...teams.B.lineup] : [];
+  const previousLiberoReplacementsA = gameData.liberoReplacements?.A ? JSON.parse(JSON.stringify(gameData.liberoReplacements.A)) : [];
+  const previousLiberoReplacementsB = gameData.liberoReplacements?.B ? JSON.parse(JSON.stringify(gameData.liberoReplacements.B)) : [];
+  const previousSummaryLength = (gameData.matchSummary || []).length;
+  
+  const actionToSave = {
+    type: 'point',
+    team: team,
+    previousScore: previousScore,
+    previousServing: previousServing,
+    previousLineupA: previousLineupA,
+    previousLineupB: previousLineupB,
+    previousLiberoReplacementsA: previousLiberoReplacementsA,
+    previousLiberoReplacementsB: previousLiberoReplacementsB,
+    setNumber: currentSet,
+    previousSummaryLength: previousSummaryLength
+  };
+  
+  // Increment score
+  set.score[team] = (set.score[team] || 0) + 1;
+  
+  // Check if service changes (team gains serve)
+  const serviceChanged = set.serving !== team;
+  if (serviceChanged) {
+    set.serving = team;
+    // Rotate the team that gained serve (clockwise: P1→P6, P2→P1, etc.)
+    if (teams[team] && Array.isArray(teams[team].lineup) && teams[team].lineup.length > 0) {
+      const lineup = [...teams[team].lineup];
+      // Ensure lineup has 6 positions
+      while (lineup.length < 6) lineup.push(null);
+      
+      // Rotate clockwise
+      const first = lineup.shift();
+      lineup.push(first);
+      teams[team].lineup = lineup;
+    }
+  }
+  
+  // Check for set completion
+  const scoreA = set.score.A || 0;
+  const scoreB = set.score.B || 0;
+  const isDecidingSet = (format === 5 && currentSet === 5) || (format === 3 && currentSet === 3);
+  const target = isDecidingSet ? 15 : 25;
+  const lead = 2;
+  
+  let completed = false;
+  let winner = null;
+  
+  if ((scoreA >= target && scoreA - scoreB >= lead) || 
+      (scoreB >= target && scoreB - scoreA >= lead)) {
+    completed = true;
+    winner = scoreA > scoreB ? 'A' : 'B';
+    
+    // Mark set as won
+    set.winner = winner;
+    set.endTime = new Date();
+    
+    // Update sets won
+    const setsWon = gameData.setsWon || { A: 0, B: 0 };
+    setsWon[winner] = (setsWon[winner] || 0) + 1;
+    
+    // Check if match is finished
+    const setsToWin = Math.ceil(format / 2);
+    const isFinished = setsWon[winner] >= setsToWin;
+    
+    sets[currentSet - 1] = set;
+    
+    // Update action history (keep last 50 actions)
+    const updatedActionHistory = [...actionHistory, actionToSave];
+    if (updatedActionHistory.length > 50) {
+      updatedActionHistory.shift();
+    }
+    
+    await updateDoc(gameRef, {
+      sets,
+      setsWon,
+      teams,
+      actionHistory: updatedActionHistory,
+      status: isFinished ? 'FINISHED' : 'LIVE',
+      currentSet: isFinished ? currentSet : currentSet + 1,
+      updatedAt: serverTimestamp()
+    });
+    
+    return { completed: true, winner, matchFinished: isFinished };
+  }
+  
+  sets[currentSet - 1] = set;
+  
+  // Update action history (keep last 50 actions)
+  const updatedActionHistory = [...actionHistory, actionToSave];
+  if (updatedActionHistory.length > 50) {
+    updatedActionHistory.shift();
+  }
+  
+  await updateDoc(gameRef, {
+    sets,
+    teams,
+    actionHistory: updatedActionHistory,
+    updatedAt: serverTimestamp()
+  });
+  
+  return { completed: false };
+}
+
+/**
+ * Records an exceptional substitution (injury, doesn't count toward limit)
+ * @param {string} gameCode - Game code
+ * @param {string} team - 'A' or 'B'
+ * @param {string} playerOut - Jersey number of injured player
+ * @param {string} playerIn - Jersey number of replacement
+ * @returns {Promise<{ ok: boolean, message?: string }>}
+ */
+export async function recordExceptionalSubstitution(gameCode, team, playerOut, playerIn) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  
+  if (!gameSnap.exists()) {
+    throw new Error('Game not found');
+  }
+  
+  const gameData = gameSnap.data();
+  const currentSet = gameData.currentSet || 1;
+  const sets = [...(gameData.sets || [])];
+  const teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
+  
+  if (!teams[team] || !Array.isArray(teams[team].lineup)) {
+    throw new Error('Team or lineup not found');
+  }
+  
+  if (!sets[currentSet - 1]) {
+    throw new Error('No current set');
+  }
+  
+  const set = sets[currentSet - 1];
+  
+  // Save action to history BEFORE making changes
+  const actionHistory = gameData.actionHistory || [];
+  const previousLineup = teams[team].lineup ? [...teams[team].lineup] : [];
+  
+  const lineup = [...teams[team].lineup];
+  while (lineup.length < 6) lineup.push(null);
+  
+  const posIndex = lineup.indexOf(String(playerOut));
+  if (posIndex === -1) {
+    return { ok: false, message: 'Player not found on court' };
+  }
+  
+  // Add to exceptional substitutions (separate from regular)
+  if (!set.exceptionalSubstitutions) {
+    set.exceptionalSubstitutions = { A: [], B: [] };
+  }
+  set.exceptionalSubstitutions[team].push({
+    time: Date.now(),
+    score: { A: set.score?.A ?? 0, B: set.score?.B ?? 0 },
+    playerOut: String(playerOut),
+    playerIn: String(playerIn),
+    position: posIndex + 1,
+    remark: 'Injury'
+  });
+  
+  // Update lineup
+  lineup[posIndex] = String(playerIn);
+  teams[team].lineup = lineup;
+  
+  // Track injured player (locked for match)
+  const injuredPlayers = gameData.injuredPlayers || { A: [], B: [] };
+  if (!injuredPlayers[team].includes(String(playerOut))) {
+    injuredPlayers[team].push(String(playerOut));
+  }
+  
+  sets[currentSet - 1] = set;
+  
+  // Save action to history
+  const actionToSave = {
+    type: 'exceptionalSubstitution',
+    team: team,
+    playerOut: String(playerOut),
+    playerIn: String(playerIn),
+    position: posIndex + 1,
+    setNumber: currentSet,
+    previousLineup: previousLineup
+  };
+  
+  // Update action history (keep last 50 actions)
+  const updatedActionHistory = [...actionHistory, actionToSave];
+  if (updatedActionHistory.length > 50) {
+    updatedActionHistory.shift();
+  }
+  
+  await updateDoc(gameRef, {
+    sets,
+    teams,
+    injuredPlayers,
+    actionHistory: updatedActionHistory,
+    updatedAt: serverTimestamp()
+  });
+  
+  return { ok: true };
+}
+
+/**
+ * Records libero replacement with tracking
+ * @param {string} gameCode - Game code
+ * @param {string} team - 'A' or 'B'
+ * @param {string} liberoJersey - Libero jersey number
+ * @param {string} playerOutJersey - Original player jersey
+ * @param {number} position - Position (1-6)
+ * @returns {Promise<{ ok: boolean, message?: string }>}
+ */
+export async function recordLiberoReplacementWithTracking(gameCode, team, liberoJersey, playerOutJersey, position) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  
+  if (!gameSnap.exists()) {
+    throw new Error('Game not found');
+  }
+  
+  const gameData = gameSnap.data();
+  const currentSet = gameData.currentSet || 1;
+  const sets = [...(gameData.sets || [])];
+  const teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
+  
+  if (!teams[team] || !Array.isArray(teams[team].lineup)) {
+    throw new Error('Team or lineup not found');
+  }
+  
+  if (!sets[currentSet - 1]) {
+    throw new Error('No current set');
+  }
+  
+  const set = sets[currentSet - 1];
+  
+  // Save action to history BEFORE making changes
+  const actionHistory = gameData.actionHistory || [];
+  const previousLineup = teams[team].lineup ? [...teams[team].lineup] : [];
+  const previousLiberoReplacements = gameData.liberoReplacements?.[team] 
+    ? JSON.parse(JSON.stringify(gameData.liberoReplacements[team]))
+    : [];
+  
+  const lineup = [...teams[team].lineup];
+  while (lineup.length < 6) lineup.push(null);
+  
+  const posIndex = position - 1;
+  if (posIndex < 0 || posIndex >= 6) {
+    return { ok: false, message: 'Invalid position' };
+  }
+  
+  // Update lineup
+  lineup[posIndex] = String(liberoJersey);
+  teams[team].lineup = lineup;
+  
+  // Track libero replacement
+  if (!gameData.liberoReplacements) {
+    gameData.liberoReplacements = { A: [], B: [] };
+  }
+  
+  const replacements = [...(gameData.liberoReplacements[team] || [])];
+  // Remove existing replacement for this libero if any
+  const existingIndex = replacements.findIndex(r => r.libero === String(liberoJersey));
+  if (existingIndex >= 0) {
+    replacements.splice(existingIndex, 1);
+  }
+  
+  replacements.push({
+    libero: String(liberoJersey),
+    originalPlayer: String(playerOutJersey),
+    position: position,
+    set: currentSet
+  });
+  
+  gameData.liberoReplacements[team] = replacements;
+  sets[currentSet - 1] = set;
+  
+  // Save action to history
+  const actionToSave = {
+    type: 'libero',
+    team: team,
+    libero: String(liberoJersey),
+    originalPlayer: String(playerOutJersey),
+    position: position,
+    setNumber: currentSet
+  };
+  
+  // Update action history (keep last 50 actions)
+  const updatedActionHistory = [...actionHistory, actionToSave];
+  if (updatedActionHistory.length > 50) {
+    updatedActionHistory.shift();
+  }
+  
+  await updateDoc(gameRef, {
+    sets,
+    teams,
+    liberoReplacements: gameData.liberoReplacements,
+    actionHistory: updatedActionHistory,
+    updatedAt: serverTimestamp()
+  });
+  
+  return { ok: true };
+}
+
+/**
+ * Removes libero from court (brings back original player)
+ * @param {string} gameCode - Game code
+ * @param {string} team - 'A' or 'B'
+ * @param {string} liberoJersey - Libero jersey number
+ * @returns {Promise<{ ok: boolean, message?: string }>}
+ */
+export async function removeLiberoFromCourt(gameCode, team, liberoJersey) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  
+  if (!gameSnap.exists()) {
+    throw new Error('Game not found');
+  }
+  
+  const gameData = gameSnap.data();
+  const teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
+  
+  if (!teams[team] || !Array.isArray(teams[team].lineup)) {
+    throw new Error('Team or lineup not found');
+  }
+  
+  // Save action to history BEFORE making changes
+  const actionHistory = gameData.actionHistory || [];
+  const previousLineup = teams[team].lineup ? [...teams[team].lineup] : [];
+  const previousLiberoReplacements = gameData.liberoReplacements?.[team] 
+    ? JSON.parse(JSON.stringify(gameData.liberoReplacements[team]))
+    : [];
+  
+  const liberoReplacements = gameData.liberoReplacements || { A: [], B: [] };
+  const replacement = (liberoReplacements[team] || []).find(r => r.libero === String(liberoJersey));
+  
+  if (!replacement) {
+    return { ok: false, message: 'Libero replacement not found' };
+  }
+  
+  const lineup = [...teams[team].lineup];
+  while (lineup.length < 6) lineup.push(null);
+  
+  const posIndex = replacement.position - 1;
+  if (lineup[posIndex] !== String(liberoJersey)) {
+    return { ok: false, message: 'Libero not at expected position' };
+  }
+  
+  // Restore original player
+  lineup[posIndex] = String(replacement.originalPlayer);
+  teams[team].lineup = lineup;
+  
+  // Remove from replacements
+  const updatedReplacements = liberoReplacements[team].filter(r => r.libero !== String(liberoJersey));
+  liberoReplacements[team] = updatedReplacements;
+  
+  // Save action to history
+  const actionToSave = {
+    type: 'libero',
+    team: team,
+    libero: String(liberoJersey),
+    originalPlayer: String(replacement.originalPlayer),
+    position: replacement.position,
+    setNumber: gameData.currentSet || 1
+  };
+  
+  // Update action history (keep last 50 actions)
+  const updatedActionHistory = [...actionHistory, actionToSave];
+  if (updatedActionHistory.length > 50) {
+    updatedActionHistory.shift();
+  }
+  
+  await updateDoc(gameRef, {
+    teams,
+    liberoReplacements,
+    actionHistory: updatedActionHistory,
+    updatedAt: serverTimestamp()
+  });
+  
+  return { ok: true };
+}
+
+/**
+ * Sets up next set with new lineup
+ * @param {string} gameCode - Game code
+ * @param {Object} lineups - { A: [...], B: [...] } starting lineups for next set
+ * @param {string} firstServer - 'A' or 'B'
+ * @returns {Promise<void>}
+ */
+export async function setupNextSet(gameCode, lineups, firstServer) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  
+  if (!gameSnap.exists()) {
+    throw new Error('Game not found');
+  }
+  
+  const gameData = gameSnap.data();
+  const currentSet = gameData.currentSet || 1;
+  const nextSet = currentSet + 1;
+  let sets = [...(gameData.sets || [])];
+  const teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
+  
+  // Ensure sets array is long enough
+  while (sets.length < nextSet) {
+    sets.push(null);
+  }
+  
+  // Create new set
+  sets[nextSet - 1] = {
+    setNumber: nextSet,
+    score: { A: 0, B: 0 },
+    serving: firstServer,
+    timeouts: { A: [], B: [] },
+    substitutions: { A: [], B: [] },
+    exceptionalSubstitutions: { A: [], B: [] },
+    substitutionTracking: { A: {}, B: {} },
+    completedSubstitutions: { A: [], B: [] },
+    startingLineup: {
+      A: lineups.A || [],
+      B: lineups.B || []
+    },
+    startTime: new Date()
+  };
+  
+  // Update team lineups
+  teams.A.lineup = lineups.A || [];
+  teams.B.lineup = lineups.B || [];
+  
+  await updateDoc(gameRef, {
+    sets,
+    teams,
+    currentSet: nextSet,
+    updatedAt: serverTimestamp()
+  });
+}
+
+/**
+ * Records match history event
+ * @param {string} gameCode - Game code
+ * @param {Object} event - Event data
+ * @returns {Promise<void>}
+ */
+export async function addMatchHistoryEvent(gameCode, event) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  
+  if (!gameSnap.exists()) {
+    throw new Error('Game not found');
+  }
+  
+  const gameData = gameSnap.data();
+  const matchSummary = gameData.matchSummary || [];
+  
+  matchSummary.push({
+    ...event,
+    timestamp: new Date()
+  });
+  
+  await updateDoc(gameRef, {
+    matchSummary,
+    updatedAt: serverTimestamp()
+  });
+}
+
+/**
+ * Updates rally state
+ * @param {string} gameCode - Game code
+ * @param {boolean} rallyActive - Whether rally is active
+ * @returns {Promise<void>}
+ */
+export async function updateRallyState(gameCode, rallyActive) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  
+  await updateDoc(gameRef, {
+    rallyActive,
+    updatedAt: serverTimestamp()
+  });
 }

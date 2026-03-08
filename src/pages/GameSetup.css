@@ -335,6 +335,11 @@
   text-align: center;
   animation: rosterToastIn 0.3s ease;
 }
+.roster-toast-success {
+  background: #4caf50;
+  color: #fff;
+}
+
 .roster-toast-error {
   background: #c00;
   color: #fff;

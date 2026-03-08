@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import {
@@ -8,18 +8,51 @@ import {
   undoLastPoint,
   recordTimeout,
   recordSubstitution,
+  recordExceptionalSubstitution,
   updateOfficials,
   recordLiberoReplacement,
+  recordLiberoReplacementWithTracking,
+  removeLiberoFromCourt,
   recordSanction,
   updateGameSwapped,
-  rotateLineup
+  rotateLineup,
+  addPoint,
+  setupNextSet,
+  updateRallyState,
+  addMatchHistoryEvent
 } from '../services/gameService';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import {
+  shouldCompleteSet,
+  getTargetScore,
+  rotateLineupClockwise,
+  isBackRowPosition,
+  canLiberoReplace,
+  validateSubstitution,
+  validateTimeout,
+  getLiberos,
+  isLibero,
+  formatDuration,
+  calculateMatchDuration,
+  calculateSetDuration,
+  validateRotation,
+  validateLineupCompleteness,
+  validateLiberoPosition,
+  validateSingleLiberoOnCourt
+} from '../utils/gameLogic';
+import { validateServeStart } from '../utils/liberoServe';
 import TimeoutModal from '../components/TimeoutModal';
 import SubModal from '../components/SubModal';
 import SanctionModal from '../components/SanctionModal';
 import OfficialsModal from '../components/OfficialsModal';
 import LiberoModal from '../components/LiberoModal';
+import AutoLiberoEntryModal from '../components/AutoLiberoEntryModal';
+import AutoLiberoExitModal from '../components/AutoLiberoExitModal';
+import MatchDataModal from '../components/MatchDataModal';
+import SummaryModal from '../components/SummaryModal';
 import { downloadMatchReportHtml } from '../utils/exportMatchReportHtml';
+import { saveMatch, loadMatch } from '../utils/matchStorage';
 import './RefereePanel.css';
 
 const POS_LABELS = { 1: 'P1-RB', 2: 'P2-RF', 3: 'P3-MF', 4: 'P4-LF', 5: 'P5-LB', 6: 'P6-MB' };
@@ -30,42 +63,118 @@ function getPlayer(team, teams, jersey) {
   return players.find((p) => String(p.jersey) === String(jersey));
 }
 
-function LineupList({ team, teamName, lineup, players, serving, currentSetData }) {
-  if (!lineup || lineup.length === 0) {
-    return (
-      <div className="referee-lineup-list">
-        {[1, 2, 3, 4, 5, 6].map((pos) => (
-          <div key={pos} className="referee-lineup-item">
-            <span className="referee-lineup-pos">P{pos}</span>
-            <span>-</span>
-          </div>
-        ))}
-      </div>
-    );
-  }
+function LineupList({ team, teamName, lineup, players, serving, currentSetData, currentSet, sanctionSystem }) {
+  // Show ALL players sorted by jersey number (like original HTML)
+  const sortedPlayers = [...(players || [])].sort((a, b) => {
+    const numA = parseInt(String(a.jersey), 10) || 0;
+    const numB = parseInt(String(b.jersey), 10) || 0;
+    return numA - numB;
+  });
+
   const arr = Array.isArray(lineup) ? lineup : [];
   const padded = [...arr];
   while (padded.length < 6) padded.push(null);
 
+  // Helper to get sanction cards for a player
+  const getSanctionCards = (playerJersey) => {
+    if (!sanctionSystem || !playerJersey) return null;
+    const jerseyStr = String(playerJersey);
+    const cards = [];
+    
+    // Check if disqualified (entire match)
+    const disqualified = sanctionSystem.disqualified?.[team]?.some(e => String(e.jersey) === jerseyStr);
+    if (disqualified) {
+      cards.push({ type: 'DISQ', set: null, symbol: '🟥❌', title: 'DISQUALIFIED — out for match' });
+    }
+
+    // Get misconduct records for this player
+    const misconducts = (sanctionSystem.misconduct?.[team] || []).filter(r => String(r.person) === jerseyStr);
+    const currentSetCards = [];
+    const previousSetCards = [];
+
+    misconducts.forEach((r) => {
+      let sym = '';
+      if (r.type === 'W') sym = '🟨';
+      else if (r.type === 'P') sym = '🟥';
+      else if (r.type === 'EXP') sym = '🟨🟥';
+      else if (r.type === 'DISQ') sym = '🟥❌';
+      if (!sym) return;
+
+      if (r.set === currentSet) {
+        currentSetCards.push({ type: r.type, set: r.set, symbol: sym });
+      } else {
+        previousSetCards.push({ type: r.type, set: r.set, symbol: sym });
+      }
+    });
+
+    return { currentSetCards, previousSetCards, disqualified };
+  };
+
+  if (sortedPlayers.length === 0) {
+    return (
+      <div className="referee-lineup-list">
+        <div className="referee-lineup-item">No players in roster</div>
+      </div>
+    );
+  }
+
   return (
     <div className="referee-lineup-list">
-      {[1, 2, 3, 4, 5, 6].map((pos) => {
-        const jersey = padded[pos - 1];
-        const p = jersey != null ? getPlayer(team, { [team]: { players } }, jersey) : null;
-        const isServer = serving === team && pos === 1;
+      {sortedPlayers.map((p) => {
+        const jersey = String(p.jersey);
+        const onCourt = padded.includes(jersey);
+        const posIndex = onCourt ? padded.indexOf(jersey) : -1;
+        const position = posIndex >= 0 ? `P${posIndex + 1}` : '';
+        const isServer = onCourt && posIndex === 0 && serving === team;
+        
         const role = p?.role;
         const isCaptain = role === 'captain' || role === 'liberocaptain';
         const isLibero = role === 'libero1' || role === 'libero2' || role === 'liberocaptain';
+        
         const badges = [];
         if (isCaptain) badges.push(<span key="c" className="referee-lineup-badge referee-badge-c">C</span>);
-        if (isLibero) badges.push(<span key="l" className="referee-lineup-badge referee-badge-l">L</span>);
+        if (role === 'libero1') badges.push(<span key="l1" className="referee-lineup-badge referee-badge-l">L1</span>);
+        else if (role === 'libero2') badges.push(<span key="l2" className="referee-lineup-badge referee-badge-l">L2</span>);
+        else if (isLibero) badges.push(<span key="l" className="referee-lineup-badge referee-badge-l">L</span>);
+
+        // Get sanction cards
+        const sanctionCards = getSanctionCards(p.jersey);
+        const cardElements = [];
+        if (sanctionCards) {
+          // Current set cards (bright)
+          sanctionCards.currentSetCards.forEach((card, idx) => {
+            cardElements.push(
+              <span key={`current-${idx}`} title={card.type} style={{ marginLeft: '3px', fontSize: '11px' }}>
+                {card.symbol}
+              </span>
+            );
+          });
+          // Previous set cards (dimmed)
+          sanctionCards.previousSetCards.forEach((card, idx) => {
+            cardElements.push(
+              <span key={`prev-${idx}`} title={`${card.type} (Set ${card.set})`} style={{ marginLeft: '3px', fontSize: '11px', opacity: 0.4, fontStyle: 'italic' }}>
+                {card.symbol}<sup style={{ fontSize: '8px' }}>S{card.set}</sup>
+              </span>
+            );
+          });
+          // Disqualified
+          if (sanctionCards.disqualified) {
+            cardElements.push(
+              <span key="disq" title="DISQUALIFIED — out for match" style={{ marginLeft: '3px', fontSize: '11px' }}>
+                🟥❌
+              </span>
+            );
+          }
+        }
+
         return (
-          <div key={pos} className="referee-lineup-item">
-            <span className="referee-lineup-pos">P{pos}</span>
+          <div key={p.jersey} className={`referee-lineup-item ${onCourt ? 'on-court' : 'on-bench'}`}>
+            <span className="referee-lineup-pos">{position || '-'}</span>
             <span>
-              {jersey != null ? `#${jersey} ${p?.name || ''}` : '-'}
+              #{jersey} {p?.name || ''}
               {badges.length > 0 && badges}
               {isServer && ' 🏐'}
+              {cardElements.length > 0 && cardElements}
             </span>
           </div>
         );
@@ -110,7 +219,26 @@ export default function RefereePanel() {
   const [liberoModal, setLiberoModal] = useState({ open: false, team: null });
   const [rosterModalOpen, setRosterModalOpen] = useState(false);
   const [sanctionModalOpen, setSanctionModalOpen] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [nextSetModalOpen, setNextSetModalOpen] = useState(false);
+  const [decidingSetTossModalOpen, setDecidingSetTossModalOpen] = useState(false);
+  const [matchDataModalOpen, setMatchDataModalOpen] = useState(false);
+  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+  const loadMatchFileInputRef = useRef(null);
+  const [rallyActive, setRallyActive] = useState(false);
+  const [matchTime, setMatchTime] = useState(0);
+  const [setTime, setSetTime] = useState(0);
+  const [setBreakTimer, setSetBreakTimer] = useState(null);
+  const [setBreakSeconds, setSetBreakSeconds] = useState(0);
+  const [autoLiberoEntryModal, setAutoLiberoEntryModal] = useState({ open: false, team: null, targetData: null, liberos: [] });
+  const [autoLiberoExitModal, setAutoLiberoExitModal] = useState({ open: false, exitData: null });
   const hasShownOfficialsOnStart = useRef(false);
+  const matchTimerRef = useRef(null);
+  const setTimerRef = useRef(null);
+  const setBreakTimerRef = useRef(null);
+  const prevLineupRef = useRef({ A: null, B: null });
+  const prevServingRef = useRef(null);
+  const hasCheckedAutoEntryAtStartRef = useRef(false);
 
   useEffect(() => {
     if (!gameCode) {
@@ -127,14 +255,556 @@ export default function RefereePanel() {
     setOfficialsModalOpen(true);
   }, [gameData, gameCode, loading]);
 
-  const handleScoreUpdate = async (team, increment = 1) => {
-    if (updating || !gameCode) return;
+  // Initialize rally state from Firestore
+  useEffect(() => {
+    if (gameData) {
+      setRallyActive(gameData.rallyActive || false);
+    }
+  }, [gameData?.rallyActive]);
+
+  // Match and Set Time Tracking
+  useEffect(() => {
+    if (!gameData) return;
+    
+    // Match time
+    if (gameData.createdAt) {
+      matchTimerRef.current = setInterval(() => {
+        const duration = calculateMatchDuration(gameData.createdAt.toDate ? gameData.createdAt.toDate() : new Date(gameData.createdAt));
+        setMatchTime(duration);
+      }, 1000);
+    }
+    
+    // Set time
+    const currentSet = gameData.currentSet || 1;
+    const sets = gameData.sets || [];
+    const currentSetData = sets[currentSet - 1];
+    if (currentSetData?.startTime) {
+      setTimerRef.current = setInterval(() => {
+        const duration = calculateSetDuration(currentSetData.startTime.toDate ? currentSetData.startTime.toDate() : new Date(currentSetData.startTime));
+        setSetTime(duration);
+      }, 1000);
+    }
+    
+    return () => {
+      if (matchTimerRef.current) clearInterval(matchTimerRef.current);
+      if (setTimerRef.current) clearInterval(setTimerRef.current);
+    };
+  }, [gameData]);
+
+  // Set Break Timer (3 minutes between sets)
+  useEffect(() => {
+    if (!gameData) return;
+    const currentSet = gameData.currentSet || 1;
+    const sets = gameData.sets || [];
+    
+    // Check if previous set just ended
+    if (currentSet > 1) {
+      const prevSet = sets[currentSet - 2];
+      if (prevSet?.endTime && !prevSet.breakTimerStarted) {
+        setSetBreakSeconds(180); // 3 minutes
+        setSetBreakTimer(true);
+        
+        setBreakTimerRef.current = setInterval(() => {
+          setSetBreakSeconds((prev) => {
+            if (prev <= 1) {
+              setSetBreakTimer(false);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+    }
+    
+    return () => {
+      if (setBreakTimerRef.current) clearInterval(setBreakTimerRef.current);
+    };
+  }, [gameData?.currentSet, gameData?.sets]);
+
+  // Auto Libero Entry/Exit Checking
+  useEffect(() => {
+    if (!gameData || !gameCode || loading || autoLiberoEntryModal.open || autoLiberoExitModal.open) return;
+    
+    const teams = gameData.teams || {};
+    const currentSet = gameData.currentSet || 1;
+    const sets = gameData.sets || [];
+    const currentSetData = sets[currentSet - 1];
+    if (!currentSetData) return;
+    
+    const serving = currentSetData.serving || 'A';
+    const scoreA = currentSetData.score?.A || 0;
+    const scoreB = currentSetData.score?.B || 0;
+    const isFirstServe = scoreA === 0 && scoreB === 0;
+    
+    // Check for auto libero entry at match start (0-0) - SEQUENTIALLY like original HTML
+    if (isFirstServe && !hasCheckedAutoEntryAtStartRef.current) {
+      hasCheckedAutoEntryAtStartRef.current = true;
+      
+      // Show RECEIVING team modal FIRST, then SERVING team modal (like original HTML)
+      const receivingTeam = serving === 'A' ? 'B' : 'A';
+      const servingTeam = serving;
+      
+      setTimeout(() => {
+        checkAutoLiberoEntryWithCallback(receivingTeam, teams, serving, currentSetData, () => {
+          // After receiving team modal is done, show SERVING team modal
+          setTimeout(() => {
+            checkAutoLiberoEntryWithCallback(servingTeam, teams, serving, currentSetData, () => {
+              // Both modals done
+            });
+          }, 500);
+        });
+      }, 800);
+    }
+    
+    // Check for auto libero entry after service change
+    if (!isFirstServe && prevServingRef.current !== null && prevServingRef.current !== serving) {
+      const opponent = serving === 'A' ? 'B' : 'A';
+      checkAutoLiberoEntryAfterLosingService(opponent, teams, currentSetData);
+    }
+    prevServingRef.current = serving;
+    
+    // Check for auto libero exit after rotation (libero in front row)
+    // Also check for libero in P1 violation
+    ['A', 'B'].forEach(team => {
+      const lineup = teams[team]?.lineup || [];
+      const prevLineup = prevLineupRef.current[team];
+      if (prevLineup && JSON.stringify(prevLineup) !== JSON.stringify(lineup)) {
+        // Check for libero in front row (exit modal)
+        checkAutoLiberoExit(team, teams, lineup, prevLineup);
+        // Check for libero in P1 violation (serving team only)
+        checkLiberoP1Violation(team, teams, lineup, currentSetData);
+      }
+      prevLineupRef.current[team] = [...lineup];
+    });
+  }, [gameData, gameCode, loading, autoLiberoEntryModal.open, autoLiberoExitModal.open]);
+
+  // Helper function to check auto libero entry with callback (like original HTML)
+  const checkAutoLiberoEntryWithCallback = (team, teams, serving, setData, callback) => {
+    if (!gameData) {
+      if (callback) callback();
+      return;
+    }
+    
+    const players = teams[team]?.players || [];
+    const lineup = teams[team]?.lineup || [];
+    const isLiberoRole = (r) => r === 'libero1' || r === 'libero2' || r === 'liberocaptain';
+    let liberos = players.filter(p => isLiberoRole(p.role));
+    
+    if (liberos.length === 0) {
+      if (callback) callback();
+      return;
+    }
+    
+    // Filter out expelled/disqualified liberos (check sanction system)
+    // Match original HTML: SM.isPlayerLocked = isExpelled || isDisqualified
+    const sanctionSystem = gameData.sanctionSystem || {};
+    const expelled = sanctionSystem.expelled?.[team] || []; // [{jersey, set}]
+    const disqualified = sanctionSystem.disqualified?.[team] || []; // [{jersey}]
+    const injuredPlayers = gameData.injuredPlayers || { A: [], B: [] };
+    const currentSet = gameData.currentSet || 1;
+    
+    // Check for expelled (EXP) and disqualified (DISQ) players
+    // Match original HTML: SM.isExpelled checks expelled[team] for current set
+    // Match original HTML: SM.isDisqualified checks disqualified[team]
+    const isPlayerLocked = (jerseyStr) => {
+      // Check if disqualified (entire match)
+      const isDisq = disqualified.some(d => String(d.jersey) === jerseyStr);
+      if (isDisq) return true;
+      // Check if expelled in current set
+      const isExp = expelled.some(e => String(e.jersey) === jerseyStr && e.set === currentSet);
+      if (isExp) return true;
+      // Check if injured
+      if (injuredPlayers[team].includes(jerseyStr)) return true;
+      return false;
+    };
+    
+    const availableLiberos = liberos.filter(lib => {
+      const jerseyStr = String(lib.jersey);
+      return !isPlayerLocked(jerseyStr);
+    });
+    
+    if (availableLiberos.length === 0) {
+      if (callback) callback();
+      return;
+    }
+    
+    // Check if any libero already on court
+    const liberoOnCourt = lineup.some(j => availableLiberos.some(l => String(l.jersey) === String(j)));
+    if (liberoOnCourt) {
+      if (callback) callback();
+      return;
+    }
+    
+    // Safety check - make sure sets array exists
+    const sets = gameData.sets || [];
+    if (sets.length === 0 || !sets[gameData.currentSet - 1]) {
+      if (callback) callback();
+      return;
+    }
+    
+    const scoreA = setData.score?.A || 0;
+    const scoreB = setData.score?.B || 0;
+    const isFirstServe = scoreA === 0 && scoreB === 0;
+    
+    if (!isFirstServe) {
+      // Not first serve - this function should not be called
+      if (callback) callback();
+      return;
+    }
+    
+    // Determine target position based on serving status
+    const isServing = setData.serving === team;
+    let targetPosIndex, targetPosition;
+    if (isServing) {
+      targetPosIndex = 5; // P6
+      targetPosition = 6;
+    } else {
+      targetPosIndex = 0; // P1
+      targetPosition = 1;
+    }
+    
+    const jersey = lineup[targetPosIndex];
+    const player = players.find(p => String(p.jersey) === String(jersey));
+    if (!player || isLiberoRole(player.role)) {
+      if (callback) callback();
+      return;
+    }
+    
+    const targetData = {
+      player,
+      position: targetPosition,
+      posIndex: targetPosIndex,
+      jersey
+    };
+    
+    // Store callback for when modal closes
+    setAutoLiberoEntryModal({
+      open: true,
+      team,
+      targetData,
+      liberos: availableLiberos,
+      callback: callback
+    });
+  };
+
+  // Helper function to check auto libero entry at match start (legacy, kept for compatibility)
+  const checkAutoLiberoEntry = (team, teams, serving, setData) => {
+    checkAutoLiberoEntryWithCallback(team, teams, serving, setData, null);
+  };
+
+  // Helper function to check auto libero entry after losing service
+  const checkAutoLiberoEntryAfterLosingService = (team, teams, setData) => {
+    if (!gameData) return;
+    const players = teams[team]?.players || [];
+    const lineup = teams[team]?.lineup || [];
+    const isLiberoRole = (r) => r === 'libero1' || r === 'libero2' || r === 'liberocaptain';
+    const liberos = players.filter(p => isLiberoRole(p.role));
+    
+    if (liberos.length === 0) return;
+    
+    // Filter out expelled/disqualified liberos (check sanction system)
+    const sanctionSystem = gameData.sanctionSystem || {};
+    const expelled = sanctionSystem.expelled?.[team] || []; // [{jersey, set}]
+    const disqualified = sanctionSystem.disqualified?.[team] || []; // [{jersey}]
+    const injuredPlayers = gameData.injuredPlayers || { A: [], B: [] };
+    const currentSet = gameData.currentSet || 1;
+    
+    // Check for expelled (EXP) and disqualified (DISQ) players
+    const isPlayerLocked = (jerseyStr) => {
+      // Check if disqualified (entire match)
+      const isDisq = disqualified.some(d => String(d.jersey) === jerseyStr);
+      if (isDisq) return true;
+      // Check if expelled in current set
+      const isExp = expelled.some(e => String(e.jersey) === jerseyStr && e.set === currentSet);
+      if (isExp) return true;
+      // Check if injured
+      if (injuredPlayers[team].includes(jerseyStr)) return true;
+      return false;
+    };
+    
+    const availableLiberos = liberos.filter(lib => {
+      const jerseyStr = String(lib.jersey);
+      return !isPlayerLocked(jerseyStr);
+    });
+    if (availableLiberos.length === 0) return;
+    
+    // Check if any libero already on court
+    const liberoOnCourt = lineup.some(j => availableLiberos.some(l => String(l.jersey) === String(j)));
+    if (liberoOnCourt) return;
+    
+    // Target P1 (server position that they just lost)
+    const targetPosIndex = 0; // P1
+    const targetPosition = 1;
+    const jersey = lineup[targetPosIndex];
+    const player = players.find(p => String(p.jersey) === String(jersey));
+    if (!player || isLiberoRole(player.role)) return;
+    
+    const targetData = {
+      player,
+      position: targetPosition,
+      posIndex: targetPosIndex,
+      jersey
+    };
+    
+    setAutoLiberoEntryModal({
+      open: true,
+      team,
+      targetData,
+      liberos: availableLiberos
+    });
+  };
+
+  // Helper function to check auto libero exit (libero in front row)
+  const checkAutoLiberoExit = (team, teams, currentLineup, prevLineup) => {
+    if (!gameData || !prevLineup || prevLineup.length === 0) return;
+    
+    const players = teams[team]?.players || [];
+    const isLiberoRole = (r) => r === 'libero1' || r === 'libero2' || r === 'liberocaptain';
+    const liberoReplacements = gameData.liberoReplacements || { A: [], B: [] };
+    const replacements = liberoReplacements[team] || [];
+    
+    // Check front row positions (P2, P3, P4 = indices 1, 2, 3)
+    const frontRowIndices = [1, 2, 3];
+    frontRowIndices.forEach(posIndex => {
+      const currentJersey = currentLineup[posIndex];
+      if (!currentJersey) return;
+      
+      const currentPlayer = players.find(p => String(p.jersey) === String(currentJersey));
+      if (!currentPlayer || !isLiberoRole(currentPlayer.role)) return;
+      
+      // Find the replacement record
+      const replacement = replacements.find(r => String(r.libero) === String(currentJersey));
+      if (!replacement) return;
+      
+      const originalPlayer = players.find(p => String(p.jersey) === String(replacement.originalPlayer));
+      if (!originalPlayer) return;
+      
+      const exitData = {
+        libero: currentPlayer,
+        original: originalPlayer,
+        position: posIndex + 1,
+        posIndex,
+        team,
+        replacementData: replacement
+      };
+      
+      setAutoLiberoExitModal({
+        open: true,
+        exitData
+      });
+    });
+  };
+
+  // Helper function to check for libero in P1 violation after rotation
+  const checkLiberoP1Violation = (team, teams, currentLineup, setData) => {
+    if (!gameData || !setData) return;
+    
+    const serving = setData.serving || 'A';
+    // Only check for serving team
+    if (team !== serving) return;
+    
+    const players = teams[team]?.players || [];
+    const isLiberoRole = (r) => r === 'libero1' || r === 'libero2' || r === 'liberocaptain';
+    
+    // Check if P1 (index 0) is a libero
+    const p1Jersey = currentLineup[0];
+    if (!p1Jersey) return;
+    
+    const p1Player = players.find(p => String(p.jersey) === String(p1Jersey));
+    if (!p1Player || !isLiberoRole(p1Player.role)) return;
+    
+    // P1 is a libero - check libero serve configuration
+    const liberoServeConfig = gameData.liberoServeConfig || {};
+    const teamConfig = liberoServeConfig[team] || {};
+    
+    // If libero serve is enabled but no designated player is set, open libero modal to select
+    if (teamConfig.enabled && !teamConfig.designatedJersey) {
+      // Open libero modal to allow user to select which player libero can serve for
+      setTimeout(() => {
+        setLiberoModal({ open: true, team });
+      }, 100);
+      return;
+    }
+    
+    // If libero serve is enabled and designated player is set, validate
+    if (teamConfig.enabled && teamConfig.designatedJersey) {
+      const validation = validateServeStart(gameData, liberoServeConfig);
+      
+      if (!validation.valid) {
+        // Show alert immediately after rotation (like original HTML)
+        setTimeout(() => {
+          alert(validation.message || '🚫 ILLEGAL SERVE - Libero Serving Violation');
+        }, 100);
+      }
+    } else {
+      // Libero serve is not enabled - show violation alert
+      setTimeout(() => {
+        alert('🚫 ILLEGAL SERVE - Libero Serving Violation\n\nLibero cannot serve. Please remove libero from P1 position or enable libero serving in lineup setup.');
+      }, 100);
+    }
+  };
+
+  const handleAutoLiberoEntryConfirm = async (team, liberoJersey, targetData) => {
+    if (!gameCode) return;
+    setUpdating(true);
+    setMessage('');
+    
+    // Get callback before closing modal
+    const callback = autoLiberoEntryModal.callback;
+    
+    try {
+      await recordLiberoReplacementWithTracking(
+        gameCode,
+        team,
+        liberoJersey,
+        targetData.jersey,
+        targetData.position
+      );
+      setMessage('Libero entry recorded');
+      setTimeout(() => setMessage(''), 2000);
+      setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+      
+      // Call callback after modal closes (for sequential modals)
+      if (callback) {
+        setTimeout(() => {
+          callback();
+        }, 200);
+      }
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+      setTimeout(() => setMessage(''), 3000);
+      setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+      
+      // Still call callback even on error
+      if (callback) {
+        setTimeout(() => {
+          callback();
+        }, 200);
+      }
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleAutoLiberoExitConfirm = async (exitData) => {
+    if (!gameCode) return;
     setUpdating(true);
     setMessage('');
     try {
-      await updateScore(gameCode, team, increment);
-      setMessage(`Score updated for Team ${team}`);
+      await removeLiberoFromCourt(gameCode, exitData.team, exitData.libero.jersey);
+      setMessage('Libero exit recorded');
       setTimeout(() => setMessage(''), 2000);
+      setAutoLiberoExitModal({ open: false, exitData: null });
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+      setTimeout(() => setMessage(''), 3000);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleToggleRally = async () => {
+    if (!gameCode || !gameData) return;
+    const newRallyState = !rallyActive;
+    
+    // If starting rally, validate libero serve rules
+    if (newRallyState) {
+      const validation = validateServeStart(gameData, gameData.liberoServeConfig || {});
+      if (!validation.valid) {
+        alert(validation.message || 'Cannot start rally: Libero serving violation');
+        return;
+      }
+    }
+    
+    setUpdating(true);
+    try {
+      await updateRallyState(gameCode, newRallyState);
+      setRallyActive(newRallyState);
+      setMessage(newRallyState ? 'Rally started' : 'Rally stopped');
+      setTimeout(() => setMessage(''), 2000);
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+      setTimeout(() => setMessage(''), 3000);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleScoreUpdate = async (team, increment = 1) => {
+    if (updating || !gameCode || !rallyActive) {
+      if (!rallyActive) {
+        setMessage('Please start rally first');
+        setTimeout(() => setMessage(''), 2000);
+      }
+      return;
+    }
+    
+    setUpdating(true);
+    setMessage('');
+    try {
+      // Use addPoint which handles rotation and set completion
+      const result = await addPoint(gameCode, team, rallyActive);
+      
+      if (result.completed) {
+        // Add to match history
+        try {
+          const finalScore = currentSetData?.score || { A: 0, B: 0 };
+          await addMatchHistoryEvent(gameCode, {
+            type: 'SET_WON',
+            team: result.winner,
+            setNumber: gameData.currentSet,
+            description: `Set ${gameData.currentSet} won by Team ${result.winner}`,
+            score: finalScore
+          });
+        } catch (err) {
+          console.error('Error adding match history:', err);
+        }
+        
+        setMessage(`Set ${gameData.currentSet} won by Team ${result.winner}!`);
+        if (result.matchFinished) {
+          setTimeout(() => {
+            setMessage('Match finished!');
+          }, 3000);
+        } else {
+          // Check if next set is deciding set
+          const nextSet = (gameData.currentSet || 1) + 1;
+          const format = Number(gameData.format) || 3;
+          const isDecidingSet = (format === 5 && nextSet === 5) || (format === 3 && nextSet === 3);
+          
+          if (isDecidingSet) {
+            setTimeout(() => {
+              setDecidingSetTossModalOpen(true);
+            }, 2000);
+          } else {
+            setTimeout(() => {
+              setNextSetModalOpen(true);
+            }, 2000);
+          }
+        }
+      } else {
+        // Auto-stop rally when point is scored (like original HTML)
+        if (rallyActive) {
+          await updateRallyState(gameCode, false);
+          setRallyActive(false);
+        }
+        
+        // Add point to match history
+        try {
+          const currentScore = currentSetData?.score || { A: 0, B: 0 };
+          await addMatchHistoryEvent(gameCode, {
+            type: 'POINT',
+            team: team,
+            setNumber: gameData.currentSet,
+            description: `Point scored by Team ${team}`,
+            score: currentScore
+          });
+        } catch (err) {
+          console.error('Error adding match history:', err);
+        }
+        
+        setMessage(`Point added for Team ${team}`);
+        setTimeout(() => setMessage(''), 2000);
+      }
     } catch (err) {
       setMessage(`Error: ${err.message}`);
       setTimeout(() => setMessage(''), 3000);
@@ -244,8 +914,31 @@ export default function RefereePanel() {
       if (result.ok) {
         setMessage('Substitution recorded');
         setTimeout(() => setMessage(''), 2000);
+        setSubModal({ open: false, team: null });
       } else {
         setMessage(result.message || 'Substitution failed');
+        setTimeout(() => setMessage(''), 3000);
+      }
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+      setTimeout(() => setMessage(''), 3000);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleExceptionalSub = async (team, playerOut, playerIn) => {
+    if (!gameCode) return;
+    setUpdating(true);
+    setMessage('');
+    try {
+      const result = await recordExceptionalSubstitution(gameCode, team, playerOut, playerIn);
+      if (result.ok) {
+        setMessage('Exceptional substitution recorded (injury)');
+        setTimeout(() => setMessage(''), 2000);
+        setSubModal({ open: false, team: null });
+      } else {
+        setMessage(result.message || 'Exceptional substitution failed');
         setTimeout(() => setMessage(''), 3000);
       }
     } catch (err) {
@@ -272,14 +965,32 @@ export default function RefereePanel() {
     }
   };
 
-  const handleLiberoConfirm = async (team, positionIndex, liberoJersey) => {
+  const handleLiberoConfirm = async (team, positionIndex, liberoJersey, playerOutJersey) => {
     if (!gameCode) return;
     setUpdating(true);
     setMessage('');
     try {
-      await recordLiberoReplacement(gameCode, team, positionIndex, liberoJersey);
+      await recordLiberoReplacementWithTracking(gameCode, team, liberoJersey, playerOutJersey, positionIndex + 1);
       setMessage('Libero replacement recorded');
       setTimeout(() => setMessage(''), 2000);
+      setLiberoModal({ open: false, team: null });
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+      setTimeout(() => setMessage(''), 3000);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleLiberoRemove = async (team, liberoJersey) => {
+    if (!gameCode) return;
+    setUpdating(true);
+    setMessage('');
+    try {
+      await removeLiberoFromCourt(gameCode, team, liberoJersey);
+      setMessage('Libero removed from court');
+      setTimeout(() => setMessage(''), 2000);
+      setLiberoModal({ open: false, team: null });
     } catch (err) {
       setMessage(`Error: ${err.message}`);
       setTimeout(() => setMessage(''), 3000);
@@ -304,9 +1015,195 @@ export default function RefereePanel() {
     }
   };
 
+  const handleSaveMatch = () => {
+    try {
+      const filename = saveMatch(gameData);
+      setMessage(`Match saved: ${filename}`);
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setMessage(`Error saving match: ${err.message}`);
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  const handleLoadMatch = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!window.confirm('⚠️ LOAD MATCH?\n\nThis will replace the current match data.\n\nMake sure you have saved the current match if needed!')) {
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      const result = await loadMatch(file);
+      setMessage(`Match loaded: ${result.filename}`);
+      setTimeout(() => setMessage(''), 3000);
+      // Note: In a real implementation, you would update Firestore with the loaded data
+      // For now, we just show a message. The user would need to manually update the game.
+      alert('✅ MATCH LOADED!\n\nLoaded from: ' + result.filename + '\n\nNote: Match data has been loaded. You may need to manually update the game in Firestore.');
+    } catch (err) {
+      setMessage(`Error loading match: ${err.message}`);
+      setTimeout(() => setMessage(''), 3000);
+      alert('❌ ERROR LOADING FILE!\n\n' + err.message);
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleExportHistoryPDF = () => {
+    // For now, export as HTML (PDF export requires jsPDF library)
+    // User can print the HTML to PDF from browser
+    const html = generateHistoryHtml(gameData);
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Match_History_${gameData.teamAName || 'TeamA'}_vs_${gameData.teamBName || 'TeamB'}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setMessage('History exported as HTML (you can print to PDF from browser)');
+    setTimeout(() => setMessage(''), 3000);
+  };
+
+  const handleExportSummaryPDF = () => {
+    // For now, export as HTML (PDF export requires jsPDF library)
+    const html = generateSummaryHtml(gameData);
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Match_Summary_${gameData.teamAName || 'TeamA'}_vs_${gameData.teamBName || 'TeamB'}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setMessage('Summary exported as HTML (you can print to PDF from browser)');
+    setTimeout(() => setMessage(''), 3000);
+  };
+
+  const generateHistoryHtml = (gameData) => {
+    const teamAName = gameData.teamAName || 'Team A';
+    const teamBName = gameData.teamBName || 'Team B';
+    const matchSummary = gameData.matchSummary || [];
+    
+    let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Match History</title>';
+    html += '<style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5;}';
+    html += '.container{max-width:1100px;margin:0 auto;background:white;padding:40px;box-shadow:0 0 20px rgba(0,0,0,0.1);}';
+    html += 'h1{text-align:center;color:#1e3c72;border-bottom:3px solid #1e3c72;padding-bottom:15px;}';
+    html += '.history-item{margin:15px 0;padding:15px;background:#f9f9f9;border-left:4px solid #1e3c72;}';
+    html += '.history-header{display:flex;justify-content:space-between;margin-bottom:10px;}';
+    html += '.history-team{font-weight:bold;color:#1e3c72;}';
+    html += '.history-set{color:#888;}';
+    html += '</style></head><body><div class="container">';
+    html += '<h1>📋 MATCH HISTORY REPORT</h1>';
+    html += '<p><strong>' + (gameData.competition || '') + ' | ' + (gameData.venue || '') + '</strong></p>';
+    html += '<p><strong>' + teamAName + ' vs ' + teamBName + '</strong></p>';
+    
+    if (matchSummary.length === 0) {
+      html += '<p>No match history yet.</p>';
+    } else {
+      matchSummary.forEach((event, idx) => {
+        html += '<div class="history-item">';
+        html += '<div class="history-header">';
+        html += '<span class="history-team">' + (event.team === 'A' ? teamAName : teamBName) + '</span>';
+        html += '<span class="history-set">Set ' + (event.setNumber || '-') + '</span>';
+        html += '</div>';
+        html += '<div>' + (event.description || event.type || 'Event') + '</div>';
+        if (event.score) {
+          html += '<div>Score: ' + event.score.A + ' - ' + event.score.B + '</div>';
+        }
+        html += '</div>';
+      });
+    }
+    
+    html += '</div></body></html>';
+    return html;
+  };
+
+  const generateSummaryHtml = (gameData) => {
+    const teamAName = gameData.teamAName || 'Team A';
+    const teamBName = gameData.teamBName || 'Team B';
+    const sets = gameData.sets || [];
+    const setsWon = gameData.setsWon || { A: 0, B: 0 };
+    
+    let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Match Summary</title>';
+    html += '<style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5;}';
+    html += '.container{max-width:1100px;margin:0 auto;background:white;padding:40px;box-shadow:0 0 20px rgba(0,0,0,0.1);}';
+    html += 'h1{text-align:center;color:#1e3c72;border-bottom:3px solid #1e3c72;padding-bottom:15px;}';
+    html += 'table{width:100%;border-collapse:collapse;margin:20px 0;}';
+    html += 'th,td{border:1px solid #ddd;padding:10px;text-align:left;}';
+    html += 'th{background:#1e3c72;color:white;}';
+    html += '</style></head><body><div class="container">';
+    html += '<h1>📊 MATCH SUMMARY REPORT</h1>';
+    html += '<p><strong>' + (gameData.competition || '') + ' | ' + (gameData.venue || '') + '</strong></p>';
+    html += '<p><strong>' + teamAName + ' vs ' + teamBName + '</strong></p>';
+    
+    html += '<h2>Match Result</h2>';
+    html += '<table><tr><th>Team</th><th>Sets Won</th></tr>';
+    html += '<tr><td>' + teamAName + '</td><td>' + setsWon.A + '</td></tr>';
+    html += '<tr><td>' + teamBName + '</td><td>' + setsWon.B + '</td></tr>';
+    html += '<tr><td colspan="2"><strong>🏆 Winner: ' + (setsWon.A > setsWon.B ? teamAName : teamBName) + '</strong></td></tr>';
+    html += '</table>';
+    
+    html += '<h2>Set-by-Set Scores</h2>';
+    html += '<table><tr><th>Set</th><th>' + teamAName + '</th><th>' + teamBName + '</th><th>Winner</th></tr>';
+    sets.forEach((set, idx) => {
+      if (!set.winner && set.score?.A === 0 && set.score?.B === 0) return;
+      html += '<tr>';
+      html += '<td>Set ' + (idx + 1) + '</td>';
+      html += '<td>' + (set.score?.A || 0) + '</td>';
+      html += '<td>' + (set.score?.B || 0) + '</td>';
+      html += '<td>' + (set.winner ? (set.winner === 'A' ? teamAName : teamBName) : '-') + '</td>';
+      html += '</tr>';
+    });
+    html += '</table>';
+    
+    html += '</div></body></html>';
+    return html;
+  };
+
   const handleRotate = async (team) => {
-    if (!gameCode) return;
+    if (!gameCode || !gameData) return;
+    
+    const teams = gameData.teams || {};
+    const currentLineup = teams[team]?.lineup || [];
+    const players = teams[team]?.players || [];
+    
+    // Validate lineup completeness before rotation
+    const completenessCheck = validateLineupCompleteness(currentLineup, players);
+    if (!completenessCheck.valid) {
+      setMessage(`Error: ${completenessCheck.message}`);
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+    
+    // Validate single libero on court
+    const liberoCheck = validateSingleLiberoOnCourt(currentLineup, players);
+    if (!liberoCheck.valid) {
+      setMessage(`Error: ${liberoCheck.message}`);
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+    
+    // Calculate expected rotation
+    const expectedRotation = rotateLineupClockwise(currentLineup);
+    
+    // Validate each position after rotation
+    const serving = currentSetData?.serving || 'A';
+    for (let i = 0; i < 6; i++) {
+      const posCheck = validateLiberoPosition(expectedRotation, players, i, serving, team);
+      if (!posCheck.valid) {
+        setMessage(`Error: ${posCheck.message}`);
+        setTimeout(() => setMessage(''), 3000);
+        return;
+      }
+    }
+    
     if (!window.confirm(`Rotate ${team === 'A' ? leftTeamName : rightTeamName} lineup clockwise (P1→P6, P2→P1, …)? Use for corrections only.`)) return;
+    
     setUpdating(true);
     setMessage('');
     try {
@@ -420,16 +1317,42 @@ export default function RefereePanel() {
             <span>🏆</span>
             <span className="championship-info">{topInfo}</span>
           </div>
+          <div className="referee-match-info-item">
+            <span>⏱</span>
+            Match: <strong>{formatDuration(matchTime)}</strong>
+          </div>
+          <div className="referee-match-info-item">
+            <span>⏲</span>
+            Set: <strong>{formatDuration(setTime)}</strong>
+          </div>
+          {setBreakTimer && (
+            <div className="referee-match-info-item referee-interval-timer">
+              <span>⏳</span>
+              Interval: <strong>{formatDuration(setBreakSeconds)}</strong>
+            </div>
+          )}
           <div className="referee-match-info-item">Game: <strong>{gameCode}</strong></div>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           <button type="button" className="referee-btn-small referee-btn-roster" onClick={() => setRosterModalOpen(true)}>📋 ROSTER</button>
-          <button type="button" className="referee-btn-small referee-btn-sanction" onClick={() => setSanctionModalOpen(true)}>⚠️ SANCTION</button>
+          <button type="button" className="referee-btn-small referee-btn-sanction" onClick={() => setSanctionModalOpen(true)} style={{ background: '#ff0000', color: '#fff' }}>⚠️ SANCTION</button>
           <button type="button" className="referee-btn-small referee-btn-swap" onClick={handleSwap} disabled={updating || status === 'FINISHED'} title="Swap which team is on left/right">🔄 SWAP</button>
           <button type="button" className="referee-btn-small referee-btn-officials" onClick={() => setOfficialsModalOpen(true)}>👥 OFFICIALS</button>
+          <button type="button" className="referee-btn-small" onClick={() => setHistoryModalOpen(true)}>📋 HISTORY</button>
+          <button type="button" className="referee-btn-small" onClick={() => setMatchDataModalOpen(true)} style={{ background: '#00ff00', color: '#000' }}>💾 DATA</button>
+          <button type="button" className="referee-btn-small" onClick={() => setSummaryModalOpen(true)} style={{ background: '#ffd700', color: '#000' }}>📊 SUMMARY</button>
+          <button type="button" className="referee-btn-small" onClick={handleSaveMatch} style={{ background: '#4CAF50', color: '#fff' }}>💾 SAVE</button>
+          <input
+            type="file"
+            ref={loadMatchFileInputRef}
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={handleLoadMatch}
+          />
+          <button type="button" className="referee-btn-small" onClick={() => loadMatchFileInputRef.current?.click()} style={{ background: '#2196F3', color: '#fff' }}>📂 LOAD</button>
           <button type="button" className="referee-btn-small referee-btn-export" onClick={() => downloadMatchReportHtml(gameData)}>📄 Export Report</button>
-          <button type="button" className="referee-btn-small" onClick={handleUndo} disabled={updating || status === 'FINISHED'}>↶ UNDO</button>
-          <button type="button" className="referee-btn-small" onClick={handleNextSet} disabled={updating || status === 'FINISHED' || !!currentSetData?.winner}>Next Set</button>
+          <button type="button" className="referee-btn-small" onClick={handleUndo} disabled={updating || status === 'FINISHED'} style={{ background: '#ff9500', color: '#fff' }}>↶ UNDO</button>
+          <button type="button" className="referee-btn-small" onClick={() => setNextSetModalOpen(true)} disabled={updating || status === 'FINISHED' || !currentSetData?.winner}>📝 SETUP NEXT SET</button>
           <button type="button" className="referee-btn-small" onClick={handleFinishGame} disabled={updating || status === 'FINISHED'}>End Match</button>
           <button type="button" className="referee-btn-small" onClick={() => navigate('/display-select')} disabled={updating}>Exit</button>
         </div>
@@ -445,6 +1368,8 @@ export default function RefereePanel() {
             players={playersLeft}
             serving={serving}
             currentSetData={currentSetData}
+            currentSet={currentSet}
+            sanctionSystem={gameData.sanctionSystem}
           />
         </div>
 
@@ -505,7 +1430,14 @@ export default function RefereePanel() {
               </div>
               <div className="referee-court-controls">
                 <div className="referee-btn-group">
-                  <button type="button" className="referee-btn referee-btn-point" onClick={() => handleScoreUpdate(leftTeam)} disabled={updating || status === 'FINISHED'}>+ POINT</button>
+                  <button 
+                    type="button" 
+                    className={`referee-btn referee-btn-point ${!rallyActive ? 'rally-inactive' : ''}`} 
+                    onClick={() => handleScoreUpdate(leftTeam)} 
+                    disabled={updating || status === 'FINISHED' || !rallyActive}
+                  >
+                    + POINT
+                  </button>
                 </div>
                 <div className="referee-btn-group">
                   <button type="button" className="referee-btn referee-btn-timeout" onClick={() => handleTimeout(leftTeam)} disabled={updating || status === 'FINISHED'}>⏱ TO</button>
@@ -518,7 +1450,19 @@ export default function RefereePanel() {
               </div>
             </div>
 
-            <div className="referee-rally-strip" />
+            <div className="referee-rally-strip">
+              <button
+                type="button"
+                className={`referee-rally-btn ${rallyActive ? 'active' : ''}`}
+                onClick={handleToggleRally}
+                disabled={updating || status === 'FINISHED'}
+              >
+                🏐 {rallyActive ? 'STOP RALLY' : 'START RALLY'}
+              </button>
+              <div className="referee-rally-status">
+                {rallyActive ? 'RALLY IN PROGRESS' : 'STOPPED'}
+              </div>
+            </div>
 
             <div className="referee-court-container">
               <div className="referee-court-header">
@@ -549,7 +1493,14 @@ export default function RefereePanel() {
               </div>
               <div className="referee-court-controls">
                 <div className="referee-btn-group">
-                  <button type="button" className="referee-btn referee-btn-point" onClick={() => handleScoreUpdate(rightTeam)} disabled={updating || status === 'FINISHED'}>+ POINT</button>
+                  <button 
+                    type="button" 
+                    className={`referee-btn referee-btn-point ${!rallyActive ? 'rally-inactive' : ''}`} 
+                    onClick={() => handleScoreUpdate(rightTeam)} 
+                    disabled={updating || status === 'FINISHED' || !rallyActive}
+                  >
+                    + POINT
+                  </button>
                 </div>
                 <div className="referee-btn-group">
                   <button type="button" className="referee-btn referee-btn-timeout" onClick={() => handleTimeout(rightTeam)} disabled={updating || status === 'FINISHED'}>⏱ TO</button>
@@ -573,6 +1524,8 @@ export default function RefereePanel() {
             players={playersRight}
             serving={serving}
             currentSetData={currentSetData}
+            currentSet={currentSet}
+            sanctionSystem={gameData.sanctionSystem}
           />
         </div>
       </div>
@@ -632,6 +1585,7 @@ export default function RefereePanel() {
         sets={sets}
         subLimit={subLimit}
         onConfirm={handleSubConfirm}
+        onExceptional={handleExceptionalSub}
         onClose={() => setSubModal({ open: false, team: null })}
       />
       <SanctionModal
@@ -641,6 +1595,7 @@ export default function RefereePanel() {
         teamBName={teamBName}
         sanctionSystem={gameData.sanctionSystem}
         currentSet={currentSet}
+        teams={gameData.teams}
         onApply={async (mod, teamKey, payload) => {
           try {
             setUpdating(true);
@@ -648,9 +1603,10 @@ export default function RefereePanel() {
             await recordSanction(gameCode, teamKey, mod, payload);
             setMessage('Sanction recorded.');
             setTimeout(() => setMessage(''), 2000);
-            setSanctionModalOpen(false);
+            // Don't close modal automatically - let user see the result
           } catch (err) {
             setMessage(err?.message || 'Failed to record sanction.');
+            setTimeout(() => setMessage(''), 3000);
           } finally {
             setUpdating(false);
           }
@@ -668,15 +1624,385 @@ export default function RefereePanel() {
         team={liberoModal.team}
         teamName={liberoModal.team === 'A' ? teamAName : teamBName}
         teams={gameData.teams}
+        currentSet={currentSet}
+        sets={sets}
+        serving={serving}
+        liberoReplacements={gameData.liberoReplacements}
+        liberoServeConfig={gameData.liberoServeConfig}
+        gameData={gameData}
         onConfirm={handleLiberoConfirm}
+        onRemove={handleLiberoRemove}
         onClose={() => setLiberoModal({ open: false, team: null })}
+      />
+
+      <AutoLiberoEntryModal
+        open={autoLiberoEntryModal.open}
+        team={autoLiberoEntryModal.team}
+        teamName={autoLiberoEntryModal.team === 'A' ? teamAName : teamBName}
+        targetData={autoLiberoEntryModal.targetData}
+        liberos={autoLiberoEntryModal.liberos}
+        gameData={gameData}
+        currentSetData={currentSetData}
+        onConfirm={handleAutoLiberoEntryConfirm}
+        onSkip={() => {
+          const callback = autoLiberoEntryModal.callback;
+          setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+          // Call callback after modal closes (for sequential modals)
+          if (callback) {
+            setTimeout(() => {
+              callback();
+            }, 200);
+          }
+        }}
+        onClose={() => {
+          const callback = autoLiberoEntryModal.callback;
+          setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+          // Call callback after modal closes (for sequential modals)
+          if (callback) {
+            setTimeout(() => {
+              callback();
+            }, 200);
+          }
+        }}
+      />
+
+      <AutoLiberoExitModal
+        open={autoLiberoExitModal.open}
+        exitData={autoLiberoExitModal.exitData}
+        onConfirm={handleAutoLiberoExitConfirm}
+        onClose={() => setAutoLiberoExitModal({ open: false, exitData: null })}
       />
 
       {message && (
         <div className={`referee-message ${message.includes('Error') ? 'error' : 'success'}`}>{message}</div>
       )}
 
+      {/* Match History Modal */}
+      {historyModalOpen && (
+        <div className="referee-modal-overlay" onClick={() => setHistoryModalOpen(false)}>
+          <div className="referee-modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3 className="referee-modal-title">📋 MATCH HISTORY</h3>
+            <div className="referee-history-content">
+              {gameData.matchSummary && gameData.matchSummary.length > 0 ? (
+                <div className="referee-history-list">
+                  {gameData.matchSummary.map((event, idx) => (
+                    <div key={idx} className={`referee-history-item ${event.type?.toLowerCase() || ''}`}>
+                      <div className="referee-history-header">
+                        <span className="referee-history-team">{event.team === 'A' ? teamAName : teamBName}</span>
+                        <span className="referee-history-set">Set {event.setNumber || '-'}</span>
+                      </div>
+                      <div className="referee-history-description">{event.description || event.type || 'Event'}</div>
+                      {event.score && (
+                        <div className="referee-history-score">
+                          Score: {event.score.A} - {event.score.B}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="referee-history-empty">No match history yet. Start the match to see live updates.</div>
+              )}
+            </div>
+            <div className="referee-modal-buttons">
+              <button type="button" className="referee-btn-close" onClick={handleExportHistoryPDF} style={{ background: '#00ff00', color: '#000', marginRight: '10px' }}>📥 Export PDF</button>
+              <button type="button" className="referee-btn-close" onClick={() => setHistoryModalOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Next Set Setup Modal */}
+      {nextSetModalOpen && (
+        <NextSetSetupModal
+          open={nextSetModalOpen}
+          gameCode={gameCode}
+          gameData={gameData}
+          onClose={() => setNextSetModalOpen(false)}
+          onComplete={() => {
+            setNextSetModalOpen(false);
+            setMessage('Next set setup complete');
+            setTimeout(() => setMessage(''), 2000);
+          }}
+        />
+      )}
+
+      {/* Deciding Set Toss Modal */}
+      {decidingSetTossModalOpen && (
+        <DecidingSetTossModal
+          open={decidingSetTossModalOpen}
+          gameCode={gameCode}
+          gameData={gameData}
+          onClose={() => setDecidingSetTossModalOpen(false)}
+          onComplete={() => {
+            setDecidingSetTossModalOpen(false);
+            setNextSetModalOpen(true);
+          }}
+        />
+      )}
+
+      <MatchDataModal
+        open={matchDataModalOpen}
+        gameData={gameData}
+        onClose={() => setMatchDataModalOpen(false)}
+      />
+
+      <SummaryModal
+        open={summaryModalOpen}
+        gameData={gameData}
+        onClose={() => setSummaryModalOpen(false)}
+        onExportPDF={handleExportSummaryPDF}
+      />
+
       <button type="button" className="referee-back-home" onClick={() => navigate('/display-select')}>← Back</button>
+    </div>
+  );
+}
+
+// Next Set Setup Modal Component
+function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
+  const [lineupA, setLineupA] = useState(Array(6).fill(null));
+  const [lineupB, setLineupB] = useState(Array(6).fill(null));
+  const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open && gameData) {
+      // Initialize with current lineups or empty
+      const currentA = gameData.teams?.A?.lineup || [];
+      const currentB = gameData.teams?.B?.lineup || [];
+      setLineupA([...currentA, ...Array(6 - currentA.length).fill(null)].slice(0, 6));
+      setLineupB([...currentB, ...Array(6 - currentB.length).fill(null)].slice(0, 6));
+    }
+  }, [open, gameData]);
+
+  const handleStartSet = async () => {
+    if (!gameCode) return;
+    
+    // Validate lineups
+    if (lineupA.filter(p => p).length !== 6 || lineupB.filter(p => p).length !== 6) {
+      setError('Both teams must have 6 players in starting lineup');
+      return;
+    }
+
+    setUpdating(true);
+    setError('');
+    
+    try {
+      const currentSet = gameData.currentSet || 1;
+      const nextSet = currentSet + 1;
+      const format = Number(gameData.format) || 3;
+      const isDecidingSet = (format === 5 && nextSet === 5) || (format === 3 && nextSet === 3);
+      
+      // Determine first server (alternates from previous set)
+      const prevSet = gameData.sets?.[currentSet - 1];
+      const prevServer = prevSet?.serving || 'A';
+      const firstServer = prevServer === 'A' ? 'B' : 'A';
+      
+      await setupNextSet(gameCode, { A: lineupA, B: lineupB }, firstServer);
+      onComplete();
+    } catch (err) {
+      setError(err.message || 'Failed to setup next set');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  if (!open) return null;
+
+  const playersA = gameData?.teams?.A?.players || [];
+  const playersB = gameData?.teams?.B?.players || [];
+
+  return (
+    <div className="referee-modal-overlay" onClick={onClose}>
+      <div className="referee-modal-content" style={{ maxWidth: '1000px' }} onClick={(e) => e.stopPropagation()}>
+        <h3 className="referee-modal-title">Select Starting Lineups for Set {gameData?.currentSet ? gameData.currentSet + 1 : 1}</h3>
+        
+        <div className="referee-lineup-setup-grid">
+          <div className="referee-lineup-setup-team">
+            <h4 style={{ color: '#ff6b6b' }}>TEAM A - {gameData?.teamAName || 'Team A'}</h4>
+            <div className="referee-court-setup">
+              {[4, 3, 2, 5, 6, 1].map((pos) => {
+                const idx = pos - 1;
+                return (
+                  <div key={pos} className="referee-court-setup-pos">
+                    <div className="referee-pos-setup-label">P{pos}</div>
+                    <select
+                      value={lineupA[idx] || ''}
+                      onChange={(e) => {
+                        const newLineup = [...lineupA];
+                        newLineup[idx] = e.target.value || null;
+                        setLineupA(newLineup);
+                      }}
+                      className="referee-lineup-select"
+                    >
+                      <option value="">-</option>
+                      {playersA.filter(p => p.jersey).map(p => (
+                        <option key={p.jersey} value={p.jersey}>
+                          #{p.jersey} {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          
+          <div className="referee-lineup-setup-team">
+            <h4 style={{ color: '#4ecdc4' }}>TEAM B - {gameData?.teamBName || 'Team B'}</h4>
+            <div className="referee-court-setup">
+              {[4, 3, 2, 5, 6, 1].map((pos) => {
+                const idx = pos - 1;
+                return (
+                  <div key={pos} className="referee-court-setup-pos">
+                    <div className="referee-pos-setup-label">P{pos}</div>
+                    <select
+                      value={lineupB[idx] || ''}
+                      onChange={(e) => {
+                        const newLineup = [...lineupB];
+                        newLineup[idx] = e.target.value || null;
+                        setLineupB(newLineup);
+                      }}
+                      className="referee-lineup-select"
+                    >
+                      <option value="">-</option>
+                      {playersB.filter(p => p.jersey).map(p => (
+                        <option key={p.jersey} value={p.jersey}>
+                          #{p.jersey} {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {error && <div className="referee-error">{error}</div>}
+
+        <div className="referee-modal-buttons">
+          <button type="button" className="referee-btn-cancel" onClick={onClose}>Cancel</button>
+          <button type="button" className="referee-btn-confirm" onClick={handleStartSet} disabled={updating}>
+            {updating ? 'Setting up...' : 'Start Set'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Deciding Set Toss Modal Component
+function DecidingSetTossModal({ open, gameCode, gameData, onClose, onComplete }) {
+  const [tossWinner, setTossWinner] = useState(null);
+  const [tossChoice, setTossChoice] = useState(null);
+  const [updating, setUpdating] = useState(false);
+
+  const handleTossWinner = (team) => {
+    setTossWinner(team);
+  };
+
+  const handleTossChoice = async (choice) => {
+    if (!gameCode || !tossWinner) return;
+    
+    setUpdating(true);
+    try {
+      // Determine first server based on toss
+      let firstServer = 'A';
+      if (choice === 'serve') {
+        firstServer = tossWinner;
+      } else {
+        firstServer = tossWinner === 'A' ? 'B' : 'A';
+      }
+
+      const currentSet = gameData.currentSet || 1;
+      const nextSet = currentSet + 1;
+      
+      // Update game with toss result
+      const gameRef = doc(db, 'games', gameCode);
+      await updateDoc(gameRef, {
+        decidingSetToss: {
+          winner: tossWinner,
+          choice: choice,
+          firstServer: firstServer
+        },
+        updatedAt: serverTimestamp()
+      });
+
+      setTossChoice(choice);
+      setTimeout(() => {
+        onComplete();
+      }, 1000);
+    } catch (err) {
+      console.error('Error recording toss:', err);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="referee-modal-overlay" onClick={onClose}>
+      <div className="referee-modal-content" onClick={(e) => e.stopPropagation()}>
+        <h3 className="referee-modal-title">🎯 DECIDING SET COIN TOSS</h3>
+        <p style={{ color: '#00d9ff', textAlign: 'center', marginBottom: '20px' }}>
+          Conduct coin toss to determine first service and court side
+        </p>
+
+        {!tossWinner ? (
+          <>
+            <h4 style={{ color: '#ffd700', textAlign: 'center', marginBottom: '20px' }}>STEP 1: WHO WON THE TOSS?</h4>
+            <div className="referee-toss-buttons">
+              <button
+                type="button"
+                className="referee-toss-team-btn"
+                onClick={() => handleTossWinner('A')}
+                style={{ background: '#16213e', borderColor: '#ff6b6b', color: '#ff6b6b' }}
+              >
+                {gameData?.teamAName || 'TEAM A'}
+              </button>
+              <button
+                type="button"
+                className="referee-toss-team-btn"
+                onClick={() => handleTossWinner('B')}
+                style={{ background: '#16213e', borderColor: '#4ecdc4', color: '#4ecdc4' }}
+              >
+                {gameData?.teamBName || 'TEAM B'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h4 style={{ color: '#ffd700', textAlign: 'center', marginBottom: '20px' }}>
+              STEP 2: {tossWinner === 'A' ? gameData?.teamAName : gameData?.teamBName} CHOOSES:
+            </h4>
+            <div className="referee-toss-buttons">
+              <button
+                type="button"
+                className="referee-toss-choice-btn"
+                onClick={() => handleTossChoice('serve')}
+                disabled={updating}
+              >
+                🏐 SERVE FIRST
+              </button>
+              <button
+                type="button"
+                className="referee-toss-choice-btn"
+                onClick={() => handleTossChoice('receive')}
+                disabled={updating}
+              >
+                📥 RECEIVE FIRST
+              </button>
+            </div>
+          </>
+        )}
+
+        <div className="referee-modal-buttons">
+          <button type="button" className="referee-btn-cancel" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }

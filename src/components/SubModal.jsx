@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import './SubModal.css';
 
-export default function SubModal({ open, team, teamName, teams, currentSet, sets, subLimit, onConfirm, onClose }) {
+export default function SubModal({ open, team, teamName, teams, currentSet, sets, subLimit, onConfirm, onExceptional, onClose }) {
   const [playerOut, setPlayerOut] = useState(null);
   const [playerIn, setPlayerIn] = useState(null);
+  const [showExceptional, setShowExceptional] = useState(false);
 
   if (!open || !teams?.[team]) return null;
 
@@ -23,6 +24,17 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
       onConfirm(team, playerOut, playerIn);
       setPlayerOut(null);
       setPlayerIn(null);
+      setShowExceptional(false);
+      onClose();
+    }
+  };
+
+  const handleExceptional = () => {
+    if (playerOut && playerIn && onExceptional) {
+      onExceptional(team, playerOut, playerIn);
+      setPlayerOut(null);
+      setPlayerIn(null);
+      setShowExceptional(false);
       onClose();
     }
   };
@@ -30,6 +42,7 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
   const handleClose = () => {
     setPlayerOut(null);
     setPlayerIn(null);
+    setShowExceptional(false);
     onClose();
   };
 
@@ -98,14 +111,42 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
           <button type="button" className="sub-modal-btn cancel" onClick={handleClose}>
             Cancel
           </button>
-          <button
-            type="button"
-            className="sub-modal-btn confirm"
-            onClick={handleConfirm}
-            disabled={!playerOut || !playerIn || !canSub}
-          >
-            Confirm substitution
-          </button>
+          {onExceptional && (
+            <button
+              type="button"
+              className="sub-modal-btn exceptional"
+              onClick={() => setShowExceptional(true)}
+              disabled={!playerOut || !playerIn}
+              style={{ background: '#ff3b3b', color: '#fff', border: '2px solid #ff6b6b' }}
+            >
+              🚑 Exceptional Substitution
+            </button>
+          )}
+          {showExceptional && onExceptional ? (
+            <>
+              <div className="sub-modal-exceptional-warning">
+                ⚠️ This substitution is for injured players only. It will NOT count toward the {subLimit || 6}-substitution limit, and the injured player will be locked for the entire match.
+              </div>
+              <button
+                type="button"
+                className="sub-modal-btn confirm"
+                onClick={handleExceptional}
+                disabled={!playerOut || !playerIn}
+                style={{ background: '#ff3b3b', color: '#fff' }}
+              >
+                Confirm Exceptional Substitution
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="sub-modal-btn confirm"
+              onClick={handleConfirm}
+              disabled={!playerOut || !playerIn || !canSub}
+            >
+              🔁 Regular Substitution
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -91,3 +91,64 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.libero-btn.remove {
+  background: #ff3b3b;
+  color: #fff;
+}
+
+.libero-modal-section {
+  margin-bottom: 20px;
+}
+
+.libero-modal-section h4 {
+  color: #e94560;
+  margin-bottom: 10px;
+  font-size: 15px;
+}
+
+.libero-modal-libero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.libero-modal-libero-btn {
+  padding: 12px;
+  background: #0f3460;
+  border: 2px solid #533483;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  transition: 0.2s;
+}
+
+.libero-modal-libero-btn:hover {
+  background: #16213e;
+  border-color: #9c27b0;
+}
+
+.libero-modal-libero-btn.selected {
+  background: #9c27b0;
+  border-color: #9c27b0;
+}
+
+.libero-badge {
+  background: #9c27b0;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: bold;
+  margin-left: 5px;
+}
+
+.libero-modal-pos-btn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #3d2560;
+  border-color: #533483;
+}

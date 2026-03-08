@@ -25,6 +25,7 @@ export default function SanctionModal({
   teamBName,
   sanctionSystem,
   currentSet,
+  teams,
   onApply,
   onClose
 }) {
@@ -36,6 +37,9 @@ export default function SanctionModal({
   const [delayType, setDelayType] = useState(null);
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
+  const [showRedConfirm, setShowRedConfirm] = useState(false);
+  const [showSubRequired, setShowSubRequired] = useState(false);
+  const [pendingSanction, setPendingSanction] = useState(null);
 
   if (!open) return null;
 
@@ -43,6 +47,26 @@ export default function SanctionModal({
   const misB = sanctionSystem?.misconduct?.B || [];
   const delayA = sanctionSystem?.delay?.A || { count: 0, log: [] };
   const delayB = sanctionSystem?.delay?.B || { count: 0, log: [] };
+
+  // Get escalation history for a person
+  const getEscalationHistory = (personId, personType) => {
+    const list = team === 'A' ? misA : misB;
+    return list.filter(s => 
+      s.personType === personType && 
+      String(s.person) === String(personId)
+    );
+  };
+
+  // Get escalation status
+  const escalationHistory = personType === 'player' && jersey.trim() 
+    ? getEscalationHistory(jersey.trim(), 'player')
+    : personType === 'coach'
+    ? getEscalationHistory('coach', 'coach')
+    : [];
+
+  // Auto-suggest delay type
+  const delayCount = team === 'A' ? delayA.count : delayB.count;
+  const suggestedDelayType = delayCount === 0 ? 'DW' : 'DP';
 
   const buildLog = () => {
     const lines = [];
@@ -69,6 +93,25 @@ export default function SanctionModal({
       const num = parseInt(j, 10);
       if (isNaN(num) || num < 1 || num > 99) return;
     }
+
+    // Check if red card (P, EXP, DISQ) - show confirmation
+    if (misconductType === 'P' || misconductType === 'EXP' || misconductType === 'DISQ') {
+      setPendingSanction({
+        module: 'misconduct',
+        team,
+        payload: {
+          type: misconductType,
+          personType,
+          person: personType === 'coach' ? 'coach' : String(jersey).trim(),
+          reason: reason || undefined,
+          notes: notes || undefined
+        }
+      });
+      setShowRedConfirm(true);
+      return;
+    }
+
+    // Apply warning directly
     onApply('misconduct', team, {
       type: misconductType,
       personType,
@@ -82,9 +125,36 @@ export default function SanctionModal({
     setJersey('');
   };
 
+  const handleConfirmRedCard = () => {
+    if (!pendingSanction) return;
+    
+    onApply(pendingSanction.module, pendingSanction.team, pendingSanction.payload);
+    
+    // Check if expulsion or disqualification - may need substitute
+    if (pendingSanction.payload.type === 'EXP' || pendingSanction.payload.type === 'DISQ') {
+      if (pendingSanction.payload.personType === 'player') {
+        setShowSubRequired(true);
+      }
+    }
+    
+    setShowRedConfirm(false);
+    setPendingSanction(null);
+    setMisconductType(null);
+    setReason('');
+    setNotes('');
+    setJersey('');
+  };
+
   const handleApplyDelay = () => {
-    if (!delayType) return;
-    onApply('delay', team, { type: delayType });
+    const typeToApply = delayType || suggestedDelayType;
+    if (!typeToApply) return;
+    
+    // Auto-suggest based on count
+    if (!delayType) {
+      setDelayType(suggestedDelayType);
+    }
+    
+    onApply('delay', team, { type: typeToApply });
     setDelayType(null);
   };
 
@@ -130,8 +200,14 @@ export default function SanctionModal({
             <div className="sanction-field">
               <label>Sanctioned Person</label>
               <div className="sanction-person-btns">
-                <button type="button" className={personType === 'player' ? 'active' : ''} onClick={() => setPersonType('player')}>👤 Player</button>
-                <button type="button" className={personType === 'coach' ? 'active' : ''} onClick={() => setPersonType('coach')}>🧢 Coach / Staff</button>
+                <button type="button" className={personType === 'player' ? 'active' : ''} onClick={() => {
+                  setPersonType('player');
+                  setJersey('');
+                }}>👤 Player</button>
+                <button type="button" className={personType === 'coach' ? 'active' : ''} onClick={() => {
+                  setPersonType('coach');
+                  setJersey('');
+                }}>🧢 Coach / Staff</button>
               </div>
               {personType === 'player' && (
                 <input
@@ -140,8 +216,24 @@ export default function SanctionModal({
                   placeholder="Jersey number (e.g. 7)"
                   maxLength={3}
                   value={jersey}
-                  onChange={(e) => setJersey(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                  onChange={(e) => {
+                    setJersey(e.target.value.replace(/\D/g, '').slice(0, 3));
+                  }}
                 />
+              )}
+              
+              {/* Escalation History */}
+              {escalationHistory.length > 0 && (
+                <div className="sanction-escalation">
+                  <strong style={{ color: '#ffd700' }}>📋 Sanction History for this person:</strong>
+                  <div style={{ marginTop: '6px', fontSize: '12px', color: '#ccc' }}>
+                    {escalationHistory.map((s, i) => (
+                      <div key={i}>
+                        Set {s.set}: {s.type} {s.reason ? `• ${s.reason}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
             <div className="sanction-field">
@@ -196,22 +288,71 @@ export default function SanctionModal({
                 </div>
               </div>
             </div>
+            
+            {/* Auto-suggestion */}
+            <div className="sanction-delay-auto" style={{
+              background: '#1a2030',
+              border: '2px solid #00d9ff',
+              borderRadius: '6px',
+              padding: '14px',
+              marginBottom: '14px',
+              fontSize: '13px',
+              color: '#fff'
+            }}>
+              <strong style={{ color: '#00d9ff' }}>AUTO-SUGGESTION:</strong>
+              <div style={{ marginTop: '6px' }}>
+                {delayCount === 0 
+                  ? '1st delay → Apply DELAY WARNING (DW) - No point penalty'
+                  : `${delayCount + 1}${delayCount === 0 ? 'st' : delayCount === 1 ? 'nd' : delayCount === 2 ? 'rd' : 'th'} delay → Apply DELAY PENALTY (DP) - +1 point to opponent`
+                }
+              </div>
+            </div>
+            
             <div className="sanction-field">
               <label>Apply</label>
               <div className="sanction-type-grid two-cols">
-                {DELAY_TYPES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className={`sanction-type-btn ${delayType === t.id ? 'selected' : ''}`}
-                    style={{ borderColor: t.color, color: t.color }}
-                    onClick={() => setDelayType(t.id)}
-                  >
-                    {t.label}<br /><span className="type-sub">{t.sub}</span>
-                  </button>
-                ))}
+                {DELAY_TYPES.map((t) => {
+                  const isSuggested = t.id === suggestedDelayType && !delayType;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={`sanction-type-btn ${delayType === t.id ? 'selected' : ''} ${isSuggested ? 'suggested' : ''}`}
+                      style={{ 
+                        borderColor: t.color, 
+                        color: t.color,
+                        background: isSuggested ? 'rgba(0, 217, 255, 0.1)' : undefined
+                      }}
+                      onClick={() => setDelayType(t.id)}
+                    >
+                      {t.label}<br /><span className="type-sub">{t.sub}</span>
+                      {isSuggested && <span style={{ fontSize: '10px', display: 'block', marginTop: '4px', color: '#00d9ff' }}>← Suggested</span>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
+            
+            {/* Consequence preview */}
+            {delayType && (
+              <div className="sanction-consequence" style={{
+                background: '#1a2f1a',
+                border: '2px solid #00cc44',
+                borderRadius: '6px',
+                padding: '12px',
+                marginBottom: '14px',
+                fontSize: '13px',
+                color: '#fff'
+              }}>
+                <strong style={{ color: '#00cc44' }}>📌 CONSEQUENCE:</strong>
+                <div style={{ marginTop: '5px' }}>
+                  {delayType === 'DW' 
+                    ? 'Warning only. No point penalty. Next delay will result in penalty point.'
+                    : 'Penalty point awarded to opponent. Team score increases by 1 point.'
+                  }
+                </div>
+              </div>
+            )}
             <div className="sanction-actions">
               <button type="button" className="sanction-apply delay" onClick={handleApplyDelay} disabled={!canApplyDelay}>
                 ⏱ APPLY DELAY SANCTION
@@ -226,6 +367,114 @@ export default function SanctionModal({
           <pre className="sanction-log-content">{buildLog()}</pre>
         </div>
       </div>
+
+      {/* Red Card Confirmation Modal */}
+      {showRedConfirm && pendingSanction && (
+        <div className="sanction-red-confirm-overlay" onClick={() => setShowRedConfirm(false)}>
+          <div className="sanction-red-confirm-content" onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: '60px', marginBottom: '10px' }}>🟥</div>
+            <h3 style={{ color: '#ff4444', marginBottom: '10px', fontSize: '20px' }}>
+              CONFIRM RED CARD
+            </h3>
+            <p style={{ color: '#fff', marginBottom: '18px', fontSize: '14px', lineHeight: '1.6' }}>
+              {pendingSanction.payload.personType === 'coach' 
+                ? `Coach of ${team === 'A' ? teamAName : teamBName}`
+                : `Player #${pendingSanction.payload.person} of ${team === 'A' ? teamAName : teamBName}`
+              } will receive a {pendingSanction.payload.type === 'P' ? 'PENALTY' : pendingSanction.payload.type === 'EXP' ? 'EXPULSION' : 'DISQUALIFICATION'}.
+            </p>
+            <div style={{
+              background: '#1a1a2e',
+              borderRadius: '6px',
+              padding: '12px',
+              marginBottom: '18px',
+              fontSize: '13px',
+              color: '#ffd700'
+            }}>
+              {pendingSanction.payload.type === 'P' 
+                ? 'Effect: +1 point to opponent. Player/Coach remains in match.'
+                : pendingSanction.payload.type === 'EXP'
+                ? 'Effect: +1 point to opponent. Player/Coach removed for this set only. Substitute required if player.'
+                : 'Effect: +1 point to opponent. Player/Coach removed for entire match. Substitute required if player.'
+              }
+            </div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={handleConfirmRedCard}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  background: '#c00',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '15px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                ✓ CONFIRM — APPLY
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRedConfirm(false);
+                  setPendingSanction(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  background: '#555',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                ✗ CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Substitute Required Modal */}
+      {showSubRequired && pendingSanction && pendingSanction.payload.personType === 'player' && (
+        <div className="sanction-sub-req-overlay" onClick={() => setShowSubRequired(false)}>
+          <div className="sanction-sub-req-content" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ color: '#ff8800', marginBottom: '12px', fontSize: '18px' }}>
+              🔄 SUBSTITUTE REQUIRED
+            </h3>
+            <p style={{ color: '#fff', marginBottom: '14px', fontSize: '13px', lineHeight: '1.6' }}>
+              Player #{pendingSanction.payload.person} has been {pendingSanction.payload.type === 'EXP' ? 'expelled' : 'disqualified'}.
+              {pendingSanction.payload.type === 'EXP' 
+                ? ' A substitute is required for this set.'
+                : ' A substitute is required for the remainder of the match.'
+              }
+            </p>
+            <p style={{ color: '#888', fontSize: '11px', marginBottom: '14px' }}>
+              Note: The substitution will be handled automatically. You can make a regular substitution if needed.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowSubRequired(false)}
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: '#555',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '13px'
+              }}
+            >
+              Done / Continue
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

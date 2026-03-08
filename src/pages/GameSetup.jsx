@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { createGame } from '../services/gameService';
 import { generateGameCode } from '../utils/generateCode';
+import {
+  saveRosterToLocalStorage,
+  getSavedRosters,
+  loadRosterFromLocalStorage,
+  exportRosterAsJSON,
+  importRosterFromJSON,
+  createRosterData
+} from '../utils/rosterStorage';
 import './GameSetup.css';
 
 export default function GameSetup() {
@@ -69,9 +77,19 @@ export default function GameSetup() {
   const [lineup1, setLineup1] = useState(Array(6).fill(null)); // P1-P6 for team 1
   const [lineup2, setLineup2] = useState(Array(6).fill(null)); // P1-P6 for team 2
 
+  // Libero Serve Configuration (which player libero can serve for)
+  const [liberoServeConfig, setLiberoServeConfig] = useState({
+    A: { enabled: false, designatedJersey: null },
+    B: { enabled: false, designatedJersey: null }
+  });
+
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [rosterToast, setRosterToast] = useState('');
+  const [savedRosters, setSavedRosters] = useState({});
+  const [showLoadRosterModal, setShowLoadRosterModal] = useState(false);
+  const fileInputRef = useRef(null);
 
   const updateRoster = (team, index, field, value) => {
     if (team === 1) {
@@ -82,6 +100,139 @@ export default function GameSetup() {
       const newRoster = [...roster2];
       newRoster[index] = { ...newRoster[index], [field]: value };
       setRoster2(newRoster);
+    }
+  };
+
+  // Load saved rosters on mount
+  useEffect(() => {
+    setSavedRosters(getSavedRosters());
+  }, []);
+
+  const handleSaveRoster = () => {
+    try {
+      const rosterData = createRosterData(
+        { ...matchInfo, team1Name: team1.name, team2Name: team2.name },
+        {
+          team1: { players: roster1.filter(p => p.jersey && p.name), name: team1.name },
+          team2: { players: roster2.filter(p => p.jersey && p.name), name: team2.name }
+        },
+        officials
+      );
+      
+      // Save to localStorage
+      const rosterId = saveRosterToLocalStorage(rosterData);
+      
+      // Also export as JSON file
+      const filename = exportRosterAsJSON(rosterData);
+      
+      setRosterToast(`✅ Roster saved! File: ${filename}`);
+      setTimeout(() => setRosterToast(''), 5000);
+      setSavedRosters(getSavedRosters());
+    } catch (err) {
+      setRosterToast(`❌ Error: ${err.message}`);
+      setTimeout(() => setRosterToast(''), 5000);
+    }
+  };
+
+  const handleLoadRosterFromFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    if (!window.confirm('⚠️ LOAD ROSTER?\n\nThis will replace the current roster data.\n\nContinue?')) {
+      e.target.value = '';
+      return;
+    }
+    
+    try {
+      const loadedData = await importRosterFromJSON(file);
+      
+      // Load match info
+      if (loadedData.matchInfo) {
+        setMatchInfo(prev => ({
+          ...prev,
+          competition: loadedData.matchInfo.competition || prev.competition,
+          venue: loadedData.matchInfo.venue || prev.venue
+        }));
+      }
+      
+      // Load teams
+      if (loadedData.teams?.team1) {
+        setTeam1(prev => ({ ...prev, name: loadedData.matchInfo?.team1Name || prev.name }));
+        const team1Players = loadedData.teams.team1.players || [];
+        const newRoster1 = Array(14).fill(null).map((_, i) => team1Players[i] || { jersey: '', name: '', role: 'player' });
+        setRoster1(newRoster1);
+      }
+      
+      if (loadedData.teams?.team2) {
+        setTeam2(prev => ({ ...prev, name: loadedData.matchInfo?.team2Name || prev.name }));
+        const team2Players = loadedData.teams.team2.players || [];
+        const newRoster2 = Array(14).fill(null).map((_, i) => team2Players[i] || { jersey: '', name: '', role: 'player' });
+        setRoster2(newRoster2);
+      }
+      
+      // Load officials
+      if (loadedData.officials) {
+        setOfficials(prev => ({ ...prev, ...loadedData.officials }));
+      }
+      
+      setRosterToast('✅ Roster loaded successfully!');
+      setTimeout(() => setRosterToast(''), 5000);
+      e.target.value = '';
+    } catch (err) {
+      setRosterToast(`❌ Error: ${err.message}`);
+      setTimeout(() => setRosterToast(''), 5000);
+      e.target.value = '';
+    }
+  };
+
+  const handleLoadRosterFromStorage = (rosterId) => {
+    const loadedData = loadRosterFromLocalStorage(rosterId);
+    if (!loadedData) {
+      setRosterToast('❌ Roster not found');
+      setTimeout(() => setRosterToast(''), 3000);
+      return;
+    }
+    
+    if (!window.confirm('⚠️ LOAD ROSTER?\n\nThis will replace the current roster data.\n\nContinue?')) {
+      return;
+    }
+    
+    try {
+      // Load match info
+      if (loadedData.matchInfo) {
+        setMatchInfo(prev => ({
+          ...prev,
+          competition: loadedData.matchInfo.competition || prev.competition,
+          venue: loadedData.matchInfo.venue || prev.venue
+        }));
+      }
+      
+      // Load teams
+      if (loadedData.teams?.team1) {
+        setTeam1(prev => ({ ...prev, name: loadedData.matchInfo?.team1Name || prev.name }));
+        const team1Players = loadedData.teams.team1.players || [];
+        const newRoster1 = Array(14).fill(null).map((_, i) => team1Players[i] || { jersey: '', name: '', role: 'player' });
+        setRoster1(newRoster1);
+      }
+      
+      if (loadedData.teams?.team2) {
+        setTeam2(prev => ({ ...prev, name: loadedData.matchInfo?.team2Name || prev.name }));
+        const team2Players = loadedData.teams.team2.players || [];
+        const newRoster2 = Array(14).fill(null).map((_, i) => team2Players[i] || { jersey: '', name: '', role: 'player' });
+        setRoster2(newRoster2);
+      }
+      
+      // Load officials
+      if (loadedData.officials) {
+        setOfficials(prev => ({ ...prev, ...loadedData.officials }));
+      }
+      
+      setRosterToast('✅ Roster loaded successfully!');
+      setTimeout(() => setRosterToast(''), 5000);
+      setShowLoadRosterModal(false);
+    } catch (err) {
+      setRosterToast(`❌ Error: ${err.message}`);
+      setTimeout(() => setRosterToast(''), 5000);
     }
   };
 
@@ -149,9 +300,6 @@ export default function GameSetup() {
     return { jerseyErrorIndices, roleErrorIndices };
   };
 
-  const [rosterToast, setRosterToast] = useState('');
-  const rosterErrors1 = getRosterErrorIndices(roster1);
-  const rosterErrors2 = getRosterErrorIndices(roster2);
 
   const handleCoinTossChange = (field, value) => {
     let newCoinToss = { ...coinToss, [field]: value };
@@ -317,13 +465,21 @@ export default function GameSetup() {
         teams: {
           A: {
             players: playersA,
-            lineup: assignment.teamALineup.map(p => p != null ? String(p) : null),
-            liberoCanServe: assignment.teamA.liberoCanServe === true
+            lineup: assignment.teamALineup.map(p => p != null ? String(p) : null)
           },
           B: {
             players: playersB,
-            lineup: assignment.teamBLineup.map(p => p != null ? String(p) : null),
-            liberoCanServe: assignment.teamB.liberoCanServe === true
+            lineup: assignment.teamBLineup.map(p => p != null ? String(p) : null)
+          }
+        },
+        liberoServeConfig: {
+          A: {
+            enabled: liberoServeConfig.A.enabled,
+            designatedJersey: liberoServeConfig.A.designatedJersey ? String(liberoServeConfig.A.designatedJersey) : null
+          },
+          B: {
+            enabled: liberoServeConfig.B.enabled,
+            designatedJersey: liberoServeConfig.B.designatedJersey ? String(liberoServeConfig.B.designatedJersey) : null
           }
         },
         sets: [{
@@ -352,6 +508,10 @@ export default function GameSetup() {
   };
 
   const assignment = getTeamAssignment();
+
+  // Compute roster error indices for highlighting errors in the UI
+  const rosterErrors1 = getRosterErrorIndices(roster1);
+  const rosterErrors2 = getRosterErrorIndices(roster2);
 
   return (
     <div className="setup-container">
@@ -564,7 +724,69 @@ export default function GameSetup() {
         {/* Step 3: Team Rosters (Team 1 and Team 2 directly) */}
         {currentStep === 3 && (
           <div className="setup-step">
-            <h2>Team Rosters</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2>Team Rosters</h2>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleSaveRoster}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#00d9ff',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '13px'
+                  }}
+                >
+                  💾 Save Roster
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLoadRosterModal(true);
+                    setSavedRosters(getSavedRosters());
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#9c27b0',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '13px'
+                  }}
+                >
+                  📂 Load Roster
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleLoadRosterFromFile}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#4ecdc4',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '13px'
+                  }}
+                >
+                  📁 Load from File
+                </button>
+              </div>
+            </div>
             <p className="setup-hint">Enter players for each team (up to 14). Jersey, name, and role.</p>
             <div className="roster-section">
               <div className="roster-team">
@@ -691,8 +913,89 @@ export default function GameSetup() {
               </div>
             </div>
             {rosterToast && (
-              <div className="roster-toast roster-toast-error" role="alert">
+              <div className={`roster-toast ${rosterToast.includes('✅') ? 'roster-toast-success' : 'roster-toast-error'}`} role="alert">
                 {rosterToast}
+              </div>
+            )}
+            
+            {/* Load Roster Modal */}
+            {showLoadRosterModal && (
+              <div
+                style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: 'rgba(0,0,0,0.9)',
+                  zIndex: 2000,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onClick={() => setShowLoadRosterModal(false)}
+              >
+                <div
+                  style={{
+                    background: '#16213e',
+                    padding: '30px',
+                    borderRadius: '10px',
+                    maxWidth: '600px',
+                    width: '90%',
+                    maxHeight: '80vh',
+                    overflowY: 'auto',
+                    border: '3px solid #533483'
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 style={{ color: '#e94560', marginBottom: '20px', textAlign: 'center' }}>📂 Load Saved Roster</h3>
+                  {Object.keys(savedRosters).length === 0 ? (
+                    <p style={{ color: '#888', textAlign: 'center', padding: '20px' }}>No saved rosters found.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {Object.values(savedRosters).map((roster) => (
+                        <button
+                          key={roster.id}
+                          type="button"
+                          onClick={() => handleLoadRosterFromStorage(roster.id)}
+                          style={{
+                            padding: '15px',
+                            background: '#0f3460',
+                            border: '2px solid #533483',
+                            borderRadius: '5px',
+                            color: '#fff',
+                            cursor: 'pointer',
+                            textAlign: 'left'
+                          }}
+                        >
+                          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
+                            {roster.matchInfo?.team1Name || 'Team 1'} vs {roster.matchInfo?.team2Name || 'Team 2'}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#888' }}>
+                            {roster.matchInfo?.competition || 'No competition'} • {new Date(roster.savedAt).toLocaleDateString()}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowLoadRosterModal(false)}
+                      style={{
+                        padding: '10px 20px',
+                        background: '#666',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
             <div className="setup-buttons">
@@ -944,6 +1247,113 @@ export default function GameSetup() {
                 </div>
               </div>
             </div>
+            
+            {/* Libero Serve Configuration */}
+            {(() => {
+              const hasLibero = (roster) => roster.some(p => 
+                p.jersey && (p.role === 'libero1' || p.role === 'libero2' || p.role === 'liberocaptain')
+              );
+              const teamAHasLibero = hasLibero(assignment.teamARoster);
+              const teamBHasLibero = hasLibero(assignment.teamBRoster);
+              
+              if (!teamAHasLibero && !teamBHasLibero) return null;
+              
+              return (
+                <div style={{
+                  background: '#0f3460',
+                  border: '2px solid #9c27b0',
+                  borderRadius: '8px',
+                  padding: '14px 18px',
+                  margin: '14px 0'
+                }}>
+                  <div style={{ color: '#9c27b0', fontWeight: 'bold', fontSize: '13px', marginBottom: '10px' }}>
+                    Libero Serving Rule (Optional)
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    {teamAHasLibero && (
+                      <div>
+                        <label style={{ color: '#ccc', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
+                          <strong style={{ color: '#ff6b6b' }}>TEAM A</strong> — Libero may serve for:
+                        </label>
+                        <select
+                          value={liberoServeConfig.A.designatedJersey || ''}
+                          onChange={(e) => {
+                            const val = e.target.value || null;
+                            setLiberoServeConfig(prev => ({
+                              ...prev,
+                              A: {
+                                enabled: val !== null && val !== '',
+                                designatedJersey: val
+                              }
+                            }));
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            background: '#16213e',
+                            border: '1px solid #533483',
+                            color: '#fff',
+                            borderRadius: '4px',
+                            fontSize: '12px'
+                          }}
+                        >
+                          <option value="">-- OFF (default) --</option>
+                          {assignment.teamARoster
+                            .filter(p => p.jersey && p.role !== 'libero1' && p.role !== 'libero2' && p.role !== 'liberocaptain')
+                            .map(p => (
+                              <option key={p.jersey} value={p.jersey}>
+                                #{p.jersey} {p.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    )}
+                    {teamBHasLibero && (
+                      <div>
+                        <label style={{ color: '#ccc', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
+                          <strong style={{ color: '#4ecdc4' }}>TEAM B</strong> — Libero may serve for:
+                        </label>
+                        <select
+                          value={liberoServeConfig.B.designatedJersey || ''}
+                          onChange={(e) => {
+                            const val = e.target.value || null;
+                            setLiberoServeConfig(prev => ({
+                              ...prev,
+                              B: {
+                                enabled: val !== null && val !== '',
+                                designatedJersey: val
+                              }
+                            }));
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            background: '#16213e',
+                            border: '1px solid #533483',
+                            color: '#fff',
+                            borderRadius: '4px',
+                            fontSize: '12px'
+                          }}
+                        >
+                          <option value="">-- OFF (default) --</option>
+                          {assignment.teamBRoster
+                            .filter(p => p.jersey && p.role !== 'libero1' && p.role !== 'libero2' && p.role !== 'liberocaptain')
+                            .map(p => (
+                              <option key={p.jersey} value={p.jersey}>
+                                #{p.jersey} {p.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ color: '#888', fontSize: '10px', marginTop: '8px' }}>
+                    When enabled: libero may replace that player in P1 while serving. All other rotations remain blocked.
+                  </div>
+                </div>
+              );
+            })()}
+            
             <div className="setup-buttons">
               <button onClick={() => setCurrentStep(5)}>← Back</button>
               <button onClick={handleStartGame} disabled={loading}>
