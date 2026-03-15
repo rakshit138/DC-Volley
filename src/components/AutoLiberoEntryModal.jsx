@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { allowsP1Replacement } from '../utils/liberoServe';
 import './AutoLiberoModal.css';
 
 export default function AutoLiberoEntryModal({ open, team, teamName, targetData, liberos, gameData, currentSetData, onConfirm, onSkip, onClose }) {
@@ -22,6 +23,17 @@ export default function AutoLiberoEntryModal({ open, team, teamName, targetData,
   if (isFirstServe) {
     contextMessage = `${teamName || `Team ${team}`} - ${isServing ? 'SERVING TEAM' : 'RECEIVING TEAM'}`;
   }
+
+  // When position is P1 and libero serve is enabled for this player, show "Libero serve is available" (like original)
+  const isP1 = targetData.position === 1;
+  const liberoServeConfig = gameData?.liberoServeConfig || {};
+  const liberoServeAvailable = isP1 && allowsP1Replacement(
+    team,
+    targetData.jersey ?? targetData.player?.jersey,
+    1,
+    liberoServeConfig,
+    gameData || {}
+  );
 
   const handleConfirm = () => {
     if (onConfirm && selectedLibero) {
@@ -51,6 +63,11 @@ export default function AutoLiberoEntryModal({ open, team, teamName, targetData,
         <div className="auto-libero-icon">🟡</div>
         <h3 className="auto-libero-title">LIBERO ENTRY AVAILABLE</h3>
         <p className="auto-libero-message" id="autoEntryMessage">{contextMessage}</p>
+        {liberoServeAvailable && (
+          <p className="auto-libero-serve-available" role="alert">
+            🏐 Libero serve is available for this position (designated player in P1).
+          </p>
+        )}
 
         <div className="auto-libero-details">
           <div className="auto-libero-player-info">

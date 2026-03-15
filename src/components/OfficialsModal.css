@@ -53,6 +53,25 @@
   text-align: center;
 }
 
+.officials-team-name-field {
+  margin-bottom: 15px;
+  background: #16213e;
+  padding: 12px;
+  border-radius: 5px;
+  border: 2px solid #533483;
+}
+
+.officials-team-block.team-a-block .officials-team-name-field { border-color: #ff6b6b; }
+.officials-team-block.team-b-block .officials-team-name-field { border-color: #4ecdc4; }
+
+.officials-field-label {
+  color: #00d9ff;
+  font-size: 12px;
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
 .officials-input {
   width: 100%;
   padding: 10px;
@@ -63,6 +82,16 @@
   border-radius: 6px;
   font-size: 14px;
 }
+
+.officials-team-name-input {
+  background: #0f3460;
+  border: 1px solid;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.officials-team-block.team-a-block .officials-team-name-input { border-color: #ff6b6b; }
+.officials-team-block.team-b-block .officials-team-name-input { border-color: #4ecdc4; }
 
 .officials-fields {
   display: grid;
@@ -135,9 +164,9 @@
 
 .officials-refs-block {
   background: #0f3460;
-  padding: 16px;
+  padding: 15px;
   border-radius: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 15px;
   border: 2px solid #ffc107;
 }
 
@@ -146,6 +175,79 @@
   font-size: 16px;
   margin-bottom: 12px;
   text-align: center;
+}
+
+/* Match Officials - each row: label + name + signature canvas + Clear (like DC_Volley HTML) */
+.officials-ref-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.officials-ref-row {
+  background: #16213e;
+  padding: 12px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.officials-ref-label-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.officials-ref-label {
+  color: #00d9ff;
+  font-size: 11px;
+  font-weight: bold;
+  margin-bottom: 3px;
+}
+
+.officials-ref-name {
+  color: #fff;
+  font-size: 13px;
+}
+
+.officials-ref-sig-wrap {
+  flex: 2;
+  border: 2px dashed #533483;
+  height: 50px;
+  border-radius: 5px;
+  background: #0f3460;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.officials-ref-canvas {
+  max-width: 100%;
+  height: 40px !important;
+  width: 100% !important;
+  background: #fff !important;
+  border-radius: 4px;
+}
+
+.officials-ref-clear {
+  background: #ffc107;
+  color: #000;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 3px;
+  font-size: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.officials-team-label {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.officials-team-name-val {
+  font-weight: bold;
 }
 
 .officials-ref-sigs {

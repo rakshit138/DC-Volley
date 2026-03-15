@@ -382,12 +382,18 @@
   padding: 2px 5px;
   border-radius: 3px;
   margin-bottom: 4px;
+  display: block;
+  width: 100%;
+  text-align: center;
 }
 
 .referee-pos-jersey {
   font-size: 24px;
   color: #000;
   font-weight: bold;
+  display: block;
+  width: 100%;
+  text-align: center;
 }
 
 .referee-court-controls {
@@ -470,8 +476,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 5px;
-  flex-shrink: 0;
+  padding: 8px 12px;
+  flex: 1;
+  min-width: 80px;
+  max-width: 180px;
+  min-height: 80px;
 }
 
 .referee-rally-btn {
@@ -479,18 +488,28 @@
   color: #000;
   font-size: 12px;
   font-weight: bold;
-  padding: 8px 16px;
+  padding: 12px 12px;
   border: 2px solid #fff;
   border-radius: 6px;
   box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  flex: 1;
+  min-height: 60px;
+  width: 100%;
+  max-width: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
   cursor: pointer;
+  box-sizing: border-box;
 }
 
 .referee-rally-status {
   color: #888;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: bold;
-  margin-top: 3px;
+  margin-top: 4px;
+  flex-shrink: 0;
 }
 
 .referee-rally-btn.active {
@@ -731,6 +750,49 @@
   border: 3px solid #533483;
 }
 
+/* Libero serve is available — informational dialog */
+.referee-libero-serve-dialog {
+  background: #16213e;
+  padding: 35px;
+  border-radius: 15px;
+  border: 4px solid #9c27b0;
+  max-width: 480px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 0 30px rgba(156, 39, 176, 0.4);
+}
+.referee-libero-serve-dialog-icon {
+  font-size: 64px;
+  margin-bottom: 12px;
+}
+.referee-libero-serve-dialog-title {
+  color: #9c27b0;
+  font-size: 22px;
+  margin-bottom: 14px;
+  font-weight: bold;
+}
+.referee-libero-serve-dialog-message {
+  color: #fff;
+  font-size: 16px;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+.referee-libero-serve-dialog-ok {
+  padding: 14px 32px;
+  background: linear-gradient(135deg, #9c27b0 0%, #673ab7 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.referee-libero-serve-dialog-ok:hover {
+  filter: brightness(1.1);
+}
+
 .referee-modal-title {
   color: #e94560;
   margin-bottom: 20px;
@@ -794,22 +856,60 @@
   font-size: 14px;
 }
 
-/* Next Set Setup Modal */
-.referee-lineup-setup-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin: 20px 0;
+/* Next Set Setup Modal — match original HTML lineup design */
+.referee-lineup-setup {
+  display: flex;
+  gap: 15px;
+  margin: 15px 0;
 }
 
-.referee-lineup-setup-team {
+.referee-lineup-setup .team-setup {
+  flex: 1;
   background: #0f3460;
-  padding: 20px;
+  padding: 12px;
   border-radius: 8px;
   border: 2px solid #533483;
 }
 
-.referee-court-setup {
+.referee-lineup-setup .team-setup h3 {
+  color: #e94560;
+  margin-bottom: 10px;
+  text-align: center;
+  font-size: 16px;
+}
+
+.referee-lineup-setup .player-roster {
+  background: #1a1a2e;
+  padding: 8px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.referee-lineup-setup .roster-player {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: #16213e;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: 0.2s;
+}
+
+.referee-lineup-setup .roster-player:hover {
+  border-color: #00d9ff;
+  background: #0f3460;
+}
+
+.referee-lineup-setup .roster-player.selected {
+  background: #533483;
+  border-color: #e94560;
+}
+
+.referee-lineup-setup .court-setup {
   background: #c67c3a;
   border: 3px solid #fff;
   border-radius: 8px;
@@ -817,13 +917,13 @@
   margin-top: 8px;
 }
 
-.referee-court-setup {
+.referee-lineup-setup .court-setup-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
-.referee-court-setup-pos {
+.referee-lineup-setup .court-setup-pos {
   background: #d9984f;
   border: 2px solid #fff;
   border-radius: 5px;
@@ -833,16 +933,41 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  cursor: pointer;
+  position: relative;
 }
 
-.referee-pos-setup-label {
+.referee-lineup-setup .court-setup-pos:hover {
+  background: #e0a668;
+}
+
+.referee-lineup-setup .court-setup-pos.filled {
+  background: #ffeb3b;
+  border-color: #ffc107;
+}
+
+.referee-lineup-setup .pos-setup-label {
   font-size: 10px;
   font-weight: bold;
   color: #fff;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0, 0, 0, 0.4);
   padding: 2px 4px;
   border-radius: 3px;
   margin-bottom: 4px;
+}
+
+.referee-lineup-setup .pos-setup-num {
+  font-size: 26px;
+  font-weight: bold;
+  color: #000;
+}
+
+.referee-lineup-hint {
+  color: #ffd700;
+  text-align: center;
+  font-size: 12px;
+  margin-top: 15px;
+  margin-bottom: 0;
 }
 
 .referee-lineup-select {
@@ -923,6 +1048,6 @@
   .referee-score-display-val { font-size: 50px; }
   .referee-court-grid { max-width: 280px; }
   .referee-roster-grid { grid-template-columns: 1fr; }
-  .referee-lineup-setup-grid { grid-template-columns: 1fr; }
+  .referee-lineup-setup { flex-direction: column; }
   .referee-toss-buttons { grid-template-columns: 1fr; }
 }

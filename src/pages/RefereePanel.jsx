@@ -232,6 +232,8 @@ export default function RefereePanel() {
   const [setBreakSeconds, setSetBreakSeconds] = useState(0);
   const [autoLiberoEntryModal, setAutoLiberoEntryModal] = useState({ open: false, team: null, targetData: null, liberos: [] });
   const [autoLiberoExitModal, setAutoLiberoExitModal] = useState({ open: false, exitData: null });
+  const [liberoServeAvailableDialogOpen, setLiberoServeAvailableDialogOpen] = useState(false);
+  const [liberoServeAvailableDialogTeam, setLiberoServeAvailableDialogTeam] = useState('');
   const hasShownOfficialsOnStart = useRef(false);
   const matchTimerRef = useRef(null);
   const setTimerRef = useRef(null);
@@ -239,6 +241,8 @@ export default function RefereePanel() {
   const prevLineupRef = useRef({ A: null, B: null });
   const prevServingRef = useRef(null);
   const hasCheckedAutoEntryAtStartRef = useRef(false);
+  const prevSetNumberRef = useRef(null);
+  const lastShownLiberoServeKeyRef = useRef(null);
 
   useEffect(() => {
     if (!gameCode) {
@@ -331,13 +335,24 @@ export default function RefereePanel() {
     const currentSetData = sets[currentSet - 1];
     if (!currentSetData) return;
     
+    // Reset "already shown" when set number changes so we show popup at start of EACH set (like original HTML)
+    if (prevSetNumberRef.current !== null && prevSetNumberRef.current !== currentSet) {
+      hasCheckedAutoEntryAtStartRef.current = false;
+    }
+    prevSetNumberRef.current = currentSet;
+    
     const serving = currentSetData.serving || 'A';
     const scoreA = currentSetData.score?.A || 0;
     const scoreB = currentSetData.score?.B || 0;
     const isFirstServe = scoreA === 0 && scoreB === 0;
     
-    // Check for auto libero entry at match start (0-0) - SEQUENTIALLY like original HTML
-    if (isFirstServe && !hasCheckedAutoEntryAtStartRef.current) {
+    // Both teams must have lineups (6 players) before showing libero entry popup at 0-0
+    const lineupA = teams.A?.lineup || [];
+    const lineupB = teams.B?.lineup || [];
+    const lineupReady = lineupA.filter(Boolean).length === 6 && lineupB.filter(Boolean).length === 6;
+    
+    // Check for auto libero entry at match/set start (0-0) - SEQUENTIALLY like original HTML
+    if (isFirstServe && lineupReady && !hasCheckedAutoEntryAtStartRef.current) {
       hasCheckedAutoEntryAtStartRef.current = true;
       
       // Show RECEIVING team modal FIRST, then SERVING team modal (like original HTML)
@@ -377,6 +392,32 @@ export default function RefereePanel() {
       prevLineupRef.current[team] = [...lineup];
     });
   }, [gameData, gameCode, loading, autoLiberoEntryModal.open, autoLiberoExitModal.open]);
+
+  // Show "Libero serve is available" dialog when serving team has libero at P1 (allowed to serve) - like original HTML
+  useEffect(() => {
+    if (!gameData || liberoServeAvailableDialogOpen) return;
+    if (autoLiberoEntryModal.open || autoLiberoExitModal.open) return;
+    const currentSet = gameData.currentSet || 1;
+    const set = gameData.sets?.[currentSet - 1];
+    if (!set) return;
+    const servingTeam = set.serving;
+    const lineup = gameData.teams?.[servingTeam]?.lineup || [];
+    if (lineup.length === 0) return;
+    const p1Jersey = String(lineup[0]);
+    const validation = validateServeStart(gameData, gameData.liberoServeConfig || {});
+    // When P1 is no longer a libero (or not allowed), reset so we can show again next time
+    if (!validation.liberoMayServe) {
+      lastShownLiberoServeKeyRef.current = null;
+      return;
+    }
+    if (gameData.rallyActive) return; // Don't show while rally is in progress
+    const key = `${currentSet}-${servingTeam}-${p1Jersey}`;
+    if (lastShownLiberoServeKeyRef.current === key) return;
+    lastShownLiberoServeKeyRef.current = key;
+    const teamName = (servingTeam === 'A' ? gameData.teamAName : gameData.teamBName) || `Team ${servingTeam}`;
+    setLiberoServeAvailableDialogTeam(teamName);
+    setLiberoServeAvailableDialogOpen(true);
+  }, [gameData, liberoServeAvailableDialogOpen, autoLiberoEntryModal.open, autoLiberoExitModal.open]);
 
   // Helper function to check auto libero entry with callback (like original HTML)
   const checkAutoLiberoEntryWithCallback = (team, teams, serving, setData, callback) => {
@@ -554,45 +595,47 @@ export default function RefereePanel() {
     });
   };
 
-  // Helper function to check auto libero exit (libero in front row)
+  // Helper: check auto libero exit when libero rotates to front row (like HTML autoReplaceLiberoInFrontRow → showAutoLiberoExitModal)
   const checkAutoLiberoExit = (team, teams, currentLineup, prevLineup) => {
     if (!gameData || !prevLineup || prevLineup.length === 0) return;
+    if (autoLiberoExitModal.open) return; // Already showing exit modal
     
     const players = teams[team]?.players || [];
     const isLiberoRole = (r) => r === 'libero1' || r === 'libero2' || r === 'liberocaptain';
     const liberoReplacements = gameData.liberoReplacements || { A: [], B: [] };
     const replacements = liberoReplacements[team] || [];
     
-    // Check front row positions (P2, P3, P4 = indices 1, 2, 3)
+    // Front row positions (P2, P3, P4 = indices 1, 2, 3) — like HTML frontRowIndices
     const frontRowIndices = [1, 2, 3];
-    frontRowIndices.forEach(posIndex => {
+    for (const posIndex of frontRowIndices) {
       const currentJersey = currentLineup[posIndex];
-      if (!currentJersey) return;
+      if (!currentJersey) continue;
       
       const currentPlayer = players.find(p => String(p.jersey) === String(currentJersey));
-      if (!currentPlayer || !isLiberoRole(currentPlayer.role)) return;
+      if (!currentPlayer || !isLiberoRole(currentPlayer.role)) continue;
       
-      // Find the replacement record
       const replacement = replacements.find(r => String(r.libero) === String(currentJersey));
-      if (!replacement) return;
+      if (!replacement) continue;
       
       const originalPlayer = players.find(p => String(p.jersey) === String(replacement.originalPlayer));
-      if (!originalPlayer) return;
+      if (!originalPlayer) continue;
       
-      const exitData = {
-        libero: currentPlayer,
-        original: originalPlayer,
-        position: posIndex + 1,
-        posIndex,
-        team,
-        replacementData: replacement
-      };
-      
+      // Show modal for first libero found in front row only (like HTML replacements[0])
+      const teamName = (team === 'A' ? gameData.teamAName : gameData.teamBName) || `Team ${team}`;
       setAutoLiberoExitModal({
         open: true,
-        exitData
+        exitData: {
+          libero: currentPlayer,
+          original: originalPlayer,
+          position: posIndex + 1,
+          posIndex,
+          team,
+          replacementData: replacement,
+          teamName
+        }
       });
-    });
+      return;
+    }
   };
 
   // Helper function to check for libero in P1 violation after rotation
@@ -707,13 +750,14 @@ export default function RefereePanel() {
     if (!gameCode || !gameData) return;
     const newRallyState = !rallyActive;
     
-    // If starting rally, validate libero serve rules
+    // If starting rally, validate libero serve rules (like original HTML - no blocking confirm)
     if (newRallyState) {
       const validation = validateServeStart(gameData, gameData.liberoServeConfig || {});
       if (!validation.valid) {
         alert(validation.message || 'Cannot start rally: Libero serving violation');
         return;
       }
+      // "Libero serve is available" is shown by the dialog when libero comes to P1; here we just allow rally to start
     }
     
     setUpdating(true);
@@ -907,15 +951,33 @@ export default function RefereePanel() {
 
   const handleSubConfirm = async (team, playerOut, playerIn) => {
     if (!gameCode) return;
+    const setDataBefore = gameData.sets?.[gameData.currentSet - 1];
+    const trackingBefore = setDataBefore?.substitutionTracking?.[team] || {};
+    const playerOutStr = String(playerOut);
+    const playerInStr = String(playerIn);
+    const isReturning = trackingBefore[playerOutStr]?.pairedWith === playerInStr;
     setUpdating(true);
     setMessage('');
     try {
       const result = await recordSubstitution(gameCode, team, playerOut, playerIn);
       if (result.ok) {
+        setSubModal({ open: false, team: null });
+        const teams = gameData.teams || {};
+        const outPlayer = teams[team]?.players?.find((p) => String(p.jersey) === playerOutStr);
+        const inPlayer = teams[team]?.players?.find((p) => String(p.jersey) === playerInStr);
+        let msg = '✓ Substitution complete!\nOUT: #' + (outPlayer?.jersey ?? playerOut) + ' ' + (outPlayer?.name ?? '') + '\nIN: #' + (inPlayer?.jersey ?? playerIn) + ' ' + (inPlayer?.name ?? '');
+        if (isReturning) {
+          msg += '\n\n📋 This is the 2nd substitution action with these players.';
+          msg += '\n⚠️ Players #' + (outPlayer?.jersey ?? playerOut) + ' and #' + (inPlayer?.jersey ?? playerIn) + ' cannot be substituted again in this set.';
+        } else {
+          msg += '\n\n📋 Players #' + (outPlayer?.jersey ?? playerOut) + ' and #' + (inPlayer?.jersey ?? playerIn) + ' are now paired.';
+          msg += '\n⚠️ They can ONLY substitute with each other for the rest of this set.';
+        }
+        alert(msg);
         setMessage('Substitution recorded');
         setTimeout(() => setMessage(''), 2000);
-        setSubModal({ open: false, team: null });
       } else {
+        alert(result.message || 'Substitution failed');
         setMessage(result.message || 'Substitution failed');
         setTimeout(() => setMessage(''), 3000);
       }
@@ -934,10 +996,30 @@ export default function RefereePanel() {
     try {
       const result = await recordExceptionalSubstitution(gameCode, team, playerOut, playerIn);
       if (result.ok) {
+        setSubModal({ open: false, team: null });
+        const teams = gameData.teams || {};
+        const setData = gameData.sets?.[gameData.currentSet - 1];
+        const outPlayer = teams[team]?.players?.find((p) => String(p.jersey) === String(playerOut));
+        const inPlayer = teams[team]?.players?.find((p) => String(p.jersey) === String(playerIn));
+        const otherTeam = team === 'A' ? 'B' : 'A';
+        const scoreText = (setData?.score?.[team] ?? 0) + ':' + (setData?.score?.[otherTeam] ?? 0);
+        const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        let msg = '🚑 EXCEPTIONAL SUBSTITUTION COMPLETE!\n\n';
+        msg += 'OUT: #' + (outPlayer?.jersey ?? playerOut) + ' ' + (outPlayer?.name ?? '') + ' (INJURED)\n';
+        msg += 'IN: #' + (inPlayer?.jersey ?? playerIn) + ' ' + (inPlayer?.name ?? '') + '\n\n';
+        msg += '📋 Details:\n';
+        msg += '• Set: ' + (gameData.currentSet ?? 1) + '\n';
+        msg += '• Score: ' + scoreText + '\n';
+        msg += '• Time: ' + timeStr + '\n\n';
+        msg += '⚠️ IMPORTANT:\n';
+        msg += '• This substitution does NOT count toward the 6-substitution limit\n';
+        msg += '• Player #' + (outPlayer?.jersey ?? playerOut) + ' is LOCKED and cannot return to play in this match\n';
+        msg += '• Tagged with "E" in match records';
+        alert(msg);
         setMessage('Exceptional substitution recorded (injury)');
         setTimeout(() => setMessage(''), 2000);
-        setSubModal({ open: false, team: null });
       } else {
+        alert(result.message || 'Exceptional substitution failed');
         setMessage(result.message || 'Exceptional substitution failed');
         setTimeout(() => setMessage(''), 3000);
       }
@@ -1202,7 +1284,8 @@ export default function RefereePanel() {
       }
     }
     
-    if (!window.confirm(`Rotate ${team === 'A' ? leftTeamName : rightTeamName} lineup clockwise (P1→P6, P2→P1, …)? Use for corrections only.`)) return;
+    const displayName = team === leftTeam ? leftTeamName : rightTeamName;
+    if (!window.confirm(`🔄 MANUAL ROTATION\n\nRotate ${displayName} lineup?\n\nThis will rotate all positions clockwise:\nP1→P6, P2→P1, P3→P2, P4→P3, P5→P4, P6→P5\n\nNote: This should only be used for corrections, not during normal play.`)) return;
     
     setUpdating(true);
     setMessage('');
@@ -1335,12 +1418,6 @@ export default function RefereePanel() {
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           <button type="button" className="referee-btn-small referee-btn-roster" onClick={() => setRosterModalOpen(true)}>📋 ROSTER</button>
-          <button type="button" className="referee-btn-small referee-btn-sanction" onClick={() => setSanctionModalOpen(true)} style={{ background: '#ff0000', color: '#fff' }}>⚠️ SANCTION</button>
-          <button type="button" className="referee-btn-small referee-btn-swap" onClick={handleSwap} disabled={updating || status === 'FINISHED'} title="Swap which team is on left/right">🔄 SWAP</button>
-          <button type="button" className="referee-btn-small referee-btn-officials" onClick={() => setOfficialsModalOpen(true)}>👥 OFFICIALS</button>
-          <button type="button" className="referee-btn-small" onClick={() => setHistoryModalOpen(true)}>📋 HISTORY</button>
-          <button type="button" className="referee-btn-small" onClick={() => setMatchDataModalOpen(true)} style={{ background: '#00ff00', color: '#000' }}>💾 DATA</button>
-          <button type="button" className="referee-btn-small" onClick={() => setSummaryModalOpen(true)} style={{ background: '#ffd700', color: '#000' }}>📊 SUMMARY</button>
           <button type="button" className="referee-btn-small" onClick={handleSaveMatch} style={{ background: '#4CAF50', color: '#fff' }}>💾 SAVE</button>
           <input
             type="file"
@@ -1350,11 +1427,19 @@ export default function RefereePanel() {
             onChange={handleLoadMatch}
           />
           <button type="button" className="referee-btn-small" onClick={() => loadMatchFileInputRef.current?.click()} style={{ background: '#2196F3', color: '#fff' }}>📂 LOAD</button>
-          <button type="button" className="referee-btn-small referee-btn-export" onClick={() => downloadMatchReportHtml(gameData)}>📄 Export Report</button>
-          <button type="button" className="referee-btn-small" onClick={handleUndo} disabled={updating || status === 'FINISHED'} style={{ background: '#ff9500', color: '#fff' }}>↶ UNDO</button>
           <button type="button" className="referee-btn-small" onClick={() => setNextSetModalOpen(true)} disabled={updating || status === 'FINISHED' || !currentSetData?.winner}>📝 SETUP NEXT SET</button>
+          <button type="button" className="referee-btn-small" onClick={() => setMatchDataModalOpen(true)} style={{ background: '#00ff00', color: '#000' }}>💾 DATA</button>
+          <button type="button" className="referee-btn-small" onClick={() => setSummaryModalOpen(true)} style={{ background: '#ffd700', color: '#000' }}>📊 SUMMARY</button>
+          <button type="button" className="referee-btn-small" onClick={() => setHistoryModalOpen(true)}>📋 HISTORY</button>
+          <button type="button" className="referee-btn-small referee-btn-export" onClick={() => downloadMatchReportHtml(gameData)}>📄 Export PDF</button>
+          <button type="button" className="referee-btn-small" onClick={() => window.open(`/lineup?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: '#fff' }}>👥 Lineup</button>
+          <button type="button" className="referee-btn-small" onClick={() => window.open(`/scoreboard?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: '#fff' }}>📺 Scoreboard</button>
+          <button type="button" className="referee-btn-small referee-btn-officials" onClick={() => setOfficialsModalOpen(true)}>👥 OFFICIALS</button>
+          <button type="button" className="referee-btn-small referee-btn-sanction" onClick={() => setSanctionModalOpen(true)} style={{ background: '#ff0000', color: '#fff' }}>⚠️ SANCTION</button>
+          <button type="button" className="referee-btn-small referee-btn-swap" onClick={handleSwap} disabled={updating || status === 'FINISHED'} title="Swap which team is on left/right">🔄 SWAP</button>
+          <button type="button" className="referee-btn-small" onClick={handleUndo} disabled={updating || status === 'FINISHED'} style={{ background: '#ff9500', color: '#fff' }}>↶ UNDO</button>
           <button type="button" className="referee-btn-small" onClick={handleFinishGame} disabled={updating || status === 'FINISHED'}>End Match</button>
-          <button type="button" className="referee-btn-small" onClick={() => navigate('/display-select')} disabled={updating}>Exit</button>
+          <button type="button" className="referee-btn-small" onClick={() => { if (window.confirm('Exit?')) navigate('/display-select'); }} disabled={updating}>Exit</button>
         </div>
       </div>
 
@@ -1457,10 +1542,10 @@ export default function RefereePanel() {
                 onClick={handleToggleRally}
                 disabled={updating || status === 'FINISHED'}
               >
-                🏐 {rallyActive ? 'STOP RALLY' : 'START RALLY'}
+                {rallyActive ? '⚡ ACTIVE' : '🏐 START RALLY'}
               </button>
               <div className="referee-rally-status">
-                {rallyActive ? 'RALLY IN PROGRESS' : 'STOPPED'}
+                {rallyActive ? 'IN PROGRESS' : 'STOPPED'}
               </div>
             </div>
 
@@ -1584,6 +1669,9 @@ export default function RefereePanel() {
         currentSet={currentSet}
         sets={sets}
         subLimit={subLimit}
+        injuredPlayers={gameData.injuredPlayers}
+        liberoReplacements={gameData.liberoReplacements}
+        sanctionSystem={gameData.sanctionSystem}
         onConfirm={handleSubConfirm}
         onExceptional={handleExceptionalSub}
         onClose={() => setSubModal({ open: false, team: null })}
@@ -1673,6 +1761,23 @@ export default function RefereePanel() {
         onClose={() => setAutoLiberoExitModal({ open: false, exitData: null })}
       />
 
+      {/* Libero serve is available — informational dialog when libero is at P1 (like original HTML) */}
+      {liberoServeAvailableDialogOpen && (
+        <div className="referee-modal-overlay" style={{ zIndex: 2500 }} onClick={() => setLiberoServeAvailableDialogOpen(false)}>
+          <div className="referee-libero-serve-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="referee-libero-serve-dialog-icon">🏐</div>
+            <h3 className="referee-libero-serve-dialog-title">Libero serve is available</h3>
+            <p className="referee-libero-serve-dialog-message">
+              {liberoServeAvailableDialogTeam && `${liberoServeAvailableDialogTeam} has a libero in P1 (designated player). `}
+              Libero may serve for this position. You may start the rally when ready.
+            </p>
+            <button type="button" className="referee-libero-serve-dialog-ok" onClick={() => setLiberoServeAvailableDialogOpen(false)}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
       {message && (
         <div className={`referee-message ${message.includes('Error') ? 'error' : 'success'}`}>{message}</div>
       )}
@@ -1759,46 +1864,39 @@ export default function RefereePanel() {
   );
 }
 
-// Next Set Setup Modal Component
+// Next Set Setup Modal Component — click player then position (like HTML); liberos cannot be in starting lineup
 function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
   const [lineupA, setLineupA] = useState(Array(6).fill(null));
   const [lineupB, setLineupB] = useState(Array(6).fill(null));
+  const [selectedPlayerForLineup, setSelectedPlayerForLineup] = useState(null); // { side: 'A'|'B', jersey }
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (open && gameData) {
-      // Initialize with current lineups or empty
       const currentA = gameData.teams?.A?.lineup || [];
       const currentB = gameData.teams?.B?.lineup || [];
       setLineupA([...currentA, ...Array(6 - currentA.length).fill(null)].slice(0, 6));
       setLineupB([...currentB, ...Array(6 - currentB.length).fill(null)].slice(0, 6));
+      setSelectedPlayerForLineup(null);
     }
   }, [open, gameData]);
 
   const handleStartSet = async () => {
     if (!gameCode) return;
-    
-    // Validate lineups
     if (lineupA.filter(p => p).length !== 6 || lineupB.filter(p => p).length !== 6) {
       setError('Both teams must have 6 players in starting lineup');
       return;
     }
-
     setUpdating(true);
     setError('');
-    
     try {
       const currentSet = gameData.currentSet || 1;
       const nextSet = currentSet + 1;
       const format = Number(gameData.format) || 3;
-      const isDecidingSet = (format === 5 && nextSet === 5) || (format === 3 && nextSet === 3);
-      
-      // Determine first server (alternates from previous set)
       const prevSet = gameData.sets?.[currentSet - 1];
       const prevServer = prevSet?.serving || 'A';
       const firstServer = prevServer === 'A' ? 'B' : 'A';
-      
       await setupNextSet(gameCode, { A: lineupA, B: lineupB }, firstServer);
       onComplete();
     } catch (err) {
@@ -1810,75 +1908,108 @@ function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
 
   if (!open) return null;
 
-  const playersA = gameData?.teams?.A?.players || [];
-  const playersB = gameData?.teams?.B?.players || [];
+  const isLibero = (p) => p.role === 'libero1' || p.role === 'libero2' || p.role === 'liberocaptain';
+  const playersA = (gameData?.teams?.A?.players || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
+  const playersB = (gameData?.teams?.B?.players || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
+  const posOrder = [4, 3, 2, 5, 6, 1];
+  const posLabels = { 4: 'P4-LF', 3: 'P3-MF', 2: 'P2-RF', 5: 'P5-LB', 6: 'P6-MB', 1: 'P1-RB' };
+
+  const assignPosition = (side, pos) => {
+    const idx = pos - 1;
+    const lineup = side === 'A' ? lineupA : lineupB;
+    const setLineup = side === 'A' ? setLineupA : setLineupB;
+    const sel = selectedPlayerForLineup;
+    if (!sel || sel.side !== side) return;
+    const currentAtPos = lineup[idx];
+    const currentIdx = lineup.findIndex(j => j && String(j) === String(sel.jersey));
+    if (currentIdx === idx) {
+      const next = [...lineup];
+      next[idx] = null;
+      setLineup(next);
+      setSelectedPlayerForLineup(null);
+      return;
+    }
+    if (currentIdx !== -1) {
+      alert(`Player #${sel.jersey} is already at P${currentIdx + 1}. Click that position to remove them first, then assign to the new position.`);
+      return;
+    }
+    const next = [...lineup];
+    next[idx] = sel.jersey;
+    setLineup(next);
+    setSelectedPlayerForLineup(null);
+  };
 
   return (
     <div className="referee-modal-overlay" onClick={onClose}>
       <div className="referee-modal-content" style={{ maxWidth: '1000px' }} onClick={(e) => e.stopPropagation()}>
         <h3 className="referee-modal-title">Select Starting Lineups for Set {gameData?.currentSet ? gameData.currentSet + 1 : 1}</h3>
-        
-        <div className="referee-lineup-setup-grid">
-          <div className="referee-lineup-setup-team">
-            <h4 style={{ color: '#ff6b6b' }}>TEAM A - {gameData?.teamAName || 'Team A'}</h4>
-            <div className="referee-court-setup">
-              {[4, 3, 2, 5, 6, 1].map((pos) => {
-                const idx = pos - 1;
-                return (
-                  <div key={pos} className="referee-court-setup-pos">
-                    <div className="referee-pos-setup-label">P{pos}</div>
-                    <select
-                      value={lineupA[idx] || ''}
-                      onChange={(e) => {
-                        const newLineup = [...lineupA];
-                        newLineup[idx] = e.target.value || null;
-                        setLineupA(newLineup);
-                      }}
-                      className="referee-lineup-select"
+        <div className="lineup-setup referee-lineup-setup">
+          <div className="team-setup">
+            <h3 style={{ color: '#ff6b6b' }}>TEAM A - {gameData?.teamAName || 'Team A'}</h3>
+            <div className="player-roster">
+              {playersA.map(p => (
+                <div
+                  key={p.jersey}
+                  className={`roster-player ${selectedPlayerForLineup?.side === 'A' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}`}
+                  onClick={() => setSelectedPlayerForLineup(prev => prev?.side === 'A' && prev?.jersey === p.jersey ? null : { side: 'A', jersey: p.jersey })}
+                >
+                  <strong>#{p.jersey}</strong> {p.name || ''}
+                </div>
+              ))}
+            </div>
+            <div className="court-setup">
+              <div className="court-setup-grid">
+                {posOrder.map((pos) => {
+                  const idx = pos - 1;
+                  const jersey = lineupA[idx];
+                  return (
+                    <div
+                      key={pos}
+                      className={`court-setup-pos ${jersey ? 'filled' : ''}`}
+                      onClick={() => assignPosition('A', pos)}
                     >
-                      <option value="">-</option>
-                      {playersA.filter(p => p.jersey).map(p => (
-                        <option key={p.jersey} value={p.jersey}>
-                          #{p.jersey} {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                );
-              })}
+                      <span className="pos-setup-label">{posLabels[pos]}</span>
+                      <div className="pos-setup-num">{jersey ? `#${jersey}` : '-'}</div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-          
-          <div className="referee-lineup-setup-team">
-            <h4 style={{ color: '#4ecdc4' }}>TEAM B - {gameData?.teamBName || 'Team B'}</h4>
-            <div className="referee-court-setup">
-              {[4, 3, 2, 5, 6, 1].map((pos) => {
-                const idx = pos - 1;
-                return (
-                  <div key={pos} className="referee-court-setup-pos">
-                    <div className="referee-pos-setup-label">P{pos}</div>
-                    <select
-                      value={lineupB[idx] || ''}
-                      onChange={(e) => {
-                        const newLineup = [...lineupB];
-                        newLineup[idx] = e.target.value || null;
-                        setLineupB(newLineup);
-                      }}
-                      className="referee-lineup-select"
+          <div className="team-setup">
+            <h3 style={{ color: '#4ecdc4' }}>TEAM B - {gameData?.teamBName || 'Team B'}</h3>
+            <div className="player-roster">
+              {playersB.map(p => (
+                <div
+                  key={p.jersey}
+                  className={`roster-player ${selectedPlayerForLineup?.side === 'B' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}`}
+                  onClick={() => setSelectedPlayerForLineup(prev => prev?.side === 'B' && prev?.jersey === p.jersey ? null : { side: 'B', jersey: p.jersey })}
+                >
+                  <strong>#{p.jersey}</strong> {p.name || ''}
+                </div>
+              ))}
+            </div>
+            <div className="court-setup">
+              <div className="court-setup-grid">
+                {posOrder.map((pos) => {
+                  const idx = pos - 1;
+                  const jersey = lineupB[idx];
+                  return (
+                    <div
+                      key={pos}
+                      className={`court-setup-pos ${jersey ? 'filled' : ''}`}
+                      onClick={() => assignPosition('B', pos)}
                     >
-                      <option value="">-</option>
-                      {playersB.filter(p => p.jersey).map(p => (
-                        <option key={p.jersey} value={p.jersey}>
-                          #{p.jersey} {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                );
-              })}
+                      <span className="pos-setup-label">{posLabels[pos]}</span>
+                      <div className="pos-setup-num">{jersey ? `#${jersey}` : '-'}</div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
+        <p className="referee-lineup-hint">Click on a player, then click on a court position to assign</p>
 
         {error && <div className="referee-error">{error}</div>}
 

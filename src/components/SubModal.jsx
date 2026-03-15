@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import './SubModal.css';
 
-export default function SubModal({ open, team, teamName, teams, currentSet, sets, subLimit, onConfirm, onExceptional, onClose }) {
+const isLiberoRole = (r) => r === 'libero1' || r === 'libero2' || r === 'liberocaptain';
+
+export default function SubModal({ open, team, teamName, teams, currentSet, sets, subLimit, injuredPlayers, liberoReplacements, sanctionSystem, onConfirm, onExceptional, onClose }) {
   const [playerOut, setPlayerOut] = useState(null);
   const [playerIn, setPlayerIn] = useState(null);
   const [showExceptional, setShowExceptional] = useState(false);
@@ -11,13 +13,44 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
   const roster = teams[team].players || [];
   const lineup = teams[team].lineup || [];
   const onCourtJerseys = Array.isArray(lineup) ? lineup.filter(Boolean).map(String) : [];
+
+  // Players currently replaced by libero (original is on bench, cannot be subbed in normally)
+  const replacedByLibero = [];
+  if (liberoReplacements?.[team]) {
+    liberoReplacements[team].forEach((r) => {
+      if (onCourtJerseys.includes(String(r.libero))) {
+        replacedByLibero.push(String(r.originalPlayer));
+      }
+    });
+  }
+  const injured = injuredPlayers?.[team] || [];
+  const disqualified = sanctionSystem?.disqualified?.[team] || [];
+  const expelledThisSet = (sanctionSystem?.expelled?.[team] || []).filter((e) => e.set === currentSet).map((e) => String(e.jersey));
+  const sanctionLocked = new Set([...disqualified.map((d) => String(d.jersey)), ...expelledThisSet]);
+
+  // OUT: only non-libero players on court (liberos cannot be substituted - use Libero Replacement)
+  const outCandidates = onCourtJerseys.filter((jersey) => {
+    const p = roster.find((r) => String(r.jersey) === jersey);
+    return p && !isLiberoRole(p.role);
+  });
+
+  // IN (bench): exclude liberos, replaced-by-libero, injured, sanction-locked
   const benchJerseys = roster
-    .map((p) => String(p.jersey))
-    .filter((j) => !onCourtJerseys.includes(j));
+    .filter((p) => {
+      const j = String(p.jersey);
+      if (onCourtJerseys.includes(j)) return false;
+      if (isLiberoRole(p.role)) return false;
+      if (replacedByLibero.includes(j)) return false;
+      if (injured.includes(j)) return false;
+      if (sanctionLocked.has(j)) return false;
+      return true;
+    })
+    .map((p) => String(p.jersey));
 
   const setData = sets?.[currentSet - 1];
   const subsUsed = setData?.substitutions?.[team]?.length ?? 0;
-  const canSub = subsUsed < (subLimit || 6);
+  const limit = subLimit || 6;
+  const canSub = subsUsed < limit;
 
   const handleConfirm = () => {
     if (playerOut && playerIn && canSub) {
@@ -52,15 +85,28 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
         <h3 className="sub-modal-title">Substitution – {teamName}</h3>
         <p className="sub-modal-info">
           {canSub
-            ? `Substitution ${subsUsed + 1}/${subLimit || 6} – Select player OUT, then player IN`
-            : `Maximum ${subLimit || 6} substitutions reached for this set.`}
+            ? `Substitution ${subsUsed + 1}/${limit} – Select player OUT, then player IN`
+            : `⚠️ Maximum ${limit} regular substitutions reached - Use Exceptional Substitution for injuries only`}
         </p>
+
+        {outCandidates.length < onCourtJerseys.length && (
+          <div className="sub-modal-libero-note">
+            ⚠️ Liberos cannot be substituted. Use Libero Replacement for liberos on court.
+          </div>
+        )}
+        {(injured.length > 0 || replacedByLibero.length > 0 || sanctionLocked.size > 0) && (
+          <div className="sub-modal-blocked-note">
+            {replacedByLibero.length > 0 && <span>Players replaced by libero cannot be substituted. </span>}
+            {injured.length > 0 && <span>🚑 Injured players (exceptional sub – locked). </span>}
+            {sanctionLocked.size > 0 && <span>⚠️ Sanction-locked players cannot sub in. </span>}
+          </div>
+        )}
 
         <div className="sub-modal-sections">
           <div className="sub-modal-section">
-            <h4>Player OUT (on court)</h4>
+            <h4>Players ON Court (Select player to come OUT)</h4>
             <div className="sub-modal-player-grid">
-              {onCourtJerseys.map((jersey) => {
+              {outCandidates.map((jersey) => {
                 const p = roster.find((r) => String(r.jersey) === jersey);
                 const label = p ? `#${jersey} ${p.name}` : `#${jersey}`;
                 const selected = playerOut === jersey;
@@ -79,7 +125,7 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
             </div>
           </div>
           <div className="sub-modal-section">
-            <h4>Player IN (bench)</h4>
+            <h4>Players on Bench (Select player to come IN)</h4>
             <div className="sub-modal-player-grid">
               {benchJerseys.map((jersey) => {
                 const p = roster.find((r) => String(r.jersey) === jersey);
@@ -125,7 +171,7 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
           {showExceptional && onExceptional ? (
             <>
               <div className="sub-modal-exceptional-warning">
-                ⚠️ This substitution is for injured players only. It will NOT count toward the {subLimit || 6}-substitution limit, and the injured player will be locked for the entire match.
+                ⚠️ This substitution is for injured players only. It will NOT count toward the 6-substitution limit, and the injured player will be locked for the entire match.
               </div>
               <button
                 type="button"

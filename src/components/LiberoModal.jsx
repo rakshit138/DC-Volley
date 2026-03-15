@@ -56,7 +56,8 @@ export default function LiberoModal({ open, team, teamName, teams, currentSet, s
         );
         
         if (!canServe) {
-          alert('⛔ LIBERO CANNOT SERVE!\n\nFIVB Rule: The Libero is NOT allowed to serve.\n\nPosition P1 (Right Back) is currently the serving position.\n\nTo allow libero serving: in the lineup setup, select a designated player under the Libero Serving Rule option.');
+          const teamName = gameData?.teamAName || gameData?.teamBName || `Team ${team}`;
+          alert('⛔ LIBERO CANNOT SERVE!\n\nFIVB Rule: The Libero is NOT allowed to serve.\n\nPosition P1 (Right Back) is currently the serving position for ' + teamName + '.\n\nTo allow libero serving: in the lineup setup, select a designated player under the Libero Serving Rule option.');
           return;
         }
       }
@@ -165,7 +166,8 @@ export default function LiberoModal({ open, team, teamName, teams, currentSet, s
                         className={`libero-modal-pos-btn ${isSelected ? 'selected' : ''} ${cannotReplace ? 'disabled' : ''}`}
                         onClick={() => {
                           if (cannotReplace) {
-                            alert('⛔ LIBERO CANNOT SERVE!\n\nFIVB Rule: The Libero is NOT allowed to serve.\n\nPosition P1 is currently the serving position.');
+                            const tName = gameData?.teamAName || gameData?.teamBName || `Team ${team}`;
+                            alert('⛔ LIBERO CANNOT SERVE!\n\nFIVB Rule: The Libero is NOT allowed to serve.\n\nPosition P1 (Right Back) is currently the serving position for ' + tName + '.\n\nTo allow libero serving: in the lineup setup, select a designated player under the Libero Serving Rule option.');
                             return;
                           }
                           setSelectedPosition(index);

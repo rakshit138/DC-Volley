@@ -11,6 +11,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { allowsP1Replacement } from '../utils/liberoServe';
 
 const GAMES_COLLECTION = 'games';
 
@@ -342,27 +343,27 @@ export async function recordSubstitution(gameCode, team, playerOut, playerIn) {
   // Count completed substitutions (FIVB rule: each substitution action counts)
   const actualSubCount = (set.substitutions[team] || []).length;
   if (actualSubCount >= subLimit) {
-    return { ok: false, message: `Maximum ${subLimit} substitutions per set reached. Use exceptional substitution for injuries.` };
+    return { ok: false, message: `❌ MAXIMUM SUBSTITUTIONS REACHED\n\nYou have already used all ${subLimit} regular substitutions for this set.\n\n🚑 For injuries, use the "Exceptional Substitution" button instead.\n\nExceptional substitutions do NOT count toward the substitution limit.` };
   }
-  
-  // Rule 1: Check if playerOut has completed their substitution (cannot sub again)
+
+  // Rule 1: Once a player has completed their substitution, they CANNOT go out again (exact HTML)
   if ((set.completedSubstitutions[team] || []).includes(playerOutStr)) {
-    return { ok: false, message: `Player #${playerOutStr} has completed their substitution and cannot be substituted again this set.` };
+    return { ok: false, message: `❌ INVALID SUBSTITUTION!\n\nFIVB Rule: Player #${playerOutStr} has completed their substitution.\n\nAfter completing a substitution (OUT then back IN with same player), both players cannot be substituted again in this set.` };
   }
-  
+
   // Rule 2: If playerOut is already paired, they can ONLY sub with their paired player
   if (set.substitutionTracking[team]?.[playerOutStr]) {
     const pairedPlayer = set.substitutionTracking[team][playerOutStr].pairedWith;
     if (pairedPlayer !== playerInStr) {
-      return { ok: false, message: `Player #${playerOutStr} is paired with Player #${pairedPlayer}. They can ONLY substitute with Player #${pairedPlayer}.` };
+      return { ok: false, message: `❌ INVALID SUBSTITUTION!\n\nFIVB Rule: Player #${playerOutStr} is paired with Player #${pairedPlayer}.\n\nPlayer #${playerOutStr} can ONLY substitute with Player #${pairedPlayer} (not with Player #${playerInStr}).` };
     }
   }
-  
+
   // Rule 3: If playerIn is already paired, they can ONLY sub with their paired player
   if (set.substitutionTracking[team]?.[playerInStr]) {
     const pairedPlayer = set.substitutionTracking[team][playerInStr].pairedWith;
     if (pairedPlayer !== playerOutStr) {
-      return { ok: false, message: `Player #${playerInStr} is paired with Player #${pairedPlayer}. They can ONLY substitute with Player #${pairedPlayer}.` };
+      return { ok: false, message: `❌ INVALID SUBSTITUTION!\n\nFIVB Rule: Player #${playerInStr} is paired with Player #${pairedPlayer}.\n\nPlayer #${playerInStr} can ONLY substitute with Player #${pairedPlayer} (not with Player #${playerOutStr}).` };
     }
   }
 
@@ -378,7 +379,7 @@ export async function recordSubstitution(gameCode, team, playerOut, playerIn) {
   
   const lineup = [...teams[team].lineup];
   while (lineup.length < 6) lineup.push(null);
-  const posIndex = lineup.indexOf(playerOutStr);
+  const posIndex = lineup.findIndex((j) => String(j) === playerOutStr);
   if (posIndex === -1) {
     return { ok: false, message: 'Player not found on court' };
   }
@@ -1189,12 +1190,18 @@ export async function recordExceptionalSubstitution(gameCode, team, playerOut, p
   const lineup = [...teams[team].lineup];
   while (lineup.length < 6) lineup.push(null);
   
-  const posIndex = lineup.indexOf(String(playerOut));
+  const posIndex = lineup.findIndex((j) => String(j) === String(playerOut));
   if (posIndex === -1) {
     return { ok: false, message: 'Player not found on court' };
   }
-  
-  // Add to exceptional substitutions (separate from regular)
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  const otherTeam = team === 'A' ? 'B' : 'A';
+  const scoreText = (set.score?.[team] ?? 0) + ':' + (set.score?.[otherTeam] ?? 0);
+  const autoRemark = `Exceptional substitution: #${playerOut} replaced by #${playerIn} (injury) – Set ${currentSet} at ${scoreText}`;
+
+  // Add to exceptional substitutions (separate from regular, exact HTML format)
   if (!set.exceptionalSubstitutions) {
     set.exceptionalSubstitutions = { A: [], B: [] };
   }
@@ -1204,7 +1211,10 @@ export async function recordExceptionalSubstitution(gameCode, team, playerOut, p
     playerOut: String(playerOut),
     playerIn: String(playerIn),
     position: posIndex + 1,
-    remark: 'Injury'
+    timestamp: timeStr,
+    setNumber: currentSet,
+    remark: autoRemark,
+    tag: 'E'
   });
   
   // Update lineup
@@ -1278,22 +1288,41 @@ export async function recordLiberoReplacementWithTracking(gameCode, team, libero
   }
   
   const set = sets[currentSet - 1];
-  
-  // Save action to history BEFORE making changes
-  const actionHistory = gameData.actionHistory || [];
-  const previousLineup = teams[team].lineup ? [...teams[team].lineup] : [];
-  const previousLiberoReplacements = gameData.liberoReplacements?.[team] 
-    ? JSON.parse(JSON.stringify(gameData.liberoReplacements[team]))
-    : [];
-  
-  const lineup = [...teams[team].lineup];
-  while (lineup.length < 6) lineup.push(null);
-  
+  const serving = set.serving || 'A';
+  const teamName = gameData[`team${team}Name`] || gameData.teamAName || gameData.teamBName || `Team ${team}`;
+
+  // FIVB Rule: Libero CANNOT serve unless LiberoServe designates this player (exact HTML logic)
   const posIndex = position - 1;
+  if (posIndex === 0 && serving === team) {
+    const canServe = allowsP1Replacement(
+      team,
+      playerOutJersey,
+      1,
+      gameData.liberoServeConfig || {},
+      gameData
+    );
+    if (!canServe) {
+      return {
+        ok: false,
+        message: `⛔ LIBERO CANNOT SERVE!\n\nFIVB Rule: The Libero is NOT allowed to serve.\n\nPosition P1 (Right Back) is currently the serving position for ${teamName}.\n\nTo allow libero serving: in the lineup setup, select a designated player under the Libero Serving Rule option.`
+      };
+    }
+  }
+
   if (posIndex < 0 || posIndex >= 6) {
     return { ok: false, message: 'Invalid position' };
   }
-  
+
+  // Save action to history BEFORE making changes
+  const actionHistory = gameData.actionHistory || [];
+  const previousLineup = teams[team].lineup ? [...teams[team].lineup] : [];
+  const previousLiberoReplacements = gameData.liberoReplacements?.[team]
+    ? JSON.parse(JSON.stringify(gameData.liberoReplacements[team]))
+    : [];
+
+  const lineup = [...teams[team].lineup];
+  while (lineup.length < 6) lineup.push(null);
+
   // Update lineup
   lineup[posIndex] = String(liberoJersey);
   teams[team].lineup = lineup;
@@ -1386,12 +1415,13 @@ export async function removeLiberoFromCourt(gameCode, team, liberoJersey) {
   const lineup = [...teams[team].lineup];
   while (lineup.length < 6) lineup.push(null);
   
-  const posIndex = replacement.position - 1;
-  if (lineup[posIndex] !== String(liberoJersey)) {
-    return { ok: false, message: 'Libero not at expected position' };
+  // Libero may have rotated to a different position (e.g. front row); find current index (like HTML confirmAutoLiberoExit)
+  const posIndex = lineup.findIndex(j => j != null && String(j) === String(liberoJersey));
+  if (posIndex === -1) {
+    return { ok: false, message: 'Libero not found in lineup' };
   }
   
-  // Restore original player
+  // Restore original player at the position where the libero currently is
   lineup[posIndex] = String(replacement.originalPlayer);
   teams[team].lineup = lineup;
   
@@ -1399,13 +1429,13 @@ export async function removeLiberoFromCourt(gameCode, team, liberoJersey) {
   const updatedReplacements = liberoReplacements[team].filter(r => r.libero !== String(liberoJersey));
   liberoReplacements[team] = updatedReplacements;
   
-  // Save action to history
+  // Save action to history (position = current position where libero was removed)
   const actionToSave = {
     type: 'libero',
     team: team,
     libero: String(liberoJersey),
     originalPlayer: String(replacement.originalPlayer),
-    position: replacement.position,
+    position: posIndex + 1,
     setNumber: gameData.currentSet || 1
   };
   

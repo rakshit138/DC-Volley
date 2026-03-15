@@ -1,17 +1,25 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import './Lineup.css';
 
 export default function Lineup() {
-  const { gameCode, gameData, loading, error } = useGame();
+  const { gameCode, setGameCode, gameData, loading, error } = useGame();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const codeFromUrl = searchParams.get('code');
 
   useEffect(() => {
-    if (!gameCode) {
+    if (codeFromUrl && codeFromUrl.trim() && !gameCode) {
+      setGameCode(codeFromUrl.trim());
+    }
+  }, [codeFromUrl, gameCode, setGameCode]);
+
+  useEffect(() => {
+    if (!gameCode && !codeFromUrl) {
       navigate('/');
     }
-  }, [gameCode, navigate]);
+  }, [gameCode, codeFromUrl, navigate]);
 
   if (loading) {
     return (

@@ -3,6 +3,17 @@ import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getAnalytics } from 'firebase/analytics';
 
+const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+  throw new Error(
+    'Firebase API key is missing or invalid (auth/invalid-api-key).\n\n' +
+    '1. Copy .env.example to .env in the project root.\n' +
+    '2. Open Firebase Console → Project Settings → Your apps → Web app.\n' +
+    '3. Copy the config values into .env (VITE_FIREBASE_API_KEY, etc.).\n' +
+    '4. Restart the dev server (npm run dev).'
+  );
+}
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,

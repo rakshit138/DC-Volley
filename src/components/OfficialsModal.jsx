@@ -230,15 +230,23 @@ export default function OfficialsModal({ open, gameData, onSave, onClose }) {
 
   if (!open) return null;
 
+  const ref1Name = gameData?.officials?.ref1 ?? gameData?.matchInfo?.ref1 ?? '';
+  const ref2Name = gameData?.officials?.ref2 ?? gameData?.matchInfo?.ref2 ?? '';
+  const scorerName = gameData?.officials?.scorer ?? gameData?.matchInfo?.scorer ?? '';
+  const assistScorerName = gameData?.officials?.assistScorer ?? gameData?.matchInfo?.assistScorer ?? '';
+
   return (
     <div className="officials-modal-overlay" onClick={onClose}>
       <div className="officials-modal-content" onClick={(e) => e.stopPropagation()}>
-        <h3 className="officials-modal-title">Team officials & signatures</h3>
-        <p className="officials-modal-desc">Team staff and captain/coach signatures</p>
+        <h3 className="officials-modal-title">👥 TEAM OFFICIALS & SIGNATURES</h3>
+        <p className="officials-modal-desc">Team staff information and captain/coach signatures</p>
 
         <div className="officials-team-block team-a-block">
-          <h4>Team A: {teamAName || 'Team A'}</h4>
-          <input type="text" placeholder="Team A name" value={teamAName} onChange={(e) => setTeamAName(e.target.value)} className="officials-input" />
+          <h4><span className="officials-team-label">TEAM A:</span> <span className="officials-team-name-val">{teamAName || 'Team A'}</span></h4>
+          <div className="officials-team-name-field">
+            <label className="officials-field-label">✏️ Team Name</label>
+            <input type="text" placeholder="Enter Team A name" value={teamAName} onChange={(e) => setTeamAName(e.target.value)} className="officials-input officials-team-name-input" />
+          </div>
           <div className="officials-fields">
             <input type="text" placeholder="Coach" value={coachA} onChange={(e) => setCoachA(e.target.value)} />
             <input type="text" placeholder="Assistant coach" value={asstCoachA} onChange={(e) => setAsstCoachA(e.target.value)} />
@@ -253,8 +261,11 @@ export default function OfficialsModal({ open, gameData, onSave, onClose }) {
         </div>
 
         <div className="officials-team-block team-b-block">
-          <h4>Team B: {teamBName || 'Team B'}</h4>
-          <input type="text" placeholder="Team B name" value={teamBName} onChange={(e) => setTeamBName(e.target.value)} className="officials-input" />
+          <h4><span className="officials-team-label">TEAM B:</span> <span className="officials-team-name-val">{teamBName || 'Team B'}</span></h4>
+          <div className="officials-team-name-field">
+            <label className="officials-field-label">✏️ Team Name</label>
+            <input type="text" placeholder="Enter Team B name" value={teamBName} onChange={(e) => setTeamBName(e.target.value)} className="officials-input officials-team-name-input" />
+          </div>
           <div className="officials-fields">
             <input type="text" placeholder="Coach" value={coachB} onChange={(e) => setCoachB(e.target.value)} />
             <input type="text" placeholder="Assistant coach" value={asstCoachB} onChange={(e) => setAsstCoachB(e.target.value)} />
@@ -269,18 +280,54 @@ export default function OfficialsModal({ open, gameData, onSave, onClose }) {
         </div>
 
         <div className="officials-refs-block">
-          <h4>Match officials signatures</h4>
-          <div className="officials-ref-sigs">
-            <SigPad label="1st Referee" refOrHook={firstRef} />
-            <SigPad label="2nd Referee" refOrHook={secondRef} />
-            <SigPad label="Scorer" refOrHook={scorerSig} />
-            <SigPad label="Asst. Scorer" refOrHook={assistScorerSig} />
+          <h4>⚖️ MATCH OFFICIALS SIGNATURES</h4>
+          <div className="officials-ref-rows">
+            <div className="officials-ref-row">
+              <div className="officials-ref-label-name">
+                <div className="officials-ref-label">1st Referee</div>
+                <div className="officials-ref-name" id="ref1Display">{ref1Name || '-'}</div>
+              </div>
+              <div className="officials-ref-sig-wrap">
+                <canvas ref={firstRef[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
+              </div>
+              <button type="button" className="officials-ref-clear" onClick={firstRef[1]}>Clear</button>
+            </div>
+            <div className="officials-ref-row">
+              <div className="officials-ref-label-name">
+                <div className="officials-ref-label">2nd Referee</div>
+                <div className="officials-ref-name" id="ref2Display">{ref2Name || '-'}</div>
+              </div>
+              <div className="officials-ref-sig-wrap">
+                <canvas ref={secondRef[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
+              </div>
+              <button type="button" className="officials-ref-clear" onClick={secondRef[1]}>Clear</button>
+            </div>
+            <div className="officials-ref-row">
+              <div className="officials-ref-label-name">
+                <div className="officials-ref-label">Scorer</div>
+                <div className="officials-ref-name" id="scorerDisplay">{scorerName || '-'}</div>
+              </div>
+              <div className="officials-ref-sig-wrap">
+                <canvas ref={scorerSig[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
+              </div>
+              <button type="button" className="officials-ref-clear" onClick={scorerSig[1]}>Clear</button>
+            </div>
+            <div className="officials-ref-row">
+              <div className="officials-ref-label-name">
+                <div className="officials-ref-label">Asst. Scorer</div>
+                <div className="officials-ref-name" id="assistScorerDisplay">{assistScorerName || '-'}</div>
+              </div>
+              <div className="officials-ref-sig-wrap">
+                <canvas ref={assistScorerSig[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
+              </div>
+              <button type="button" className="officials-ref-clear" onClick={assistScorerSig[1]}>Clear</button>
+            </div>
           </div>
         </div>
 
         <div className="officials-modal-buttons">
+          <button type="button" className="officials-btn save" onClick={handleSave}>💾 Save</button>
           <button type="button" className="officials-btn cancel" onClick={onClose}>Close</button>
-          <button type="button" className="officials-btn save" onClick={handleSave}>Save</button>
         </div>
       </div>
     </div>

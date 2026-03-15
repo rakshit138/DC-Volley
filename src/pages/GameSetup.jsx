@@ -76,6 +76,8 @@ export default function GameSetup() {
   // Starting Lineups (by team 1 / team 2, mapped to A/B after coin toss)
   const [lineup1, setLineup1] = useState(Array(6).fill(null)); // P1-P6 for team 1
   const [lineup2, setLineup2] = useState(Array(6).fill(null)); // P1-P6 for team 2
+  // Click-player-then-position flow (like HTML): liberos cannot be in starting lineup
+  const [selectedPlayerForLineup, setSelectedPlayerForLineup] = useState(null); // { side: 'A'|'B', jersey }
 
   // Libero Serve Configuration (which player libero can serve for)
   const [liberoServeConfig, setLiberoServeConfig] = useState({
@@ -1146,100 +1148,113 @@ export default function GameSetup() {
           </div>
         )}
 
-        {/* Step 6: Starting Lineups */}
-        {currentStep === 6 && assignment && (
+        {/* Step 6: Starting Lineups — click player then position (like HTML); liberos cannot be in starting lineup */}
+        {currentStep === 6 && assignment && (() => {
+          const isLibero = (p) => p.role === 'libero1' || p.role === 'libero2' || p.role === 'liberocaptain';
+          const rosterA = (assignment.teamARoster || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
+          const rosterB = (assignment.teamBRoster || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
+          const lineupA = assignment.teamALineup || [];
+          const lineupB = assignment.teamBLineup || [];
+          const setLineupForA = (idx, jersey) => {
+            const newLineup = [...(coinToss.teamAAssignment === 'team1' ? lineup1 : lineup2)];
+            newLineup[idx] = jersey;
+            if (coinToss.teamAAssignment === 'team1') setLineup1(newLineup);
+            else setLineup2(newLineup);
+          };
+          const setLineupForB = (idx, jersey) => {
+            const newLineup = [...(coinToss.teamBAssignment === 'team1' ? lineup1 : lineup2)];
+            newLineup[idx] = jersey;
+            if (coinToss.teamBAssignment === 'team1') setLineup1(newLineup);
+            else setLineup2(newLineup);
+          };
+          const assignPosition = (side, pos) => {
+            const idx = pos - 1;
+            const lineup = side === 'A' ? lineupA : lineupB;
+            const sel = selectedPlayerForLineup;
+            if (!sel || sel.side !== side) return;
+            const currentAtPos = lineup[idx];
+            const currentIdx = lineup.findIndex(j => j && String(j) === String(sel.jersey));
+            if (currentIdx === idx) {
+              if (side === 'A') setLineupForA(idx, null);
+              else setLineupForB(idx, null);
+              setSelectedPlayerForLineup(null);
+              return;
+            }
+            if (currentIdx !== -1) {
+              alert(`Player #${sel.jersey} is already at P${currentIdx + 1}. Click that position to remove them first, then assign to the new position.`);
+              return;
+            }
+            if (side === 'A') setLineupForA(idx, sel.jersey);
+            else setLineupForB(idx, sel.jersey);
+            setSelectedPlayerForLineup(null);
+          };
+          const posOrder = [4, 3, 2, 5, 6, 1];
+          return (
           <div className="setup-step">
             <h2>Starting Lineups for Set 1</h2>
-            <p className="setup-hint">Select jersey numbers for each position (P1-P6)</p>
-            <div className="lineup-setup-section">
-              <div className="lineup-team-setup">
+            <div className="lineup-setup">
+              <div className="team-setup">
                 <h3 style={{ color: '#ff6b6b' }}>TEAM A - {assignment.teamA.name}</h3>
-                <div className="lineup-court-setup">
-                  <div className="lineup-court-grid">
-                    {[
-                      { pos: 4, label: 'P4-LF' },
-                      { pos: 3, label: 'P3-MF' },
-                      { pos: 2, label: 'P2-RF' },
-                      { pos: 5, label: 'P5-LB' },
-                      { pos: 6, label: 'P6-MB' },
-                      { pos: 1, label: 'P1-RB' }
-                    ].map(({ pos, label }) => {
+                <div className="player-roster">
+                  {rosterA.map(p => (
+                    <div
+                      key={p.jersey}
+                      className={`roster-player ${selectedPlayerForLineup?.side === 'A' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}`}
+                      onClick={() => setSelectedPlayerForLineup(prev => prev?.side === 'A' && prev?.jersey === p.jersey ? null : { side: 'A', jersey: p.jersey })}
+                    >
+                      <strong>#{p.jersey}</strong> {p.name || ''}
+                      {p.role === 'captain' ? <span className="lineup-badge-c">C</span> : null}
+                    </div>
+                  ))}
+                </div>
+                <div className="court-setup">
+                  <div className="court-setup-grid">
+                    {posOrder.map((pos) => {
                       const idx = pos - 1;
+                      const jersey = lineupA[idx];
+                      const label = { 4: 'P4-LF', 3: 'P3-MF', 2: 'P2-RF', 5: 'P5-LB', 6: 'P6-MB', 1: 'P1-RB' }[pos];
                       return (
-                        <div key={pos} className="lineup-court-pos-setup">
-                          <div className="lineup-pos-label">{label}</div>
-                          <select
-                            value={assignment.teamALineup[idx] || ''}
-                            onChange={(e) => {
-                              const val = e.target.value || null;
-                              if (coinToss.teamAAssignment === 'team1') {
-                                const newLineup = [...lineup1];
-                                newLineup[idx] = val;
-                                setLineup1(newLineup);
-                              } else {
-                                const newLineup = [...lineup2];
-                                newLineup[idx] = val;
-                                setLineup2(newLineup);
-                              }
-                            }}
-                            className="lineup-pos-select"
-                          >
-                            <option value="">-</option>
-                            {assignment.teamARoster
-                              .filter(p => p.jersey)
-                              .map(p => (
-                                <option key={p.jersey} value={p.jersey}>
-                                  #{p.jersey} {p.name}
-                                </option>
-                              ))}
-                          </select>
+                        <div
+                          key={pos}
+                          className={`court-setup-pos ${jersey ? 'filled' : ''}`}
+                          onClick={() => assignPosition('A', pos)}
+                        >
+                          <span className="pos-setup-label">{label}</span>
+                          <div className="pos-setup-num">{jersey ? `#${jersey}` : '-'}</div>
                         </div>
                       );
                     })}
                   </div>
                 </div>
               </div>
-              <div className="lineup-team-setup">
+              <div className="team-setup">
                 <h3 style={{ color: '#4ecdc4' }}>TEAM B - {assignment.teamB.name}</h3>
-                <div className="lineup-court-setup">
-                  <div className="lineup-court-grid">
-                    {[
-                      { pos: 4, label: 'P4-LF' },
-                      { pos: 3, label: 'P3-MF' },
-                      { pos: 2, label: 'P2-RF' },
-                      { pos: 5, label: 'P5-LB' },
-                      { pos: 6, label: 'P6-MB' },
-                      { pos: 1, label: 'P1-RB' }
-                    ].map(({ pos, label }) => {
+                <div className="player-roster">
+                  {rosterB.map(p => (
+                    <div
+                      key={p.jersey}
+                      className={`roster-player ${selectedPlayerForLineup?.side === 'B' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}`}
+                      onClick={() => setSelectedPlayerForLineup(prev => prev?.side === 'B' && prev?.jersey === p.jersey ? null : { side: 'B', jersey: p.jersey })}
+                    >
+                      <strong>#{p.jersey}</strong> {p.name || ''}
+                      {p.role === 'captain' ? <span className="lineup-badge-c">C</span> : null}
+                    </div>
+                  ))}
+                </div>
+                <div className="court-setup">
+                  <div className="court-setup-grid">
+                    {posOrder.map((pos) => {
                       const idx = pos - 1;
+                      const jersey = lineupB[idx];
+                      const label = { 4: 'P4-LF', 3: 'P3-MF', 2: 'P2-RF', 5: 'P5-LB', 6: 'P6-MB', 1: 'P1-RB' }[pos];
                       return (
-                        <div key={pos} className="lineup-court-pos-setup">
-                          <div className="lineup-pos-label">{label}</div>
-                          <select
-                            value={assignment.teamBLineup[idx] || ''}
-                            onChange={(e) => {
-                              const val = e.target.value || null;
-                              if (coinToss.teamBAssignment === 'team1') {
-                                const newLineup = [...lineup1];
-                                newLineup[idx] = val;
-                                setLineup1(newLineup);
-                              } else {
-                                const newLineup = [...lineup2];
-                                newLineup[idx] = val;
-                                setLineup2(newLineup);
-                              }
-                            }}
-                            className="lineup-pos-select"
-                          >
-                            <option value="">-</option>
-                            {assignment.teamBRoster
-                              .filter(p => p.jersey)
-                              .map(p => (
-                                <option key={p.jersey} value={p.jersey}>
-                                  #{p.jersey} {p.name}
-                                </option>
-                              ))}
-                          </select>
+                        <div
+                          key={pos}
+                          className={`court-setup-pos ${jersey ? 'filled' : ''}`}
+                          onClick={() => assignPosition('B', pos)}
+                        >
+                          <span className="pos-setup-label">{label}</span>
+                          <div className="pos-setup-num">{jersey ? `#${jersey}` : '-'}</div>
                         </div>
                       );
                     })}
@@ -1247,7 +1262,7 @@ export default function GameSetup() {
                 </div>
               </div>
             </div>
-            
+            <p className="setup-hint lineup-click-hint">Click on a player, then click on a court position to assign</p>
             {/* Libero Serve Configuration */}
             {(() => {
               const hasLibero = (roster) => roster.some(p => 
@@ -1361,7 +1376,8 @@ export default function GameSetup() {
               </button>
             </div>
           </div>
-        )}
+        );
+        })()}
       </div>
     </div>
   );

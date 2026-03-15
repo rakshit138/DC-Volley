@@ -15,7 +15,7 @@ export default function AutoLiberoExitModal({ open, exitData, onConfirm, onClose
       <div className="auto-libero-modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="auto-libero-icon">🔄</div>
         <h3 className="auto-libero-title">LIBERO EXIT THE COURT</h3>
-        <p className="auto-libero-message">Libero rotating to front row</p>
+        <p className="auto-libero-message">{exitData.teamName != null ? exitData.teamName : 'Libero rotating to front row'}</p>
 
         <div className="auto-libero-details">
           <div className="auto-libero-player-info">
