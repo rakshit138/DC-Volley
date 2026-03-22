@@ -1,3 +1,13 @@
+.officials-modal-embedded-wrap {
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto 16px;
+}
+
+.officials-modal-embedded-wrap .officials-modal-content {
+  max-height: none;
+}
+
 .officials-modal-overlay {
   position: fixed;
   inset: 0;
@@ -33,6 +43,25 @@
   font-size: 13px;
   margin-bottom: 20px;
   text-align: center;
+}
+
+.officials-post-match-banner {
+  background: #2a1f00;
+  border: 2px solid #ffd700;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  color: #ffe8b0;
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.officials-post-match-captain-wrap .officials-sig-block {
+  border-radius: 8px;
+  padding: 8px;
+  border: 2px solid #ffd700;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.25);
 }
 
 .officials-team-block {

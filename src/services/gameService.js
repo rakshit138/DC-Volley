@@ -6,6 +6,7 @@ import {
   onSnapshot,
   updateDoc,
   serverTimestamp,
+  Timestamp,
   query,
   where,
   getDocs
@@ -23,24 +24,38 @@ const GAMES_COLLECTION = 'games';
  */
 export async function createGame(gameCode, gameData) {
   const gameRef = doc(db, GAMES_COLLECTION, gameCode);
-  
+  const { sets: rawSets = [], ...rest } = gameData;
+  // Firestore does not allow serverTimestamp() inside array elements — use Timestamp.now() for set 1 start.
+  const sets = (rawSets || []).map((s, i) => {
+    if (i === 0) {
+      const { startTime: _omitStart, ...row } = s || {};
+      return { ...row, startTime: Timestamp.now() };
+    }
+    return s;
+  });
+
   const gameDoc = {
-    ...gameData,
+    ...rest,
     gameCode,
+    sets,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    status: gameData.status || 'LIVE', // LIVE or FINISHED
-    currentSet: gameData.currentSet || 1,
-    sets: gameData.sets || [],
-    setsWon: gameData.setsWon || {
+    /** Set at creation so referee panel does not force the officials modal open again */
+    officialsSavedAt: serverTimestamp(),
+    /** Clock anchor for "live" play — after setup/officials; used if set.startTime missing */
+    playStartedAt: serverTimestamp(),
+    status: rest.status || 'LIVE',
+    currentSet: rest.currentSet || 1,
+    setsWon: rest.setsWon || {
       A: 0,
       B: 0
     },
-    sanctionSystem: gameData.sanctionSystem || {
+    sanctionSystem: rest.sanctionSystem || {
       misconduct: { A: [], B: [] },
       delay: { A: { count: 0, log: [] }, B: { count: 0, log: [] } },
       expelled: { A: [], B: [] }, // [{jersey, set}] - cleared next set
       disqualified: { A: [], B: [] }, // [{jersey}] - entire match
+      coachExpelled: { A: false, B: false },
       coachDisqualified: { A: false, B: false }
     }
   };
@@ -835,12 +850,17 @@ export async function recordSanction(gameCode, team, module, payload) {
   const sanctionSystem = gameData.sanctionSystem || {
     misconduct: { A: [], B: [] },
     delay: { A: { count: 0, log: [] }, B: { count: 0, log: [] } },
+    expelled: { A: [], B: [] },
     disqualified: { A: [], B: [] },
+    coachExpelled: { A: false, B: false },
     coachDisqualified: { A: false, B: false }
   };
 
   const opp = team === 'A' ? 'B' : 'A';
-  const addPointForOpponent = (payload.type === 'P' || payload.type === 'EXP' || payload.type === 'DISQ' || payload.type === 'DP');
+  // FIVB: only Penalty (P) and Delay Penalty (DP) award a point to the opponent
+  const addPointForOpponent =
+    (module === 'misconduct' && payload.type === 'P') ||
+    (module === 'delay' && payload.type === 'DP');
 
   if (module === 'misconduct') {
     const list = [...(sanctionSystem.misconduct?.[team] || [])];
@@ -869,6 +889,17 @@ export async function recordSanction(gameCode, team, module, payload) {
       sanctionSystem.coachDisqualified = sanctionSystem.coachDisqualified || { A: false, B: false };
       sanctionSystem.coachDisqualified[team] = true;
     }
+    if (payload.type === 'EXP' && payload.personType === 'player') {
+      sanctionSystem.expelled = sanctionSystem.expelled || { A: [], B: [] };
+      const ex = [...(sanctionSystem.expelled[team] || [])];
+      if (!ex.some((e) => String(e.jersey) === String(payload.person) && e.set === currentSet)) {
+        ex.push({ jersey: String(payload.person), set: currentSet });
+        sanctionSystem.expelled[team] = ex;
+      }
+    } else if (payload.type === 'EXP' && payload.personType === 'coach') {
+      sanctionSystem.coachExpelled = sanctionSystem.coachExpelled || { A: false, B: false };
+      sanctionSystem.coachExpelled[team] = true;
+    }
   } else {
     const delayData = sanctionSystem.delay?.[team] || { count: 0, log: [] };
     const log = [...(delayData.log || [])];
@@ -884,6 +915,9 @@ export async function recordSanction(gameCode, team, module, payload) {
 
   // If awarding penalty point, handle it like a regular point (save history, rotate, check set completion)
   if (addPointForOpponent) {
+    const teams = gameData.teams
+      ? JSON.parse(JSON.stringify(gameData.teams))
+      : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
     // Save action to history BEFORE making changes (like original HTML awardPenaltyPoint)
     const actionHistory = gameData.actionHistory || [];
     const previousScore = { A: set.score?.A || 0, B: set.score?.B || 0 };

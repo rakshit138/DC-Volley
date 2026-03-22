@@ -133,6 +133,34 @@ export default function SummaryModal({ open, gameData, onClose, onExportPDF }) {
           </div>
         </div>
 
+        {gameData.sanctionSystem && (totalSanctionsA + totalSanctionsB > 0) && (
+          <div className="summary-section">
+            <h4>Sanctions log</h4>
+            <div className="summary-sanction-log" style={{ fontSize: '12px', textAlign: 'left', maxHeight: '200px', overflowY: 'auto' }}>
+              {['A', 'B'].map((t) => (
+                <div key={t} style={{ marginBottom: '10px' }}>
+                  <strong style={{ color: t === 'A' ? teamAColor : teamBColor }}>
+                    {t === 'A' ? teamAName : teamBName}
+                  </strong>
+                  <ul style={{ margin: '6px 0 0 12px', padding: 0, listStyle: 'disc' }}>
+                    {(gameData.sanctionSystem.misconduct?.[t] || []).map((r, i) => (
+                      <li key={`m-${t}-${i}`}>
+                        Set {r.set}: {r.type} — {r.personType === 'coach' ? 'Coach' : `#${r.person}`}
+                        {r.reason ? ` (${r.reason})` : ''}
+                      </li>
+                    ))}
+                    {(gameData.sanctionSystem.delay?.[t]?.log || []).map((r, i) => (
+                      <li key={`d-${t}-${i}`}>
+                        Set {r.set}: Delay {r.type}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="summary-modal-buttons">
           {onExportPDF && (
             <button 

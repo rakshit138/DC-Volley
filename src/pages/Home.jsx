@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { getGameByCode } from '../services/gameService';
+import { markPrepSessionStart } from '../utils/setupSession';
 import './Home.css';
 
 export default function Home() {
@@ -12,7 +13,7 @@ export default function Home() {
   const navigate = useNavigate();
 
   const handleStartNewGame = () => {
-    // Navigate to setup screen instead of creating game directly
+    markPrepSessionStart();
     navigate('/game-setup');
   };
 

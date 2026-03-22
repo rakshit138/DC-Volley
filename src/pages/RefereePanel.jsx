@@ -53,6 +53,7 @@ import MatchDataModal from '../components/MatchDataModal';
 import SummaryModal from '../components/SummaryModal';
 import { downloadMatchReportHtml } from '../utils/exportMatchReportHtml';
 import { saveMatch, loadMatch } from '../utils/matchStorage';
+import { getPrepSessionStart } from '../utils/setupSession';
 import './RefereePanel.css';
 
 const POS_LABELS = { 1: 'P1-RB', 2: 'P2-RF', 3: 'P3-MF', 4: 'P4-LF', 5: 'P5-LB', 6: 'P6-MB' };
@@ -216,6 +217,7 @@ export default function RefereePanel() {
   const [timeoutModal, setTimeoutModal] = useState({ open: false, team: null });
   const [subModal, setSubModal] = useState({ open: false, team: null });
   const [officialsModalOpen, setOfficialsModalOpen] = useState(false);
+  const [postMatchOfficialsPrompt, setPostMatchOfficialsPrompt] = useState(false);
   const [liberoModal, setLiberoModal] = useState({ open: false, team: null });
   const [rosterModalOpen, setRosterModalOpen] = useState(false);
   const [sanctionModalOpen, setSanctionModalOpen] = useState(false);
@@ -266,29 +268,43 @@ export default function RefereePanel() {
     }
   }, [gameData?.rallyActive]);
 
-  // Match and Set Time Tracking
+  // Match time = from "Start New Game" / setup (prep session); falls back to createdAt if joined by code only.
+  // Set time = from when the game goes live (Firestore set 1 startTime / playStartedAt), not during roster/officials entry.
   useEffect(() => {
     if (!gameData) return;
-    
-    // Match time
-    if (gameData.createdAt) {
+
+    const prepStart = getPrepSessionStart();
+    const created =
+      gameData.createdAt?.toDate?.() ?? (gameData.createdAt ? new Date(gameData.createdAt) : null);
+    const matchAnchor = prepStart || created;
+
+    if (matchAnchor) {
       matchTimerRef.current = setInterval(() => {
-        const duration = calculateMatchDuration(gameData.createdAt.toDate ? gameData.createdAt.toDate() : new Date(gameData.createdAt));
-        setMatchTime(duration);
+        setMatchTime(calculateMatchDuration(matchAnchor));
       }, 1000);
     }
-    
-    // Set time
-    const currentSet = gameData.currentSet || 1;
+
+    const currentSetNum = gameData.currentSet || 1;
     const sets = gameData.sets || [];
-    const currentSetData = sets[currentSet - 1];
+    const currentSetData = sets[currentSetNum - 1];
+
+    let setStart = null;
     if (currentSetData?.startTime) {
+      setStart = currentSetData.startTime.toDate
+        ? currentSetData.startTime.toDate()
+        : new Date(currentSetData.startTime);
+    } else if (currentSetNum === 1 && gameData.playStartedAt) {
+      setStart = gameData.playStartedAt.toDate
+        ? gameData.playStartedAt.toDate()
+        : new Date(gameData.playStartedAt);
+    }
+
+    if (setStart) {
       setTimerRef.current = setInterval(() => {
-        const duration = calculateSetDuration(currentSetData.startTime.toDate ? currentSetData.startTime.toDate() : new Date(currentSetData.startTime));
-        setSetTime(duration);
+        setSetTime(calculateSetDuration(setStart));
       }, 1000);
     }
-    
+
     return () => {
       if (matchTimerRef.current) clearInterval(matchTimerRef.current);
       if (setTimerRef.current) clearInterval(setTimerRef.current);
@@ -894,15 +910,27 @@ export default function RefereePanel() {
     }
   };
 
+  const closeOfficialsModal = () => {
+    setPostMatchOfficialsPrompt(false);
+    setOfficialsModalOpen(false);
+  };
+
   const handleFinishGame = async () => {
     if (updating || !gameCode) return;
-    if (!window.confirm('Are you sure you want to mark this game as finished?')) return;
+    if (
+      !window.confirm(
+        'End this match? You will be asked to collect Captain (after match) signatures next.'
+      )
+    )
+      return;
     setUpdating(true);
     setMessage('');
     try {
       await markGameFinished(gameCode);
-      setMessage('Game marked as finished');
-      setTimeout(() => setMessage(''), 3000);
+      setPostMatchOfficialsPrompt(true);
+      setOfficialsModalOpen(true);
+      setMessage('Match ended — add post-match captain signatures, then Save.');
+      setTimeout(() => setMessage(''), 5000);
     } catch (err) {
       setMessage(`Error: ${err.message}`);
       setTimeout(() => setMessage(''), 3000);
@@ -1376,6 +1404,13 @@ export default function RefereePanel() {
   const toRight = rightTeam === 'A' ? toA : toB;
   const subLeft = leftTeam === 'A' ? subA : subB;
   const subRight = rightTeam === 'A' ? subA : subB;
+  const ss = gameData.sanctionSystem;
+  const sancLeft = ss
+    ? (ss.misconduct?.[leftTeam]?.length || 0) + (ss.delay?.[leftTeam]?.log?.length || 0)
+    : 0;
+  const sancRight = ss
+    ? (ss.misconduct?.[rightTeam]?.length || 0) + (ss.delay?.[rightTeam]?.log?.length || 0)
+    : 0;
   const leftColor = leftTeam === 'A' ? teamAColor : teamBColor;
   const rightColor = rightTeam === 'A' ? teamAColor : teamBColor;
   const liberoJerseysLeft = leftTeam === 'A' ? liberoJerseysA : liberoJerseysB;
@@ -1400,11 +1435,17 @@ export default function RefereePanel() {
             <span>🏆</span>
             <span className="championship-info">{topInfo}</span>
           </div>
-          <div className="referee-match-info-item">
+          <div
+            className="referee-match-info-item"
+            title="Match clock: from Start New Game / setup (rosters and officials). Join-by-code uses game creation time."
+          >
             <span>⏱</span>
             Match: <strong>{formatDuration(matchTime)}</strong>
           </div>
-          <div className="referee-match-info-item">
+          <div
+            className="referee-match-info-item"
+            title="Set clock: from when the game goes live (after officials), not from setup."
+          >
             <span>⏲</span>
             Set: <strong>{formatDuration(setTime)}</strong>
           </div>
@@ -1434,7 +1475,16 @@ export default function RefereePanel() {
           <button type="button" className="referee-btn-small referee-btn-export" onClick={() => downloadMatchReportHtml(gameData)}>📄 Export PDF</button>
           <button type="button" className="referee-btn-small" onClick={() => window.open(`/lineup?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: '#fff' }}>👥 Lineup</button>
           <button type="button" className="referee-btn-small" onClick={() => window.open(`/scoreboard?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: '#fff' }}>📺 Scoreboard</button>
-          <button type="button" className="referee-btn-small referee-btn-officials" onClick={() => setOfficialsModalOpen(true)}>👥 OFFICIALS</button>
+          <button
+            type="button"
+            className="referee-btn-small referee-btn-officials"
+            onClick={() => {
+              setPostMatchOfficialsPrompt(false);
+              setOfficialsModalOpen(true);
+            }}
+          >
+            👥 OFFICIALS
+          </button>
           <button type="button" className="referee-btn-small referee-btn-sanction" onClick={() => setSanctionModalOpen(true)} style={{ background: '#ff0000', color: '#fff' }}>⚠️ SANCTION</button>
           <button type="button" className="referee-btn-small referee-btn-swap" onClick={handleSwap} disabled={updating || status === 'FINISHED'} title="Swap which team is on left/right">🔄 SWAP</button>
           <button type="button" className="referee-btn-small" onClick={handleUndo} disabled={updating || status === 'FINISHED'} style={{ background: '#ff9500', color: '#fff' }}>↶ UNDO</button>
@@ -1499,6 +1549,10 @@ export default function RefereePanel() {
                     <span className="referee-stat-val">{subLeft}/{subLimit}</span>
                   </div>
                   <div className="referee-stat">
+                    <span className="referee-stat-label">SAN</span>
+                    <span className="referee-stat-val">{sancLeft}</span>
+                  </div>
+                  <div className="referee-stat">
                     <span className="referee-stat-label">SERVE</span>
                     <span className="referee-stat-val">{serving === leftTeam ? 'YES' : 'NO'}</span>
                   </div>
@@ -1560,6 +1614,10 @@ export default function RefereePanel() {
                   <div className="referee-stat">
                     <span className="referee-stat-label">SUB</span>
                     <span className="referee-stat-val">{subRight}/{subLimit}</span>
+                  </div>
+                  <div className="referee-stat">
+                    <span className="referee-stat-label">SAN</span>
+                    <span className="referee-stat-val">{sancRight}</span>
                   </div>
                   <div className="referee-stat">
                     <span className="referee-stat-label">SERVE</span>
@@ -1703,9 +1761,10 @@ export default function RefereePanel() {
       />
       <OfficialsModal
         open={officialsModalOpen}
+        postMatchSignatures={postMatchOfficialsPrompt}
         gameData={gameData}
         onSave={handleOfficialsSave}
-        onClose={() => setOfficialsModalOpen(false)}
+        onClose={closeOfficialsModal}
       />
       <LiberoModal
         open={liberoModal.open}

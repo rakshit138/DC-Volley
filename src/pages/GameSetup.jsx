@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { ensurePrepSessionStart } from '../utils/setupSession';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { createGame } from '../services/gameService';
@@ -12,6 +13,7 @@ import {
   createRosterData
 } from '../utils/rosterStorage';
 import './GameSetup.css';
+import OfficialsModal from '../components/OfficialsModal';
 
 export default function GameSetup() {
   const { setGameCode } = useGame();
@@ -92,6 +94,8 @@ export default function GameSetup() {
   const [savedRosters, setSavedRosters] = useState({});
   const [showLoadRosterModal, setShowLoadRosterModal] = useState(false);
   const fileInputRef = useRef(null);
+  /** Captains / coaches / signatures from OfficialsModal (step 6) */
+  const [officialsSheet, setOfficialsSheet] = useState(null);
 
   const updateRoster = (team, index, field, value) => {
     if (team === 1) {
@@ -108,6 +112,10 @@ export default function GameSetup() {
   // Load saved rosters on mount
   useEffect(() => {
     setSavedRosters(getSavedRosters());
+  }, []);
+
+  useEffect(() => {
+    ensurePrepSessionStart();
   }, []);
 
   const handleSaveRoster = () => {
@@ -435,10 +443,26 @@ export default function GameSetup() {
         throw new Error('Unable to generate unique code. Please try again.');
       }
 
+      const mergedOfficials = {
+        ref1: officials.ref1,
+        ref2: officials.ref2,
+        scorer: officials.scorer,
+        assistScorer: officials.assistScorer,
+        coachA: officialsSheet?.coachA ?? '',
+        asstCoachA: officialsSheet?.asstCoachA ?? '',
+        medicalA: officialsSheet?.medicalA ?? '',
+        trainerA: officialsSheet?.trainerA ?? '',
+        coachB: officialsSheet?.coachB ?? '',
+        asstCoachB: officialsSheet?.asstCoachB ?? '',
+        medicalB: officialsSheet?.medicalB ?? '',
+        trainerB: officialsSheet?.trainerB ?? '',
+        signatures: officialsSheet?.signatures || {}
+      };
+
       // Create game data
       const gameData = {
-        teamAName: assignment.teamA.name,
-        teamBName: assignment.teamB.name,
+        teamAName: officialsSheet?.teamAName?.trim() || assignment.teamA.name,
+        teamBName: officialsSheet?.teamBName?.trim() || assignment.teamB.name,
         teamAColor: assignment.teamA.color,
         teamBColor: assignment.teamB.color,
         format: parseInt(matchInfo.format),
@@ -453,12 +477,7 @@ export default function GameSetup() {
         pool: matchInfo.pool,
         matchDate: matchInfo.date,
         matchTime: matchInfo.time,
-        officials: {
-          ref1: officials.ref1,
-          ref2: officials.ref2,
-          scorer: officials.scorer,
-          assistScorer: officials.assistScorer
-        },
+        officials: mergedOfficials,
         coinToss: {
           winner: coinToss.winner,
           choice: coinToss.choice,
@@ -493,8 +512,8 @@ export default function GameSetup() {
           startingLineup: {
             A: assignment.teamALineup,
             B: assignment.teamBLineup
-          },
-          startTime: new Date()
+          }
+          // startTime: set server-side in createGame when the match goes live (after officials)
         }]
       };
 
@@ -525,8 +544,8 @@ export default function GameSetup() {
             <div className={`progress-step ${currentStep >= 2 ? 'active' : ''}`}>2. Teams</div>
             <div className={`progress-step ${currentStep >= 3 ? 'active' : ''}`}>3. Rosters</div>
             <div className={`progress-step ${currentStep >= 4 ? 'active' : ''}`}>4. Coin Toss</div>
-            <div className={`progress-step ${currentStep >= 5 ? 'active' : ''}`}>5. Officials</div>
-            <div className={`progress-step ${currentStep >= 6 ? 'active' : ''}`}>6. Lineups</div>
+            <div className={`progress-step ${currentStep >= 5 ? 'active' : ''}`}>5. Lineups</div>
+            <div className={`progress-step ${currentStep >= 6 ? 'active' : ''}`}>6. Officials & start</div>
           </div>
         </div>
 
@@ -1095,61 +1114,8 @@ export default function GameSetup() {
           </div>
         )}
 
-        {/* Step 5: Match Officials */}
-        {currentStep === 5 && (
-          <div className="setup-step">
-            <h2>Match Officials</h2>
-            <div className="setup-form">
-              <div className="form-row">
-                <div className="form-group">
-                  <label>1st Referee</label>
-                  <input
-                    type="text"
-                    value={officials.ref1}
-                    onChange={(e) => setOfficials({ ...officials, ref1: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>2nd Referee</label>
-                  <input
-                    type="text"
-                    value={officials.ref2}
-                    onChange={(e) => setOfficials({ ...officials, ref2: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Scorer</label>
-                  <input
-                    type="text"
-                    value={officials.scorer}
-                    onChange={(e) => setOfficials({ ...officials, scorer: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Assistant Scorer</label>
-                  <input
-                    type="text"
-                    value={officials.assistScorer}
-                    onChange={(e) => setOfficials({ ...officials, assistScorer: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="setup-buttons">
-              <button onClick={() => setCurrentStep(4)}>← Back</button>
-              <button onClick={() => setCurrentStep(6)}>Next →</button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 6: Starting Lineups — click player then position (like HTML); liberos cannot be in starting lineup */}
-        {currentStep === 6 && assignment && (() => {
+        {/* Step 5: Starting Lineups — click player then position (like HTML); liberos cannot be in starting lineup */}
+        {currentStep === 5 && assignment && (() => {
           const isLibero = (p) => p.role === 'libero1' || p.role === 'libero2' || p.role === 'liberocaptain';
           const rosterA = (assignment.teamARoster || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
           const rosterB = (assignment.teamBRoster || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
@@ -1370,14 +1336,91 @@ export default function GameSetup() {
             })()}
             
             <div className="setup-buttons">
-              <button onClick={() => setCurrentStep(5)}>← Back</button>
-              <button onClick={handleStartGame} disabled={loading}>
-                {loading ? 'Creating Game...' : 'Start Game'}
+              <button type="button" onClick={() => setCurrentStep(4)}>← Back</button>
+              <button
+                type="button"
+                onClick={() => setCurrentStep(6)}
+                disabled={loading}
+              >
+                Next: Officials & signatures →
               </button>
             </div>
           </div>
         );
         })()}
+
+        {/* Step 6: Match officials names + team staff & signatures, then create game */}
+        {currentStep === 6 && assignment && (
+          <div className="setup-step setup-step-officials">
+            <h2>Officials & signatures</h2>
+            <p className="setup-hint">
+              Starting lineups are set. Enter match referee and scorer names, complete team staff and signatures below, click <strong>Save</strong> on the sheet, then <strong>Start Game</strong> to create the match and begin the match clock.
+            </p>
+            <div className="setup-form">
+              <div className="form-row">
+                <div className="form-group">
+                  <label>1st Referee</label>
+                  <input
+                    type="text"
+                    value={officials.ref1}
+                    onChange={(e) => setOfficials({ ...officials, ref1: e.target.value })}
+                    placeholder="Name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>2nd Referee</label>
+                  <input
+                    type="text"
+                    value={officials.ref2}
+                    onChange={(e) => setOfficials({ ...officials, ref2: e.target.value })}
+                    placeholder="Name"
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Scorer</label>
+                  <input
+                    type="text"
+                    value={officials.scorer}
+                    onChange={(e) => setOfficials({ ...officials, scorer: e.target.value })}
+                    placeholder="Name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Assistant Scorer</label>
+                  <input
+                    type="text"
+                    value={officials.assistScorer}
+                    onChange={(e) => setOfficials({ ...officials, assistScorer: e.target.value })}
+                    placeholder="Name"
+                  />
+                </div>
+              </div>
+            </div>
+            <OfficialsModal
+              embedded
+              open
+              persistOnSave
+              gameData={{
+                teamAName: officialsSheet?.teamAName || assignment.teamA.name,
+                teamBName: officialsSheet?.teamBName || assignment.teamB.name,
+                officials: {
+                  ...officials,
+                  ...(officialsSheet || {})
+                }
+              }}
+              onSave={(data) => setOfficialsSheet(data)}
+              onClose={() => {}}
+            />
+            <div className="setup-buttons">
+              <button type="button" onClick={() => setCurrentStep(5)} disabled={loading}>← Back</button>
+              <button type="button" onClick={handleStartGame} disabled={loading}>
+                {loading ? 'Creating Game...' : 'Start Game'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

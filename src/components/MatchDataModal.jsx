@@ -141,6 +141,67 @@ export default function MatchDataModal({ open, gameData, onClose }) {
           </div>
         </div>
 
+        {gameData.sanctionSystem && (
+          <div className="match-data-section">
+            <h4>Sanctions</h4>
+            <div className="match-data-grid" style={{ fontSize: '12px' }}>
+              {['A', 'B'].map((t) => {
+                const name = t === 'A' ? matchInfo.teamAName : matchInfo.teamBName;
+                const mis = gameData.sanctionSystem.misconduct?.[t] || [];
+                const dlog = gameData.sanctionSystem.delay?.[t]?.log || [];
+                if (mis.length === 0 && dlog.length === 0) return null;
+                return (
+                  <div key={t} style={{ gridColumn: '1 / -1' }}>
+                    <strong style={{ color: t === 'A' ? '#ff6b6b' : '#4ecdc4' }}>{name}</strong>
+                    <ul style={{ margin: '6px 0 0 16px' }}>
+                      {mis.map((r, i) => (
+                        <li key={`m-${i}`}>
+                          Set {r.set}: {r.type} — {r.personType === 'coach' ? 'Coach' : `#${r.person}`}
+                        </li>
+                      ))}
+                      {dlog.map((r, i) => (
+                        <li key={`d-${i}`}>Set {r.set}: Delay {r.type}</li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {gameData.officials?.signatures && Object.keys(gameData.officials.signatures).some((k) => gameData.officials.signatures[k]?.length > 80) && (
+          <div className="match-data-section">
+            <h4>Official signatures</h4>
+            <p style={{ fontSize: '12px', color: '#aaa', marginBottom: '10px' }}>
+              {gameData.status === 'FINISHED' ? 'Signatures on file for this match.' : 'Captured signatures (add post-match captain signatures from Officials if needed).'}
+            </p>
+            <div className="match-data-signatures-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+              {[
+                ['firstRefSign', '1st Referee'],
+                ['secondRefSign', '2nd Referee'],
+                ['scorerSign', 'Scorer'],
+                ['assistScorerSign', 'Asst. Scorer'],
+                ['captainSignA1', `${matchInfo.teamAName} — Captain (before)`],
+                ['captainSignA2', `${matchInfo.teamAName} — Captain (after)`],
+                ['coachSignA', `${matchInfo.teamAName} — Coach`],
+                ['captainSignB1', `${matchInfo.teamBName} — Captain (before)`],
+                ['captainSignB2', `${matchInfo.teamBName} — Captain (after)`],
+                ['coachSignB', `${matchInfo.teamBName} — Coach`]
+              ].map(([key, label]) => {
+                const url = gameData.officials.signatures[key];
+                if (!url || url.length < 80) return null;
+                return (
+                  <div key={key} style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>{label}</div>
+                    <img src={url} alt={label} style={{ maxWidth: '100%', height: '48px', objectFit: 'contain', border: '1px solid #444', background: '#fff' }} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="match-data-section">
           <h4>Game Code</h4>
           <div className="match-data-grid">

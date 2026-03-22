@@ -138,7 +138,7 @@ function SigPad({ label, refOrHook }) {
 
 const SIG_KEYS = ['captainSignA1', 'captainSignA2', 'coachSignA', 'captainSignB1', 'captainSignB2', 'coachSignB', 'firstRefSign', 'secondRefSign', 'scorerSign', 'assistScorerSign'];
 
-export default function OfficialsModal({ open, gameData, onSave, onClose }) {
+export default function OfficialsModal({ open, embedded, persistOnSave, postMatchSignatures, gameData, onSave, onClose }) {
   const officials = gameData?.officials || {};
   const [teamAName, setTeamAName] = useState(gameData?.teamAName || '');
   const [teamBName, setTeamBName] = useState(gameData?.teamBName || '');
@@ -174,6 +174,8 @@ export default function OfficialsModal({ open, gameData, onSave, onClose }) {
 
   useEffect(() => {
     if (!open) return;
+    // In GameSetup step 6, parent updates `officials` ref fields often; do not reset the whole form each time
+    if (embedded) return;
     setTeamAName(gameData?.teamAName || '');
     setTeamBName(gameData?.teamBName || '');
     setCoachA(gameData?.officials?.coachA || '');
@@ -198,6 +200,15 @@ export default function OfficialsModal({ open, gameData, onSave, onClose }) {
       assistScorerSign: sigs.assistScorerSign || ''
     });
   }, [open, gameData]);
+
+  const postMatchAnchorRef = useRef(null);
+  useEffect(() => {
+    if (!open || !postMatchSignatures || embedded) return;
+    const t = setTimeout(() => {
+      postMatchAnchorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [open, postMatchSignatures, embedded]);
 
   const handleSave = () => {
     const getDataUrl = (hook) => (hook && hook[2] && typeof hook[2] === 'function' ? hook[2]() : '');
@@ -225,21 +236,31 @@ export default function OfficialsModal({ open, gameData, onSave, onClose }) {
       coachB, asstCoachB, medicalB, trainerB,
       signatures
     });
-    onClose();
+    if (!persistOnSave) onClose();
   };
 
-  if (!open) return null;
+  if (!open && !embedded) return null;
 
   const ref1Name = gameData?.officials?.ref1 ?? gameData?.matchInfo?.ref1 ?? '';
   const ref2Name = gameData?.officials?.ref2 ?? gameData?.matchInfo?.ref2 ?? '';
   const scorerName = gameData?.officials?.scorer ?? gameData?.matchInfo?.scorer ?? '';
   const assistScorerName = gameData?.officials?.assistScorer ?? gameData?.matchInfo?.assistScorer ?? '';
 
-  return (
-    <div className="officials-modal-overlay" onClick={onClose}>
+  const inner = (
       <div className="officials-modal-content" onClick={(e) => e.stopPropagation()}>
-        <h3 className="officials-modal-title">👥 TEAM OFFICIALS & SIGNATURES</h3>
-        <p className="officials-modal-desc">Team staff information and captain/coach signatures</p>
+        <h3 className="officials-modal-title">
+          {postMatchSignatures ? '✍️ POST-MATCH CAPTAIN SIGNATURES' : '👥 TEAM OFFICIALS & SIGNATURES'}
+        </h3>
+        <p className="officials-modal-desc">
+          {postMatchSignatures
+            ? 'Both captains should sign in the Captain (after) boxes below. Match officials may re-sign if needed, then Save.'
+            : 'Team staff information and captain/coach signatures'}
+        </p>
+        {postMatchSignatures && (
+          <div className="officials-post-match-banner" role="status">
+            Match ended — collect <strong>Captain (after match)</strong> signatures for both teams, then tap Save.
+          </div>
+        )}
 
         <div className="officials-team-block team-a-block">
           <h4><span className="officials-team-label">TEAM A:</span> <span className="officials-team-name-val">{teamAName || 'Team A'}</span></h4>
@@ -255,7 +276,12 @@ export default function OfficialsModal({ open, gameData, onSave, onClose }) {
           </div>
           <div className="officials-signatures-row">
             <SigPad label="Captain (before)" refOrHook={captainA1} />
-            <SigPad label="Captain (after)" refOrHook={captainA2} />
+            <div
+              ref={postMatchAnchorRef}
+              className={postMatchSignatures ? 'officials-post-match-captain-wrap' : undefined}
+            >
+              <SigPad label="Captain (after)" refOrHook={captainA2} />
+            </div>
             <SigPad label="Coach signature" refOrHook={coachASig} />
           </div>
         </div>
@@ -274,7 +300,9 @@ export default function OfficialsModal({ open, gameData, onSave, onClose }) {
           </div>
           <div className="officials-signatures-row">
             <SigPad label="Captain (before)" refOrHook={captainB1} />
-            <SigPad label="Captain (after)" refOrHook={captainB2} />
+            <div className={postMatchSignatures ? 'officials-post-match-captain-wrap' : undefined}>
+              <SigPad label="Captain (after)" refOrHook={captainB2} />
+            </div>
             <SigPad label="Coach signature" refOrHook={coachBSig} />
           </div>
         </div>
@@ -327,9 +355,20 @@ export default function OfficialsModal({ open, gameData, onSave, onClose }) {
 
         <div className="officials-modal-buttons">
           <button type="button" className="officials-btn save" onClick={handleSave}>💾 Save</button>
-          <button type="button" className="officials-btn cancel" onClick={onClose}>Close</button>
+          {!embedded && (
+            <button type="button" className="officials-btn cancel" onClick={onClose}>Close</button>
+          )}
         </div>
       </div>
+  );
+
+  if (embedded) {
+    return <div className="officials-modal-embedded-wrap">{inner}</div>;
+  }
+
+  return (
+    <div className="officials-modal-overlay" onClick={onClose}>
+      {inner}
     </div>
   );
 }
