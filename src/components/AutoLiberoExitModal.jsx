@@ -11,7 +11,7 @@ export default function AutoLiberoExitModal({ open, exitData, onConfirm, onClose
   };
 
   return (
-    <div className="auto-libero-modal-overlay" onClick={onClose}>
+    <div className={`auto-libero-modal-overlay auto-libero-side-${String(exitData.team || '').toLowerCase()}`}>
       <div className="auto-libero-modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="auto-libero-icon">🔄</div>
         <h3 className="auto-libero-title">LIBERO EXIT THE COURT</h3>

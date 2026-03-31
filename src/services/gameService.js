@@ -188,26 +188,12 @@ export async function updateSets(gameCode, winner) {
   const setsToWin = Math.ceil(format / 2);
   const isFinished = setsWon[winner] >= setsToWin;
   
-  // Move to next set if not finished (e.g. best of 5: win set 2 -> go to set 3)
-  const nextSet = isFinished ? currentSet : currentSet + 1;
-  
-  // Ensure sets array is long enough before writing
-  while (sets.length < nextSet) sets.push(null);
-  if (!isFinished && !sets[nextSet - 1]) {
-    sets[nextSet - 1] = {
-      setNumber: nextSet,
-      score: { A: 0, B: 0 },
-      serving: winner === 'A' ? 'B' : 'A', // Other team serves first
-      timeouts: { A: [], B: [] },
-      substitutions: { A: [], B: [] },
-      startTime: new Date()
-    };
-  }
-  
   await updateDoc(gameRef, {
     sets,
     setsWon,
-    currentSet: nextSet,
+    currentSet,
+    awaitingNextSet: !isFinished,
+    setBreakStartedAt: !isFinished ? serverTimestamp() : null,
     status: isFinished ? 'FINISHED' : 'LIVE',
     updatedAt: serverTimestamp()
   });
@@ -309,9 +295,20 @@ export async function recordTimeout(gameCode, team) {
     updatedActionHistory.shift();
   }
 
+  const matchSummary = gameData.matchSummary || [];
+  matchSummary.push({
+    type: 'TIMEOUT',
+    team,
+    setNumber: currentSet,
+    description: `Timeout requested by Team ${team}`,
+    score: { A: set.score?.A ?? 0, B: set.score?.B ?? 0 },
+    timestamp: new Date()
+  });
+
   await updateDoc(gameRef, {
     sets,
     actionHistory: updatedActionHistory,
+    matchSummary,
     updatedAt: serverTimestamp()
   });
   return { ok: true };
@@ -354,6 +351,67 @@ export async function recordSubstitution(gameCode, team, playerOut, playerIn) {
   
   const playerOutStr = String(playerOut);
   const playerInStr = String(playerIn);
+
+  // ───────────────────────────────────────────────────────────────
+  // SANCTION REPLACEMENT (HTML: "Sanction replacement ... exceptional, not counted")
+  // If a player is DISQUALIFIED (match) or EXPELLED (this set) and still on court,
+  // replacement should NOT count toward substitution limit and MUST NOT create pairing.
+  // ───────────────────────────────────────────────────────────────
+  const sanctionSystem = gameData.sanctionSystem || {};
+  const disqList = sanctionSystem.disqualified?.[team] || [];
+  const expList = sanctionSystem.expelled?.[team] || [];
+  const isDisqualified = disqList.some((e) => String(e.jersey) === playerOutStr);
+  const isExpelledThisSet = expList.some((e) => String(e.jersey) === playerOutStr && e.set === currentSet);
+  const isSanctionLockedOut = isDisqualified || isExpelledThisSet;
+  if (isSanctionLockedOut) {
+    const lineup = [...teams[team].lineup];
+    while (lineup.length < 6) lineup.push(null);
+    const posIndex = lineup.findIndex((j) => String(j) === playerOutStr);
+    if (posIndex === -1) {
+      return { ok: false, message: 'Player not found on court' };
+    }
+
+    // Save action to history BEFORE making changes
+    const actionHistory = gameData.actionHistory || [];
+    const previousLineup = teams[team].lineup ? [...teams[team].lineup] : [];
+    const actionToSave = {
+      type: 'sanctionReplacement',
+      team,
+      playerOut: playerOutStr,
+      playerIn: playerInStr,
+      position: posIndex + 1,
+      setNumber: currentSet,
+      previousLineup
+    };
+    const updatedActionHistory = [...actionHistory, actionToSave];
+    if (updatedActionHistory.length > 50) updatedActionHistory.shift();
+
+    // Apply replacement on court (does not touch substitution tracking, does not count)
+    lineup[posIndex] = playerInStr;
+    teams[team].lineup = lineup;
+    sets[currentSet - 1] = set;
+
+    // Add to match summary (exceptional, not counted)
+    const matchSummary = gameData.matchSummary || [];
+    matchSummary.push({
+      type: 'SANCTION_REPLACEMENT',
+      team,
+      setNumber: currentSet,
+      description: `🔄 Sanction replacement: #${playerOutStr} → #${playerInStr} (exceptional, not counted)`,
+      score: { A: set.score?.A ?? 0, B: set.score?.B ?? 0 },
+      timestamp: new Date()
+    });
+
+    await updateDoc(gameRef, {
+      sets,
+      teams,
+      actionHistory: updatedActionHistory,
+      matchSummary,
+      updatedAt: serverTimestamp()
+    });
+
+    return { ok: true, sanctionReplacement: true };
+  }
   
   // Count completed substitutions (FIVB rule: each substitution action counts)
   const actualSubCount = (set.substitutions[team] || []).length;
@@ -466,10 +524,21 @@ export async function recordSubstitution(gameCode, team, playerOut, playerIn) {
     updatedActionHistory.shift();
   }
 
+  const matchSummary = gameData.matchSummary || [];
+  matchSummary.push({
+    type: 'SUBSTITUTION',
+    team,
+    setNumber: currentSet,
+    description: `Substitution Team ${team}: #${playerOutStr} OUT, #${playerInStr} IN`,
+    score: { A: set.score?.A ?? 0, B: set.score?.B ?? 0 },
+    timestamp: new Date()
+  });
+
   await updateDoc(gameRef, {
     sets,
     teams,
     actionHistory: updatedActionHistory,
+    matchSummary,
     updatedAt: serverTimestamp()
   });
   return { ok: true };
@@ -861,6 +930,7 @@ export async function recordSanction(gameCode, team, module, payload) {
   const addPointForOpponent =
     (module === 'misconduct' && payload.type === 'P') ||
     (module === 'delay' && payload.type === 'DP');
+  const matchSummary = gameData.matchSummary || [];
 
   if (module === 'misconduct') {
     const list = [...(sanctionSystem.misconduct?.[team] || [])];
@@ -912,6 +982,17 @@ export async function recordSanction(gameCode, team, module, payload) {
     sanctionSystem.delay = sanctionSystem.delay || { A: { count: 0, log: [] }, B: { count: 0, log: [] } };
     sanctionSystem.delay[team] = { count: (delayData.count || 0) + 1, log };
   }
+
+  matchSummary.push({
+    type: module === 'misconduct' ? 'SANCTION_MISCONDUCT' : 'SANCTION_DELAY',
+    team,
+    setNumber: currentSet,
+    description: module === 'misconduct'
+      ? `Sanction (${payload.type}) Team ${team} ${payload.personType === 'coach' ? 'Coach' : `#${payload.person}`}`
+      : `Delay sanction (${payload.type}) Team ${team}`,
+    score: { ...score },
+    timestamp: new Date()
+  });
 
   // If awarding penalty point, handle it like a regular point (save history, rotate, check set completion)
   if (addPointForOpponent) {
@@ -1013,8 +1094,11 @@ export async function recordSanction(gameCode, team, module, payload) {
         teams,
         sanctionSystem,
         actionHistory: updatedActionHistory,
+        matchSummary,
         status: isFinished ? 'FINISHED' : 'LIVE',
-        currentSet: isFinished ? currentSet : currentSet + 1,
+        currentSet,
+        awaitingNextSet: !isFinished,
+        setBreakStartedAt: !isFinished ? serverTimestamp() : null,
         updatedAt: serverTimestamp()
       });
       
@@ -1034,6 +1118,7 @@ export async function recordSanction(gameCode, team, module, payload) {
       teams,
       sanctionSystem,
       actionHistory: updatedActionHistory,
+      matchSummary,
       updatedAt: serverTimestamp()
     });
     
@@ -1041,7 +1126,7 @@ export async function recordSanction(gameCode, team, module, payload) {
   }
 
   // No penalty point - just update sanction system
-  await updateDoc(gameRef, { sanctionSystem, updatedAt: serverTimestamp() });
+  await updateDoc(gameRef, { sanctionSystem, matchSummary, updatedAt: serverTimestamp() });
   return { ok: true, addPoint: false };
 }
 
@@ -1102,6 +1187,7 @@ export async function addPoint(gameCode, team, rallyActive = false) {
   
   // Increment score
   set.score[team] = (set.score[team] || 0) + 1;
+  const updatedScore = { A: set.score.A || 0, B: set.score.B || 0 };
   
   // Check if service changes (team gains serve)
   const serviceChanged = set.serving !== team;
@@ -1155,13 +1241,34 @@ export async function addPoint(gameCode, team, rallyActive = false) {
       updatedActionHistory.shift();
     }
     
+    const matchSummary = gameData.matchSummary || [];
+    matchSummary.push({
+      type: 'POINT',
+      team,
+      setNumber: currentSet,
+      description: `Point scored by Team ${team}`,
+      score: updatedScore,
+      timestamp: new Date()
+    });
+    matchSummary.push({
+      type: 'SET_WON',
+      team: winner,
+      setNumber: currentSet,
+      description: `Set ${currentSet} won by Team ${winner}`,
+      score: updatedScore,
+      timestamp: new Date()
+    });
+
     await updateDoc(gameRef, {
       sets,
       setsWon,
       teams,
       actionHistory: updatedActionHistory,
+      matchSummary,
       status: isFinished ? 'FINISHED' : 'LIVE',
-      currentSet: isFinished ? currentSet : currentSet + 1,
+      currentSet,
+      awaitingNextSet: !isFinished,
+      setBreakStartedAt: !isFinished ? serverTimestamp() : null,
       updatedAt: serverTimestamp()
     });
     
@@ -1176,10 +1283,21 @@ export async function addPoint(gameCode, team, rallyActive = false) {
     updatedActionHistory.shift();
   }
   
+  const matchSummary = gameData.matchSummary || [];
+  matchSummary.push({
+    type: 'POINT',
+    team,
+    setNumber: currentSet,
+    description: `Point scored by Team ${team}`,
+    score: updatedScore,
+    timestamp: new Date()
+  });
+
   await updateDoc(gameRef, {
     sets,
     teams,
     actionHistory: updatedActionHistory,
+    matchSummary,
     updatedAt: serverTimestamp()
   });
   
@@ -1280,11 +1398,22 @@ export async function recordExceptionalSubstitution(gameCode, team, playerOut, p
     updatedActionHistory.shift();
   }
   
+  const matchSummary = gameData.matchSummary || [];
+  matchSummary.push({
+    type: 'EXCEPTIONAL_SUBSTITUTION',
+    team,
+    setNumber: currentSet,
+    description: `Exceptional substitution Team ${team}: #${playerOut} OUT (injury), #${playerIn} IN`,
+    score: { A: set.score?.A ?? 0, B: set.score?.B ?? 0 },
+    timestamp: new Date()
+  });
+
   await updateDoc(gameRef, {
     sets,
     teams,
     injuredPlayers,
     actionHistory: updatedActionHistory,
+    matchSummary,
     updatedAt: serverTimestamp()
   });
   
@@ -1399,11 +1528,22 @@ export async function recordLiberoReplacementWithTracking(gameCode, team, libero
     updatedActionHistory.shift();
   }
   
+  const matchSummary = gameData.matchSummary || [];
+  matchSummary.push({
+    type: 'LIBERO_REPLACEMENT',
+    team,
+    setNumber: currentSet,
+    description: `Libero Team ${team}: #${liberoJersey} replaces #${playerOutJersey} at P${position}`,
+    score: { A: set.score?.A ?? 0, B: set.score?.B ?? 0 },
+    timestamp: new Date()
+  });
+
   await updateDoc(gameRef, {
     sets,
     teams,
     liberoReplacements: gameData.liberoReplacements,
     actionHistory: updatedActionHistory,
+    matchSummary,
     updatedAt: serverTimestamp()
   });
   
@@ -1479,10 +1619,26 @@ export async function removeLiberoFromCourt(gameCode, team, liberoJersey) {
     updatedActionHistory.shift();
   }
   
+  const currentSet = gameData.currentSet || 1;
+  const currentSetData = gameData.sets?.[currentSet - 1];
+  const matchSummary = gameData.matchSummary || [];
+  matchSummary.push({
+    type: 'LIBERO_EXIT',
+    team,
+    setNumber: currentSet,
+    description: `Libero exit Team ${team}: #${liberoJersey} out, #${replacement.originalPlayer} restored`,
+    score: {
+      A: currentSetData?.score?.A ?? 0,
+      B: currentSetData?.score?.B ?? 0
+    },
+    timestamp: new Date()
+  });
+
   await updateDoc(gameRef, {
     teams,
     liberoReplacements,
     actionHistory: updatedActionHistory,
+    matchSummary,
     updatedAt: serverTimestamp()
   });
   
@@ -1509,6 +1665,17 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
   const nextSet = currentSet + 1;
   let sets = [...(gameData.sets || [])];
   const teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
+  const sanctionSystem = gameData.sanctionSystem || {};
+  const injuredPlayers = gameData.injuredPlayers || { A: [], B: [] };
+  const disqualifiedA = new Set((sanctionSystem.disqualified?.A || []).map((e) => String(e.jersey)));
+  const disqualifiedB = new Set((sanctionSystem.disqualified?.B || []).map((e) => String(e.jersey)));
+  const lockedA = new Set([...(injuredPlayers.A || []).map(String), ...disqualifiedA]);
+  const lockedB = new Set([...(injuredPlayers.B || []).map(String), ...disqualifiedB]);
+  const safeLineupA = (lineups.A || []).map((j) => (j != null && lockedA.has(String(j)) ? null : j));
+  const safeLineupB = (lineups.B || []).map((j) => (j != null && lockedB.has(String(j)) ? null : j));
+  if (safeLineupA.filter(Boolean).length !== 6 || safeLineupB.filter(Boolean).length !== 6) {
+    throw new Error('Lineup contains ineligible players (injured/disqualified).');
+  }
   
   // Ensure sets array is long enough
   while (sets.length < nextSet) {
@@ -1526,20 +1693,22 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
     substitutionTracking: { A: {}, B: {} },
     completedSubstitutions: { A: [], B: [] },
     startingLineup: {
-      A: lineups.A || [],
-      B: lineups.B || []
+      A: safeLineupA,
+      B: safeLineupB
     },
     startTime: new Date()
   };
   
   // Update team lineups
-  teams.A.lineup = lineups.A || [];
-  teams.B.lineup = lineups.B || [];
+  teams.A.lineup = safeLineupA;
+  teams.B.lineup = safeLineupB;
   
   await updateDoc(gameRef, {
     sets,
     teams,
     currentSet: nextSet,
+    awaitingNextSet: false,
+    setBreakStartedAt: null,
     updatedAt: serverTimestamp()
   });
 }

@@ -1,31 +1,37 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './TimeoutModal.css';
 
 export default function TimeoutModal({ open, teamName, scoreA, scoreB, teamAName, teamBName, onClose }) {
   const [seconds, setSeconds] = useState(30);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) {
       setSeconds(30);
       return;
     }
+    setSeconds(30);
+    const timeoutEnd = Date.now() + 30000;
     const t = setInterval(() => {
-      setSeconds((s) => {
-        if (s <= 1) {
-          clearInterval(t);
-          onClose();
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
+      const remainingMs = timeoutEnd - Date.now();
+      const remainingSec = Math.max(0, Math.floor((remainingMs + 999) / 1000));
+      setSeconds(remainingSec);
+      if (remainingSec <= 0) {
+        clearInterval(t);
+        onCloseRef.current?.();
+      }
+    }, 250);
     return () => clearInterval(t);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
   return (
-    <div className="timeout-modal-overlay" onClick={onClose}>
+    <div className="timeout-modal-overlay">
       <div className="timeout-modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="timeout-modal-team">{teamName} – TIMEOUT</div>
         <div className="timeout-modal-timer">{seconds}</div>

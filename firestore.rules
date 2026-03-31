@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // NOTE: This is intentionally permissive so roster save/load works
+    // across devices without auth. Tighten later if you add auth.
+    match /teamRosters/{teamId} {
+      allow read, write: if true;
+    }
+
+    // Existing game docs are already being used without auth in this app.
+    match /games/{gameCode} {
+      allow read, write: if true;
+    }
+  }
+}
+

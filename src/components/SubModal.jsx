@@ -116,7 +116,6 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
                     type="button"
                     className={`sub-modal-player-btn ${selected ? 'selected' : ''}`}
                     onClick={() => setPlayerOut(jersey)}
-                    disabled={!canSub}
                   >
                     {label}
                   </button>
@@ -137,7 +136,6 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
                     type="button"
                     className={`sub-modal-player-btn ${selected ? 'selected' : ''}`}
                     onClick={() => setPlayerIn(jersey)}
-                    disabled={!canSub}
                   >
                     {label}
                   </button>

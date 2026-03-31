@@ -10,8 +10,9 @@ export default function Scoreboard() {
   const codeFromUrl = searchParams.get('code');
 
   useEffect(() => {
-    if (codeFromUrl && codeFromUrl.trim() && !gameCode) {
-      setGameCode(codeFromUrl.trim());
+    const normalized = codeFromUrl?.trim();
+    if (normalized && normalized !== gameCode) {
+      setGameCode(normalized);
     }
   }, [codeFromUrl, gameCode, setGameCode]);
 
@@ -65,6 +66,8 @@ export default function Scoreboard() {
   const subsUsedA = currentSetData.substitutions?.A?.length ?? 0;
   const subsUsedB = currentSetData.substitutions?.B?.length ?? 0;
   const subLimit = gameData.subLimit ?? 6;
+  const teamAColor = gameData.teamAColor || '#ff6b6b';
+  const teamBColor = gameData.teamBColor || '#4ecdc4';
 
   return (
     <div className="scoreboard-container">
@@ -87,27 +90,27 @@ export default function Scoreboard() {
         <div className="scoreboard-scores">
           {/* Team A */}
           <div className="scoreboard-team">
-            <div className="scoreboard-team-name team-a-color">
+            <div className="scoreboard-team-name team-a-color" style={{ color: teamAColor }}>
               {gameData.teamAName || 'Team A'}
             </div>
-            <div className="scoreboard-score-box team-a-border">
+            <div className="scoreboard-score-box team-a-border" style={{ borderColor: teamAColor }}>
               {serving === 'A' && (
                 <div className="scoreboard-serving">🏐</div>
               )}
-              <div className="scoreboard-score team-a-color">{scoreA}</div>
+              <div className="scoreboard-score team-a-color" style={{ color: teamAColor }}>{scoreA}</div>
             </div>
           </div>
 
           {/* Team B */}
           <div className="scoreboard-team">
-            <div className="scoreboard-team-name team-b-color">
+            <div className="scoreboard-team-name team-b-color" style={{ color: teamBColor }}>
               {gameData.teamBName || 'Team B'}
             </div>
-            <div className="scoreboard-score-box team-b-border">
+            <div className="scoreboard-score-box team-b-border" style={{ borderColor: teamBColor }}>
               {serving === 'B' && (
                 <div className="scoreboard-serving">🏐</div>
               )}
-              <div className="scoreboard-score team-b-color">{scoreB}</div>
+              <div className="scoreboard-score team-b-color" style={{ color: teamBColor }}>{scoreB}</div>
             </div>
           </div>
         </div>

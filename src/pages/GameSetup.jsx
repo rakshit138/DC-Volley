@@ -10,7 +10,11 @@ import {
   loadRosterFromLocalStorage,
   exportRosterAsJSON,
   importRosterFromJSON,
-  createRosterData
+  createRosterData,
+  saveTeamRostersToFirebase,
+  loadTeamRosterFromFirebase,
+  saveSingleTeamRosterToFirebase,
+  loadSingleTeamRosterFromFirebase
 } from '../utils/rosterStorage';
 import './GameSetup.css';
 import OfficialsModal from '../components/OfficialsModal';
@@ -118,7 +122,7 @@ export default function GameSetup() {
     ensurePrepSessionStart();
   }, []);
 
-  const handleSaveRoster = () => {
+  const handleSaveRoster = async () => {
     try {
       const rosterData = createRosterData(
         { ...matchInfo, team1Name: team1.name, team2Name: team2.name },
@@ -134,14 +138,99 @@ export default function GameSetup() {
       
       // Also export as JSON file
       const filename = exportRosterAsJSON(rosterData);
+      await saveTeamRostersToFirebase(team1.name, team2.name, rosterData);
       
-      setRosterToast(`✅ Roster saved! File: ${filename}`);
+      setRosterToast(`✅ Roster saved! File: ${filename} (synced to Firebase)`);
       setTimeout(() => setRosterToast(''), 5000);
       setSavedRosters(getSavedRosters());
     } catch (err) {
       setRosterToast(`❌ Error: ${err.message}`);
       setTimeout(() => setRosterToast(''), 5000);
     }
+  };
+
+  const handleLoadTeamRostersFromFirebase = async () => {
+    try {
+      const [team1Remote, team2Remote] = await Promise.all([
+        loadTeamRosterFromFirebase(team1.name),
+        loadTeamRosterFromFirebase(team2.name)
+      ]);
+      if (!team1Remote && !team2Remote) {
+        setRosterToast('❌ No Firebase team rosters found for current team names');
+        setTimeout(() => setRosterToast(''), 5000);
+        return;
+      }
+      if (team1Remote?.players) {
+        const newRoster1 = Array(14).fill(null).map((_, i) => team1Remote.players[i] || { jersey: '', name: '', role: 'player' });
+        setRoster1(newRoster1);
+      }
+      if (team2Remote?.players) {
+        const newRoster2 = Array(14).fill(null).map((_, i) => team2Remote.players[i] || { jersey: '', name: '', role: 'player' });
+        setRoster2(newRoster2);
+      }
+      setRosterToast('✅ Team rosters loaded from Firebase');
+      setTimeout(() => setRosterToast(''), 5000);
+    } catch (err) {
+      setRosterToast(`❌ Firebase load failed: ${err.message}`);
+      setTimeout(() => setRosterToast(''), 5000);
+    }
+  };
+
+  const getTeamPlayersForSave = (teamNum) => {
+    const roster = teamNum === 1 ? roster1 : roster2;
+    return roster
+      .filter((p) => p.jersey && p.name)
+      .map((p) => ({ jersey: p.jersey, name: p.name, role: p.role || 'player' }));
+  };
+
+  const handleSaveTeamRoster = async (teamNum) => {
+    try {
+      const teamName = teamNum === 1 ? team1.name : team2.name;
+      const players = getTeamPlayersForSave(teamNum);
+      await saveSingleTeamRosterToFirebase(teamName, players);
+      setRosterToast(`✅ ${teamName || `Team ${teamNum}`} roster saved to Firebase`);
+      setTimeout(() => setRosterToast(''), 5000);
+    } catch (err) {
+      setRosterToast(`❌ ${err.message}`);
+      setTimeout(() => setRosterToast(''), 6000);
+    }
+  };
+
+  const handleLoadTeamRoster = async (teamNum) => {
+    try {
+      const teamName = teamNum === 1 ? team1.name : team2.name;
+      const remote = await loadSingleTeamRosterFromFirebase(teamName);
+      if (!remote?.players) {
+        setRosterToast(`❌ No Firebase roster found for ${teamName || `Team ${teamNum}`}`);
+        setTimeout(() => setRosterToast(''), 5000);
+        return;
+      }
+      const filled = Array(14)
+        .fill(null)
+        .map((_, i) => remote.players[i] || { jersey: '', name: '', role: 'player' });
+      if (teamNum === 1) setRoster1(filled);
+      else setRoster2(filled);
+      setRosterToast(`✅ ${teamName || `Team ${teamNum}`} roster loaded from Firebase`);
+      setTimeout(() => setRosterToast(''), 5000);
+    } catch (err) {
+      setRosterToast(`❌ ${err.message}`);
+      setTimeout(() => setRosterToast(''), 6000);
+    }
+  };
+
+  const handleDownloadTeamRoster = (teamNum) => {
+    const teamName = teamNum === 1 ? team1.name : team2.name;
+    const players = getTeamPlayersForSave(teamNum);
+    const rosterData = createRosterData(
+      { ...matchInfo, team1Name: team1.name, team2Name: team2.name },
+      teamNum === 1
+        ? { team1: { players, name: team1.name }, team2: { players: [], name: team2.name } }
+        : { team1: { players: [], name: team1.name }, team2: { players, name: team2.name } },
+      officials
+    );
+    exportRosterAsJSON(rosterData, `Roster_${teamName || `Team${teamNum}`}_${new Date().toISOString().split('T')[0]}.json`);
+    setRosterToast(`✅ Downloaded roster JSON for ${teamName || `Team ${teamNum}`}`);
+    setTimeout(() => setRosterToast(''), 5000);
   };
 
   const handleLoadRosterFromFile = async (e) => {
@@ -314,10 +403,10 @@ export default function GameSetup() {
   const handleCoinTossChange = (field, value) => {
     let newCoinToss = { ...coinToss, [field]: value };
     if (field === 'teamAAssignment') {
-      if (value && value === newCoinToss.teamBAssignment) newCoinToss.teamBAssignment = '';
+      if (value) newCoinToss.teamBAssignment = value === 'team1' ? 'team2' : 'team1';
     }
     if (field === 'teamBAssignment') {
-      if (value && value === newCoinToss.teamAAssignment) newCoinToss.teamAAssignment = '';
+      if (value) newCoinToss.teamAAssignment = value === 'team1' ? 'team2' : 'team1';
     }
     if (field === 'winner' && value && newCoinToss.choice) {
       if (value === 'team1' && (newCoinToss.choice === 'serve' || newCoinToss.choice === 'receive')) {
@@ -537,15 +626,15 @@ export default function GameSetup() {
   return (
     <div className="setup-container">
       <div className="setup-wrapper">
-        <div className="setup-header">
+            <div className="setup-header">
           <h1>🏐 Game Setup</h1>
           <div className="setup-progress">
             <div className={`progress-step ${currentStep >= 1 ? 'active' : ''}`}>1. Match Info</div>
             <div className={`progress-step ${currentStep >= 2 ? 'active' : ''}`}>2. Teams</div>
             <div className={`progress-step ${currentStep >= 3 ? 'active' : ''}`}>3. Rosters</div>
             <div className={`progress-step ${currentStep >= 4 ? 'active' : ''}`}>4. Coin Toss</div>
-            <div className={`progress-step ${currentStep >= 5 ? 'active' : ''}`}>5. Lineups</div>
-            <div className={`progress-step ${currentStep >= 6 ? 'active' : ''}`}>6. Officials & start</div>
+                <div className={`progress-step ${currentStep >= 5 ? 'active' : ''}`}>5. Officials & start</div>
+                <div className={`progress-step ${currentStep >= 6 ? 'active' : ''}`}>6. Lineups</div>
           </div>
         </div>
 
@@ -750,22 +839,6 @@ export default function GameSetup() {
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
                   type="button"
-                  onClick={handleSaveRoster}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#00d9ff',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    fontWeight: 'bold',
-                    fontSize: '13px'
-                  }}
-                >
-                  💾 Save Roster
-                </button>
-                <button
-                  type="button"
                   onClick={() => {
                     setShowLoadRosterModal(true);
                     setSavedRosters(getSavedRosters());
@@ -812,6 +885,17 @@ export default function GameSetup() {
             <div className="roster-section">
               <div className="roster-team">
                 <h3 style={{ color: '#ff6b6b' }}>Team 1 – {team1.name}</h3>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => handleSaveTeamRoster(1)} style={{ padding: '7px 12px', background: '#00d9ff', color: '#000', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+                    💾 Save Team 1
+                  </button>
+                  <button type="button" onClick={() => handleLoadTeamRoster(1)} style={{ padding: '7px 12px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+                    ☁ Load Team 1
+                  </button>
+                  <button type="button" onClick={() => handleDownloadTeamRoster(1)} style={{ padding: '7px 12px', background: '#ffd700', color: '#000', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+                    ⬇ Download Team 1
+                  </button>
+                </div>
                 <div className="roster-table-wrapper">
                   <table className="roster-table">
                     <thead>
@@ -873,6 +957,17 @@ export default function GameSetup() {
               </div>
               <div className="roster-team">
                 <h3 style={{ color: '#4ecdc4' }}>Team 2 – {team2.name}</h3>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => handleSaveTeamRoster(2)} style={{ padding: '7px 12px', background: '#00d9ff', color: '#000', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+                    💾 Save Team 2
+                  </button>
+                  <button type="button" onClick={() => handleLoadTeamRoster(2)} style={{ padding: '7px 12px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+                    ☁ Load Team 2
+                  </button>
+                  <button type="button" onClick={() => handleDownloadTeamRoster(2)} style={{ padding: '7px 12px', background: '#ffd700', color: '#000', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+                    ⬇ Download Team 2
+                  </button>
+                </div>
                 <div className="roster-table-wrapper">
                   <table className="roster-table">
                     <thead>
@@ -1114,8 +1209,81 @@ export default function GameSetup() {
           </div>
         )}
 
-        {/* Step 5: Starting Lineups — click player then position (like HTML); liberos cannot be in starting lineup */}
-        {currentStep === 5 && assignment && (() => {
+        {/* Step 5: Officials & signatures (before lineup) */}
+        {currentStep === 5 && assignment && (
+          <div className="setup-step setup-step-officials">
+            <h2>Officials & signatures</h2>
+            <p className="setup-hint">
+              Enter match referee and scorer names, complete team staff and signatures below, click <strong>Save</strong> on the sheet, then continue to lineup selection.
+            </p>
+            <div className="setup-form">
+              <div className="form-row">
+                <div className="form-group">
+                  <label>1st Referee</label>
+                  <input
+                    type="text"
+                    value={officials.ref1}
+                    onChange={(e) => setOfficials({ ...officials, ref1: e.target.value })}
+                    placeholder="Name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>2nd Referee</label>
+                  <input
+                    type="text"
+                    value={officials.ref2}
+                    onChange={(e) => setOfficials({ ...officials, ref2: e.target.value })}
+                    placeholder="Name"
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Scorer</label>
+                  <input
+                    type="text"
+                    value={officials.scorer}
+                    onChange={(e) => setOfficials({ ...officials, scorer: e.target.value })}
+                    placeholder="Name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Assistant Scorer</label>
+                  <input
+                    type="text"
+                    value={officials.assistScorer}
+                    onChange={(e) => setOfficials({ ...officials, assistScorer: e.target.value })}
+                    placeholder="Name"
+                  />
+                </div>
+              </div>
+            </div>
+            <OfficialsModal
+              embedded
+              open
+              persistOnSave
+              gameData={{
+                teamAName: officialsSheet?.teamAName || assignment.teamA.name,
+                teamBName: officialsSheet?.teamBName || assignment.teamB.name,
+                officials: {
+                  ...officials,
+                  ...(officialsSheet || {})
+                }
+              }}
+              onSave={(data) => setOfficialsSheet(data)}
+              onClose={() => {}}
+            />
+            <div className="setup-buttons">
+              <button type="button" onClick={() => setCurrentStep(4)} disabled={loading}>← Back</button>
+              <button type="button" onClick={() => setCurrentStep(6)} disabled={loading}>
+                Next: Lineups →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 6: Starting Lineups — click player then position (like HTML); liberos cannot be in starting lineup */}
+        {currentStep === 6 && assignment && (() => {
           const isLibero = (p) => p.role === 'libero1' || p.role === 'libero2' || p.role === 'liberocaptain';
           const rosterA = (assignment.teamARoster || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
           const rosterB = (assignment.teamBRoster || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
@@ -1336,91 +1504,18 @@ export default function GameSetup() {
             })()}
             
             <div className="setup-buttons">
-              <button type="button" onClick={() => setCurrentStep(4)}>← Back</button>
+              <button type="button" onClick={() => setCurrentStep(5)}>← Back</button>
               <button
                 type="button"
-                onClick={() => setCurrentStep(6)}
+                onClick={handleStartGame}
                 disabled={loading}
               >
-                Next: Officials & signatures →
+                {loading ? 'Creating Game...' : 'Start Game'}
               </button>
             </div>
           </div>
         );
         })()}
-
-        {/* Step 6: Match officials names + team staff & signatures, then create game */}
-        {currentStep === 6 && assignment && (
-          <div className="setup-step setup-step-officials">
-            <h2>Officials & signatures</h2>
-            <p className="setup-hint">
-              Starting lineups are set. Enter match referee and scorer names, complete team staff and signatures below, click <strong>Save</strong> on the sheet, then <strong>Start Game</strong> to create the match and begin the match clock.
-            </p>
-            <div className="setup-form">
-              <div className="form-row">
-                <div className="form-group">
-                  <label>1st Referee</label>
-                  <input
-                    type="text"
-                    value={officials.ref1}
-                    onChange={(e) => setOfficials({ ...officials, ref1: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>2nd Referee</label>
-                  <input
-                    type="text"
-                    value={officials.ref2}
-                    onChange={(e) => setOfficials({ ...officials, ref2: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Scorer</label>
-                  <input
-                    type="text"
-                    value={officials.scorer}
-                    onChange={(e) => setOfficials({ ...officials, scorer: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Assistant Scorer</label>
-                  <input
-                    type="text"
-                    value={officials.assistScorer}
-                    onChange={(e) => setOfficials({ ...officials, assistScorer: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-              </div>
-            </div>
-            <OfficialsModal
-              embedded
-              open
-              persistOnSave
-              gameData={{
-                teamAName: officialsSheet?.teamAName || assignment.teamA.name,
-                teamBName: officialsSheet?.teamBName || assignment.teamB.name,
-                officials: {
-                  ...officials,
-                  ...(officialsSheet || {})
-                }
-              }}
-              onSave={(data) => setOfficialsSheet(data)}
-              onClose={() => {}}
-            />
-            <div className="setup-buttons">
-              <button type="button" onClick={() => setCurrentStep(5)} disabled={loading}>← Back</button>
-              <button type="button" onClick={handleStartGame} disabled={loading}>
-                {loading ? 'Creating Game...' : 'Start Game'}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -2,8 +2,18 @@
  * Roster Storage Utilities
  * Handles saving and loading rosters to/from localStorage and JSON files
  */
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 const ROSTER_STORAGE_KEY = 'dc_volley_rosters';
+
+export function createTeamRosterId(teamName) {
+  return String(teamName || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'unknown-team';
+}
 
 /**
  * Save roster to localStorage
@@ -174,4 +184,65 @@ export function createRosterData(matchInfo, teams, officials = {}) {
     },
     officials: officials || {}
   };
+}
+
+export async function saveTeamRostersToFirebase(team1Name, team2Name, rosterData) {
+  const team1Id = createTeamRosterId(team1Name);
+  const team2Id = createTeamRosterId(team2Name);
+  const team1Players = rosterData?.teams?.team1?.players || [];
+  const team2Players = rosterData?.teams?.team2?.players || [];
+
+  await Promise.all([
+    setDoc(doc(db, 'teamRosters', team1Id), {
+      teamId: team1Id,
+      teamName: team1Name || '',
+      players: team1Players,
+      updatedAt: serverTimestamp()
+    }, { merge: true }),
+    setDoc(doc(db, 'teamRosters', team2Id), {
+      teamId: team2Id,
+      teamName: team2Name || '',
+      players: team2Players,
+      updatedAt: serverTimestamp()
+    }, { merge: true })
+  ]);
+}
+
+export async function loadTeamRosterFromFirebase(teamName) {
+  const teamId = createTeamRosterId(teamName);
+  const snap = await getDoc(doc(db, 'teamRosters', teamId));
+  if (!snap.exists()) return null;
+  return snap.data();
+}
+
+export async function saveSingleTeamRosterToFirebase(teamName, players) {
+  const teamId = createTeamRosterId(teamName);
+  try {
+    await setDoc(
+      doc(db, 'teamRosters', teamId),
+      {
+        teamId,
+        teamName: teamName || '',
+        players: Array.isArray(players) ? players : [],
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+    return { ok: true, teamId };
+  } catch (err) {
+    const msg = err?.code ? `${err.code}: ${err.message}` : (err?.message || String(err));
+    throw new Error(`Firebase save failed (${teamId}). ${msg}`);
+  }
+}
+
+export async function loadSingleTeamRosterFromFirebase(teamName) {
+  const teamId = createTeamRosterId(teamName);
+  try {
+    const snap = await getDoc(doc(db, 'teamRosters', teamId));
+    if (!snap.exists()) return null;
+    return snap.data();
+  } catch (err) {
+    const msg = err?.code ? `${err.code}: ${err.message}` : (err?.message || String(err));
+    throw new Error(`Firebase load failed (${teamId}). ${msg}`);
+  }
 }

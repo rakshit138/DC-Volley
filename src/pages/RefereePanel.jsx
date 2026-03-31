@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import {
   updateScore,
@@ -18,8 +18,7 @@ import {
   rotateLineup,
   addPoint,
   setupNextSet,
-  updateRallyState,
-  addMatchHistoryEvent
+  updateRallyState
 } from '../services/gameService';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -64,7 +63,7 @@ function getPlayer(team, teams, jersey) {
   return players.find((p) => String(p.jersey) === String(jersey));
 }
 
-function LineupList({ team, teamName, lineup, players, serving, currentSetData, currentSet, sanctionSystem }) {
+function LineupList({ team, teamName, lineup, players, serving, currentSetData, currentSet, sanctionSystem, injuredPlayers }) {
   // Show ALL players sorted by jersey number (like original HTML)
   const sortedPlayers = [...(players || [])].sort((a, b) => {
     const numA = parseInt(String(a.jersey), 10) || 0;
@@ -159,7 +158,7 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
             );
           });
           // Disqualified
-          if (sanctionCards.disqualified) {
+          if (sanctionCards.disqualified && !sanctionCards.currentSetCards.some((c) => c.type === 'DISQ') && !sanctionCards.previousSetCards.some((c) => c.type === 'DISQ')) {
             cardElements.push(
               <span key="disq" title="DISQUALIFIED — out for match" style={{ marginLeft: '3px', fontSize: '11px' }}>
                 🟥❌
@@ -168,10 +167,13 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
           }
         }
 
+        const isInjuredLocked = (injuredPlayers?.[team] || []).includes(jersey);
+        const isDisqualifiedLocked = sanctionCards?.disqualified === true;
+        const isLocked = isInjuredLocked || isDisqualifiedLocked;
         return (
           <div key={p.jersey} className={`referee-lineup-item ${onCourt ? 'on-court' : 'on-bench'}`}>
             <span className="referee-lineup-pos">{position || '-'}</span>
-            <span>
+            <span style={isLocked ? { textDecoration: 'line-through', opacity: 0.7 } : undefined}>
               #{jersey} {p?.name || ''}
               {badges.length > 0 && badges}
               {isServer && ' 🏐'}
@@ -210,8 +212,10 @@ function CourtGrid({ team, lineup, players, serving, liberoJerseys }) {
 }
 
 export default function RefereePanel() {
-  const { gameCode, gameData, loading, error } = useGame();
+  const { gameCode, setGameCode, gameData, loading, error } = useGame();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const codeFromUrl = searchParams.get('code');
   const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState('');
   const [timeoutModal, setTimeoutModal] = useState({ open: false, team: null });
@@ -245,6 +249,43 @@ export default function RefereePanel() {
   const hasCheckedAutoEntryAtStartRef = useRef(false);
   const prevSetNumberRef = useRef(null);
   const lastShownLiberoServeKeyRef = useRef(null);
+  const pendingAutoLiberoModalRef = useRef(false);
+  const autoLiberoModalLockRef = useRef(false);
+  const autoLiberoQueueRef = useRef([]); // [{ kind: 'entry'|'exit', payload: any }]
+  /** Synchronous visibility — state is stale in the same effect tick as setState(entry), so exit logic must use refs. */
+  const autoLiberoEntryShowingRef = useRef(false);
+  const autoLiberoExitShowingRef = useRef(false);
+
+  const drainAutoLiberoQueue = () => {
+    if (autoLiberoModalLockRef.current) return;
+    if (autoLiberoEntryShowingRef.current || autoLiberoExitShowingRef.current) return;
+    const queue = autoLiberoQueueRef.current || [];
+    if (queue.length === 0) return;
+    // Priority: EXIT before ENTRY (matches original intent you want)
+    const exitIdx = queue.findIndex((q) => q.kind === 'exit');
+    const nextIdx = exitIdx >= 0 ? exitIdx : 0;
+    const next = queue[nextIdx];
+    autoLiberoQueueRef.current = queue.filter((_, i) => i !== nextIdx);
+    autoLiberoModalLockRef.current = true;
+    if (next.kind === 'entry') {
+      autoLiberoExitShowingRef.current = false;
+      autoLiberoEntryShowingRef.current = true;
+      setAutoLiberoExitModal({ open: false, exitData: null });
+      setAutoLiberoEntryModal({ ...next.payload, open: true });
+    } else if (next.kind === 'exit') {
+      autoLiberoEntryShowingRef.current = false;
+      autoLiberoExitShowingRef.current = true;
+      setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+      setAutoLiberoExitModal({ open: true, exitData: next.payload });
+    }
+  };
+
+  useEffect(() => {
+    const normalized = codeFromUrl?.trim();
+    if (normalized && normalized !== gameCode) {
+      setGameCode(normalized);
+    }
+  }, [codeFromUrl, gameCode, setGameCode]);
 
   useEffect(() => {
     if (!gameCode) {
@@ -311,39 +352,38 @@ export default function RefereePanel() {
     };
   }, [gameData]);
 
-  // Set Break Timer (3 minutes between sets)
+  // Set Break Timer (3 minutes between sets, persistent via Firestore timestamp)
   useEffect(() => {
     if (!gameData) return;
-    const currentSet = gameData.currentSet || 1;
-    const sets = gameData.sets || [];
-    
-    // Check if previous set just ended
-    if (currentSet > 1) {
-      const prevSet = sets[currentSet - 2];
-      if (prevSet?.endTime && !prevSet.breakTimerStarted) {
-        setSetBreakSeconds(180); // 3 minutes
-        setSetBreakTimer(true);
-        
-        setBreakTimerRef.current = setInterval(() => {
-          setSetBreakSeconds((prev) => {
-            if (prev <= 1) {
-              setSetBreakTimer(false);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-      }
+    if (setBreakTimerRef.current) clearInterval(setBreakTimerRef.current);
+    const breakStart = gameData.setBreakStartedAt?.toDate
+      ? gameData.setBreakStartedAt.toDate()
+      : (gameData.setBreakStartedAt ? new Date(gameData.setBreakStartedAt) : null);
+    if (!gameData.awaitingNextSet || !breakStart) {
+      setSetBreakTimer(false);
+      setSetBreakSeconds(0);
+      return;
     }
+    const updateBreakClock = () => {
+      const elapsed = Math.floor((Date.now() - breakStart.getTime()) / 1000);
+      const remaining = Math.max(0, 180 - elapsed);
+      setSetBreakSeconds(remaining);
+      setSetBreakTimer(remaining > 0);
+    };
+    updateBreakClock();
+    setBreakTimerRef.current = setInterval(updateBreakClock, 500);
     
     return () => {
       if (setBreakTimerRef.current) clearInterval(setBreakTimerRef.current);
     };
-  }, [gameData?.currentSet, gameData?.sets]);
+  }, [gameData?.awaitingNextSet, gameData?.setBreakStartedAt]);
 
   // Auto Libero Entry/Exit Checking
   useEffect(() => {
-    if (!gameData || !gameCode || loading || autoLiberoEntryModal.open || autoLiberoExitModal.open) return;
+    if (!gameData || !gameCode || loading) return;
+    if (autoLiberoEntryShowingRef.current || autoLiberoExitShowingRef.current) return;
+    if (pendingAutoLiberoModalRef.current) return;
+    if (autoLiberoModalLockRef.current) return;
     
     const teams = gameData.teams || {};
     const currentSet = gameData.currentSet || 1;
@@ -370,6 +410,8 @@ export default function RefereePanel() {
     // Check for auto libero entry at match/set start (0-0) - SEQUENTIALLY like original HTML
     if (isFirstServe && lineupReady && !hasCheckedAutoEntryAtStartRef.current) {
       hasCheckedAutoEntryAtStartRef.current = true;
+      pendingAutoLiberoModalRef.current = true;
+      autoLiberoModalLockRef.current = true;
       
       // Show RECEIVING team modal FIRST, then SERVING team modal (like original HTML)
       const receivingTeam = serving === 'A' ? 'B' : 'A';
@@ -381,25 +423,26 @@ export default function RefereePanel() {
           setTimeout(() => {
             checkAutoLiberoEntryWithCallback(servingTeam, teams, serving, currentSetData, () => {
               // Both modals done
+              pendingAutoLiberoModalRef.current = false;
+              autoLiberoModalLockRef.current = false;
+              drainAutoLiberoQueue();
             });
           }, 500);
         });
       }, 800);
     }
     
-    // Check for auto libero entry after service change
-    if (!isFirstServe && prevServingRef.current !== null && prevServingRef.current !== serving) {
-      const opponent = serving === 'A' ? 'B' : 'A';
-      checkAutoLiberoEntryAfterLosingService(opponent, teams, currentSetData);
-    }
-    prevServingRef.current = serving;
-    
-    // Check for auto libero exit after rotation (libero in front row)
+    // Check for auto libero exit after rotation (libero in front row) BEFORE post-loss entry so exit wins the same tick
     // Also check for libero in P1 violation
     ['A', 'B'].forEach(team => {
       const lineup = teams[team]?.lineup || [];
       const prevLineup = prevLineupRef.current[team];
       if (prevLineup && JSON.stringify(prevLineup) !== JSON.stringify(lineup)) {
+        if (pendingAutoLiberoModalRef.current || autoLiberoEntryShowingRef.current || autoLiberoExitShowingRef.current || autoLiberoModalLockRef.current) {
+          // If exit is needed while another modal is active, queue it (handled inside checkAutoLiberoExit)
+        } else {
+          // ok
+        }
         // Check for libero in front row (exit modal)
         checkAutoLiberoExit(team, teams, lineup, prevLineup);
         // Check for libero in P1 violation (serving team only)
@@ -407,12 +450,19 @@ export default function RefereePanel() {
       }
       prevLineupRef.current[team] = [...lineup];
     });
+
+    // Auto libero entry after service change (uses refs so it does not race exit above)
+    if (!isFirstServe && prevServingRef.current !== null && prevServingRef.current !== serving) {
+      const opponent = serving === 'A' ? 'B' : 'A';
+      checkAutoLiberoEntryAfterLosingService(opponent, teams, currentSetData);
+    }
+    prevServingRef.current = serving;
   }, [gameData, gameCode, loading, autoLiberoEntryModal.open, autoLiberoExitModal.open]);
 
   // Show "Libero serve is available" dialog when serving team has libero at P1 (allowed to serve) - like original HTML
   useEffect(() => {
     if (!gameData || liberoServeAvailableDialogOpen) return;
-    if (autoLiberoEntryModal.open || autoLiberoExitModal.open) return;
+    if (autoLiberoEntryShowingRef.current || autoLiberoExitShowingRef.current) return;
     const currentSet = gameData.currentSet || 1;
     const set = gameData.sets?.[currentSet - 1];
     if (!set) return;
@@ -534,14 +584,29 @@ export default function RefereePanel() {
       jersey
     };
     
-    // Store callback for when modal closes
-    setAutoLiberoEntryModal({
+    const entryPayload = {
       open: true,
       team,
       targetData,
       liberos: availableLiberos,
       callback: callback
-    });
+    };
+    // Store callback for when modal closes; if another modal is active, queue this entry
+    // If an EXIT is queued (or any modal active), queue ENTRY (exit must be shown first)
+    if (
+      autoLiberoModalLockRef.current ||
+      autoLiberoEntryShowingRef.current ||
+      autoLiberoExitShowingRef.current ||
+      (autoLiberoQueueRef.current || []).some((q) => q.kind === 'exit')
+    ) {
+      autoLiberoQueueRef.current = [...(autoLiberoQueueRef.current || []), { kind: 'entry', payload: entryPayload }];
+      return;
+    }
+    autoLiberoModalLockRef.current = true;
+    autoLiberoExitShowingRef.current = false;
+    autoLiberoEntryShowingRef.current = true;
+    setAutoLiberoExitModal({ open: false, exitData: null });
+    setAutoLiberoEntryModal(entryPayload);
   };
 
   // Helper function to check auto libero entry at match start (legacy, kept for compatibility)
@@ -602,19 +667,37 @@ export default function RefereePanel() {
       posIndex: targetPosIndex,
       jersey
     };
-    
-    setAutoLiberoEntryModal({
+
+    const entryPayload = {
       open: true,
       team,
       targetData,
-      liberos: availableLiberos
-    });
+      liberos: availableLiberos,
+      callback: null
+    };
+    // Same rules as checkAutoLiberoEntryWithCallback: use refs (state is stale same tick as exit check)
+    if (
+      autoLiberoModalLockRef.current ||
+      autoLiberoEntryShowingRef.current ||
+      autoLiberoExitShowingRef.current ||
+      pendingAutoLiberoModalRef.current ||
+      (autoLiberoQueueRef.current || []).some((q) => q.kind === 'exit')
+    ) {
+      autoLiberoQueueRef.current = [...(autoLiberoQueueRef.current || []), { kind: 'entry', payload: entryPayload }];
+      return;
+    }
+    autoLiberoModalLockRef.current = true;
+    autoLiberoExitShowingRef.current = false;
+    autoLiberoEntryShowingRef.current = true;
+    setAutoLiberoExitModal({ open: false, exitData: null });
+    setAutoLiberoEntryModal(entryPayload);
   };
 
   // Helper: check auto libero exit when libero rotates to front row (like HTML autoReplaceLiberoInFrontRow → showAutoLiberoExitModal)
   const checkAutoLiberoExit = (team, teams, currentLineup, prevLineup) => {
     if (!gameData || !prevLineup || prevLineup.length === 0) return;
-    if (autoLiberoExitModal.open) return; // Already showing exit modal
+    if (autoLiberoExitShowingRef.current) return; // Already showing exit modal
+    // If another auto-libero modal is active/pending, we'll queue the exit when detected.
     
     const players = teams[team]?.players || [];
     const isLiberoRole = (r) => r === 'libero1' || r === 'libero2' || r === 'liberocaptain';
@@ -638,9 +721,7 @@ export default function RefereePanel() {
       
       // Show modal for first libero found in front row only (like HTML replacements[0])
       const teamName = (team === 'A' ? gameData.teamAName : gameData.teamBName) || `Team ${team}`;
-      setAutoLiberoExitModal({
-        open: true,
-        exitData: {
+      const exitPayload = {
           libero: currentPlayer,
           original: originalPlayer,
           position: posIndex + 1,
@@ -648,8 +729,24 @@ export default function RefereePanel() {
           team,
           replacementData: replacement,
           teamName
-        }
-      });
+      };
+
+      if (
+        autoLiberoModalLockRef.current ||
+        autoLiberoEntryShowingRef.current ||
+        autoLiberoExitShowingRef.current ||
+        pendingAutoLiberoModalRef.current
+      ) {
+        // Put EXIT at the FRONT of the queue so it always happens before ENTRY
+        autoLiberoQueueRef.current = [{ kind: 'exit', payload: exitPayload }, ...(autoLiberoQueueRef.current || []).filter((q) => q.kind !== 'exit')];
+        return;
+      }
+
+      autoLiberoEntryShowingRef.current = false;
+      autoLiberoExitShowingRef.current = true;
+      setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+      setAutoLiberoExitModal({ open: true, exitData: exitPayload });
+      autoLiberoModalLockRef.current = true;
       return;
     }
   };
@@ -721,7 +818,10 @@ export default function RefereePanel() {
       );
       setMessage('Libero entry recorded');
       setTimeout(() => setMessage(''), 2000);
+      autoLiberoEntryShowingRef.current = false;
       setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+      autoLiberoModalLockRef.current = false;
+      drainAutoLiberoQueue();
       
       // Call callback after modal closes (for sequential modals)
       if (callback) {
@@ -732,7 +832,10 @@ export default function RefereePanel() {
     } catch (err) {
       setMessage(`Error: ${err.message}`);
       setTimeout(() => setMessage(''), 3000);
+      autoLiberoEntryShowingRef.current = false;
       setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+      autoLiberoModalLockRef.current = false;
+      drainAutoLiberoQueue();
       
       // Still call callback even on error
       if (callback) {
@@ -753,10 +856,17 @@ export default function RefereePanel() {
       await removeLiberoFromCourt(gameCode, exitData.team, exitData.libero.jersey);
       setMessage('Libero exit recorded');
       setTimeout(() => setMessage(''), 2000);
+      autoLiberoExitShowingRef.current = false;
       setAutoLiberoExitModal({ open: false, exitData: null });
+      autoLiberoModalLockRef.current = false;
+      drainAutoLiberoQueue();
     } catch (err) {
       setMessage(`Error: ${err.message}`);
       setTimeout(() => setMessage(''), 3000);
+      autoLiberoExitShowingRef.current = false;
+      setAutoLiberoExitModal({ open: false, exitData: null });
+      autoLiberoModalLockRef.current = false;
+      drainAutoLiberoQueue();
     } finally {
       setUpdating(false);
     }
@@ -765,6 +875,10 @@ export default function RefereePanel() {
   const handleToggleRally = async () => {
     if (!gameCode || !gameData) return;
     const newRallyState = !rallyActive;
+    if (newRallyState && hasIneligibleOnCourt) {
+      alert('⛔ INELIGIBLE PLAYER ON COURT\n\nA disqualified or exceptionally substituted (injured) player is still on the court.\n\nPlease substitute them out. They cannot re-enter the match.');
+      return;
+    }
     
     // If starting rally, validate libero serve rules (like original HTML - no blocking confirm)
     if (newRallyState) {
@@ -798,6 +912,11 @@ export default function RefereePanel() {
       }
       return;
     }
+    if (hasIneligibleOnCourt) {
+      setMessage('⛔ Ineligible player on court — substitute out before play');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
     
     setUpdating(true);
     setMessage('');
@@ -806,20 +925,6 @@ export default function RefereePanel() {
       const result = await addPoint(gameCode, team, rallyActive);
       
       if (result.completed) {
-        // Add to match history
-        try {
-          const finalScore = currentSetData?.score || { A: 0, B: 0 };
-          await addMatchHistoryEvent(gameCode, {
-            type: 'SET_WON',
-            team: result.winner,
-            setNumber: gameData.currentSet,
-            description: `Set ${gameData.currentSet} won by Team ${result.winner}`,
-            score: finalScore
-          });
-        } catch (err) {
-          console.error('Error adding match history:', err);
-        }
-        
         setMessage(`Set ${gameData.currentSet} won by Team ${result.winner}!`);
         if (result.matchFinished) {
           setTimeout(() => {
@@ -846,20 +951,6 @@ export default function RefereePanel() {
         if (rallyActive) {
           await updateRallyState(gameCode, false);
           setRallyActive(false);
-        }
-        
-        // Add point to match history
-        try {
-          const currentScore = currentSetData?.score || { A: 0, B: 0 };
-          await addMatchHistoryEvent(gameCode, {
-            type: 'POINT',
-            team: team,
-            setNumber: gameData.currentSet,
-            description: `Point scored by Team ${team}`,
-            score: currentScore
-          });
-        } catch (err) {
-          console.error('Error adding match history:', err);
         }
         
         setMessage(`Point added for Team ${team}`);
@@ -994,7 +1085,10 @@ export default function RefereePanel() {
         const outPlayer = teams[team]?.players?.find((p) => String(p.jersey) === playerOutStr);
         const inPlayer = teams[team]?.players?.find((p) => String(p.jersey) === playerInStr);
         let msg = '✓ Substitution complete!\nOUT: #' + (outPlayer?.jersey ?? playerOut) + ' ' + (outPlayer?.name ?? '') + '\nIN: #' + (inPlayer?.jersey ?? playerIn) + ' ' + (inPlayer?.name ?? '');
-        if (isReturning) {
+        if (result.sanctionReplacement) {
+          msg += '\n\n🟧 Sanction replacement (exceptional, not counted).';
+          msg += '\n⚠️ No pairing is created. The sanctioned player cannot return.';
+        } else if (isReturning) {
           msg += '\n\n📋 This is the 2nd substitution action with these players.';
           msg += '\n⚠️ Players #' + (outPlayer?.jersey ?? playerOut) + ' and #' + (inPlayer?.jersey ?? playerIn) + ' cannot be substituted again in this set.';
         } else {
@@ -1179,18 +1273,8 @@ export default function RefereePanel() {
   };
 
   const handleExportSummaryPDF = () => {
-    // For now, export as HTML (PDF export requires jsPDF library)
-    const html = generateSummaryHtml(gameData);
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Match_Summary_${gameData.teamAName || 'TeamA'}_vs_${gameData.teamBName || 'TeamB'}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    setMessage('Summary exported as HTML (you can print to PDF from browser)');
+    downloadMatchReportHtml(gameData);
+    setMessage('Summary exported using the same dataset as match report');
     setTimeout(() => setMessage(''), 3000);
   };
 
@@ -1416,6 +1500,16 @@ export default function RefereePanel() {
   const liberoJerseysLeft = leftTeam === 'A' ? liberoJerseysA : liberoJerseysB;
   const liberoJerseysRight = rightTeam === 'A' ? liberoJerseysA : liberoJerseysB;
 
+  const disqASet = new Set((gameData.sanctionSystem?.disqualified?.A || []).map((e) => String(e.jersey)));
+  const disqBSet = new Set((gameData.sanctionSystem?.disqualified?.B || []).map((e) => String(e.jersey)));
+  const injASet = new Set((gameData.injuredPlayers?.A || []).map(String));
+  const injBSet = new Set((gameData.injuredPlayers?.B || []).map(String));
+  const ineligibleA = new Set([...disqASet, ...injASet]);
+  const ineligibleB = new Set([...disqBSet, ...injBSet]);
+  const ineligibleOnCourtA = (lineupA || []).filter((j) => j != null && ineligibleA.has(String(j))).map(String);
+  const ineligibleOnCourtB = (lineupB || []).filter((j) => j != null && ineligibleB.has(String(j))).map(String);
+  const hasIneligibleOnCourt = ineligibleOnCourtA.length > 0 || ineligibleOnCourtB.length > 0;
+
   const topInfo = [gameData.competition || '', gameData.venue || '', `${teamAName} vs ${teamBName}`].filter(Boolean).join(' | ') || 'Match';
 
   return (
@@ -1493,6 +1587,21 @@ export default function RefereePanel() {
         </div>
       </div>
 
+      {hasIneligibleOnCourt && (
+        <div style={{
+          background: 'linear-gradient(135deg, #ff3b3b 0%, #c71f1f 100%)',
+          color: '#fff',
+          padding: '10px 14px',
+          borderBottom: '2px solid rgba(255,255,255,0.25)',
+          fontWeight: 'bold',
+          fontSize: 12
+        }}>
+          ⛔ INELIGIBLE PLAYER ON COURT — substitute out now (cannot re-enter).
+          {ineligibleOnCourtA.length > 0 && <span style={{ marginLeft: 10 }}>Team A: {ineligibleOnCourtA.map((j) => `#${j}`).join(', ')}</span>}
+          {ineligibleOnCourtB.length > 0 && <span style={{ marginLeft: 10 }}>Team B: {ineligibleOnCourtB.map((j) => `#${j}`).join(', ')}</span>}
+        </div>
+      )}
+
       <div className="referee-main">
         <div className="referee-side-panel">
           <div className="referee-side-title">{leftTeamName} LINEUP</div>
@@ -1505,6 +1614,7 @@ export default function RefereePanel() {
             currentSetData={currentSetData}
             currentSet={currentSet}
             sanctionSystem={gameData.sanctionSystem}
+            injuredPlayers={gameData.injuredPlayers}
           />
         </div>
 
@@ -1669,6 +1779,7 @@ export default function RefereePanel() {
             currentSetData={currentSetData}
             currentSet={currentSet}
             sanctionSystem={gameData.sanctionSystem}
+            injuredPlayers={gameData.injuredPlayers}
           />
         </div>
       </div>
@@ -1783,7 +1894,7 @@ export default function RefereePanel() {
       />
 
       <AutoLiberoEntryModal
-        open={autoLiberoEntryModal.open}
+        open={autoLiberoEntryModal.open && !autoLiberoExitModal.open}
         team={autoLiberoEntryModal.team}
         teamName={autoLiberoEntryModal.team === 'A' ? teamAName : teamBName}
         targetData={autoLiberoEntryModal.targetData}
@@ -1793,7 +1904,10 @@ export default function RefereePanel() {
         onConfirm={handleAutoLiberoEntryConfirm}
         onSkip={() => {
           const callback = autoLiberoEntryModal.callback;
+          autoLiberoEntryShowingRef.current = false;
           setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+          autoLiberoModalLockRef.current = false;
+          drainAutoLiberoQueue();
           // Call callback after modal closes (for sequential modals)
           if (callback) {
             setTimeout(() => {
@@ -1803,7 +1917,10 @@ export default function RefereePanel() {
         }}
         onClose={() => {
           const callback = autoLiberoEntryModal.callback;
+          autoLiberoEntryShowingRef.current = false;
           setAutoLiberoEntryModal({ open: false, team: null, targetData: null, liberos: [], callback: null });
+          autoLiberoModalLockRef.current = false;
+          drainAutoLiberoQueue();
           // Call callback after modal closes (for sequential modals)
           if (callback) {
             setTimeout(() => {
@@ -1817,7 +1934,12 @@ export default function RefereePanel() {
         open={autoLiberoExitModal.open}
         exitData={autoLiberoExitModal.exitData}
         onConfirm={handleAutoLiberoExitConfirm}
-        onClose={() => setAutoLiberoExitModal({ open: false, exitData: null })}
+        onClose={() => {
+          autoLiberoExitShowingRef.current = false;
+          setAutoLiberoExitModal({ open: false, exitData: null });
+          autoLiberoModalLockRef.current = false;
+          drainAutoLiberoQueue();
+        }}
       />
 
       {/* Libero serve is available — informational dialog when libero is at P1 (like original HTML) */}
@@ -1968,8 +2090,16 @@ function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
   if (!open) return null;
 
   const isLibero = (p) => p.role === 'libero1' || p.role === 'libero2' || p.role === 'liberocaptain';
-  const playersA = (gameData?.teams?.A?.players || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
-  const playersB = (gameData?.teams?.B?.players || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
+  const disqA = new Set((gameData?.sanctionSystem?.disqualified?.A || []).map((e) => String(e.jersey)));
+  const disqB = new Set((gameData?.sanctionSystem?.disqualified?.B || []).map((e) => String(e.jersey)));
+  const injA = new Set((gameData?.injuredPlayers?.A || []).map(String));
+  const injB = new Set((gameData?.injuredPlayers?.B || []).map(String));
+  const playersA = (gameData?.teams?.A?.players || [])
+    .filter(p => p.jersey && !isLibero(p) && !disqA.has(String(p.jersey)) && !injA.has(String(p.jersey)))
+    .sort((a, b) => Number(a.jersey) - Number(b.jersey));
+  const playersB = (gameData?.teams?.B?.players || [])
+    .filter(p => p.jersey && !isLibero(p) && !disqB.has(String(p.jersey)) && !injB.has(String(p.jersey)))
+    .sort((a, b) => Number(a.jersey) - Number(b.jersey));
   const posOrder = [4, 3, 2, 5, 6, 1];
   const posLabels = { 4: 'P4-LF', 3: 'P3-MF', 2: 'P2-RF', 5: 'P5-LB', 6: 'P6-MB', 1: 'P1-RB' };
 

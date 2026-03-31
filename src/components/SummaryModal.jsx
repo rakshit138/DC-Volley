@@ -11,45 +11,11 @@ export default function SummaryModal({ open, gameData, onClose, onExportPDF }) {
   const sets = gameData.sets || [];
   const setsWon = gameData.setsWon || { A: 0, B: 0 };
 
-  // Calculate total timeouts
-  let totalTimeoutsA = 0;
-  let totalTimeoutsB = 0;
-  sets.forEach((set) => {
-    if (set.timeouts) {
-      totalTimeoutsA += (set.timeouts.A || []).length;
-      totalTimeoutsB += (set.timeouts.B || []).length;
-    }
+  const events = [...(gameData.matchSummary || [])].sort((a, b) => {
+    const ta = a?.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a?.timestamp || 0).getTime();
+    const tb = b?.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b?.timestamp || 0).getTime();
+    return ta - tb;
   });
-
-  // Calculate total substitutions (completed)
-  let totalSubsA = 0;
-  let totalSubsB = 0;
-  sets.forEach((set) => {
-    if (set.substitutions) {
-      totalSubsA += (set.substitutions.A || []).length;
-      totalSubsB += (set.substitutions.B || []).length;
-    }
-  });
-
-  // Calculate total exceptional substitutions
-  let totalExcSubsA = 0;
-  let totalExcSubsB = 0;
-  sets.forEach((set) => {
-    if (set.exceptionalSubstitutions) {
-      totalExcSubsA += (set.exceptionalSubstitutions.A || []).length;
-      totalExcSubsB += (set.exceptionalSubstitutions.B || []).length;
-    }
-  });
-
-  // Calculate total sanctions
-  let totalSanctionsA = 0;
-  let totalSanctionsB = 0;
-  if (gameData.sanctionSystem) {
-    totalSanctionsA = (gameData.sanctionSystem.misconduct?.A || []).length + 
-                      (gameData.sanctionSystem.delay?.A?.log || []).length;
-    totalSanctionsB = (gameData.sanctionSystem.misconduct?.B || []).length + 
-                      (gameData.sanctionSystem.delay?.B?.log || []).length;
-  }
 
   return (
     <div className="summary-modal-overlay" onClick={onClose}>
@@ -70,7 +36,10 @@ export default function SummaryModal({ open, gameData, onClose, onExportPDF }) {
             </div>
           </div>
           <div className="summary-winner">
-            🏆 Winner: {setsWon.A > setsWon.B ? teamAName : teamBName}
+            🏆 Winner:{' '}
+            <span style={{ color: setsWon.A > setsWon.B ? teamAColor : teamBColor, fontWeight: 700 }}>
+              {setsWon.A > setsWon.B ? teamAName : teamBName}
+            </span>
           </div>
         </div>
 
@@ -91,7 +60,13 @@ export default function SummaryModal({ open, gameData, onClose, onExportPDF }) {
                   <div style={{ color: teamAColor }}>{set.score?.A || 0}</div>
                   <div style={{ color: teamBColor }}>{set.score?.B || 0}</div>
                   <div>
-                    {set.winner ? (set.winner === 'A' ? teamAName : teamBName) : '-'}
+                    {set.winner ? (
+                      <span style={{ color: set.winner === 'A' ? teamAColor : teamBColor, fontWeight: 700 }}>
+                        {set.winner === 'A' ? teamAName : teamBName}
+                      </span>
+                    ) : (
+                      '-'
+                    )}
                   </div>
                 </div>
               );
@@ -100,66 +75,40 @@ export default function SummaryModal({ open, gameData, onClose, onExportPDF }) {
         </div>
 
         <div className="summary-section">
-          <h4>Statistics</h4>
-          <div className="summary-stats-grid">
-            <div className="summary-stat-item">
-              <div className="summary-stat-label">Timeouts</div>
-              <div className="summary-stat-values">
-                <span style={{ color: teamAColor }}>{teamAName}: {totalTimeoutsA} / 2 per set</span>
-                <span style={{ color: teamBColor }}>{teamBName}: {totalTimeoutsB} / 2 per set</span>
-              </div>
-            </div>
-            <div className="summary-stat-item">
-              <div className="summary-stat-label">Substitutions</div>
-              <div className="summary-stat-values">
-                <span style={{ color: teamAColor }}>{teamAName}: {totalSubsA}</span>
-                <span style={{ color: teamBColor }}>{teamBName}: {totalSubsB}</span>
-              </div>
-            </div>
-            <div className="summary-stat-item">
-              <div className="summary-stat-label">Exceptional Substitutions</div>
-              <div className="summary-stat-values">
-                <span style={{ color: teamAColor }}>{teamAName}: {totalExcSubsA}</span>
-                <span style={{ color: teamBColor }}>{teamBName}: {totalExcSubsB}</span>
-              </div>
-            </div>
-            <div className="summary-stat-item">
-              <div className="summary-stat-label">Sanctions</div>
-              <div className="summary-stat-values">
-                <span style={{ color: teamAColor }}>{teamAName}: {totalSanctionsA}</span>
-                <span style={{ color: teamBColor }}>{teamBName}: {totalSanctionsB}</span>
-              </div>
-            </div>
+          <h4>Chronological Event Log</h4>
+          <div className="summary-sanction-log" style={{ fontSize: '12px', textAlign: 'left', maxHeight: '260px', overflowY: 'auto', color: '#fff' }}>
+            {events.length === 0 ? (
+              <div style={{ color: '#fff' }}>No events recorded.</div>
+            ) : (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {events.map((e, i) => (
+                  <li key={`${e.type || 'event'}-${i}`} style={{ marginBottom: 6, color: '#fff' }}>
+                    <strong style={{ color: '#fff' }}>Set {e.setNumber || '-'}</strong> - {e.description || e.type || 'Event'}
+                    {e.score ? (
+                      <span>
+                        {' ('}
+                        {String(e.team) === 'B' ? (
+                          <>
+                            <span style={{ color: teamBColor, fontWeight: 'bold' }}>{e.score.B}</span>
+                            <span style={{ color: '#fff' }}>-</span>
+                            <span style={{ color: teamAColor, fontWeight: 'bold' }}>{e.score.A}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ color: teamAColor, fontWeight: 'bold' }}>{e.score.A}</span>
+                            <span style={{ color: '#fff' }}>-</span>
+                            <span style={{ color: teamBColor, fontWeight: 'bold' }}>{e.score.B}</span>
+                          </>
+                        )}
+                        {')'}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
-
-        {gameData.sanctionSystem && (totalSanctionsA + totalSanctionsB > 0) && (
-          <div className="summary-section">
-            <h4>Sanctions log</h4>
-            <div className="summary-sanction-log" style={{ fontSize: '12px', textAlign: 'left', maxHeight: '200px', overflowY: 'auto' }}>
-              {['A', 'B'].map((t) => (
-                <div key={t} style={{ marginBottom: '10px' }}>
-                  <strong style={{ color: t === 'A' ? teamAColor : teamBColor }}>
-                    {t === 'A' ? teamAName : teamBName}
-                  </strong>
-                  <ul style={{ margin: '6px 0 0 12px', padding: 0, listStyle: 'disc' }}>
-                    {(gameData.sanctionSystem.misconduct?.[t] || []).map((r, i) => (
-                      <li key={`m-${t}-${i}`}>
-                        Set {r.set}: {r.type} — {r.personType === 'coach' ? 'Coach' : `#${r.person}`}
-                        {r.reason ? ` (${r.reason})` : ''}
-                      </li>
-                    ))}
-                    {(gameData.sanctionSystem.delay?.[t]?.log || []).map((r, i) => (
-                      <li key={`d-${t}-${i}`}>
-                        Set {r.set}: Delay {r.type}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="summary-modal-buttons">
           {onExportPDF && (

@@ -10,8 +10,9 @@ export default function Lineup() {
   const codeFromUrl = searchParams.get('code');
 
   useEffect(() => {
-    if (codeFromUrl && codeFromUrl.trim() && !gameCode) {
-      setGameCode(codeFromUrl.trim());
+    const normalized = codeFromUrl?.trim();
+    if (normalized && normalized !== gameCode) {
+      setGameCode(normalized);
     }
   }, [codeFromUrl, gameCode, setGameCode]);
 
