@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import {
@@ -51,7 +51,6 @@ import AutoLiberoExitModal from '../components/AutoLiberoExitModal';
 import MatchDataModal from '../components/MatchDataModal';
 import SummaryModal from '../components/SummaryModal';
 import { downloadMatchReportHtml } from '../utils/exportMatchReportHtml';
-import { saveMatch, loadMatch } from '../utils/matchStorage';
 import { getPrepSessionStart } from '../utils/setupSession';
 import './RefereePanel.css';
 
@@ -79,13 +78,8 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
   const getSanctionCards = (playerJersey) => {
     if (!sanctionSystem || !playerJersey) return null;
     const jerseyStr = String(playerJersey);
-    const cards = [];
-    
-    // Check if disqualified (entire match)
-    const disqualified = sanctionSystem.disqualified?.[team]?.some(e => String(e.jersey) === jerseyStr);
-    if (disqualified) {
-      cards.push({ type: 'DISQ', set: null, symbol: '🟥❌', title: 'DISQUALIFIED — out for match' });
-    }
+
+    const disqualified = sanctionSystem.disqualified?.[team]?.some((e) => String(e.jersey) === jerseyStr);
 
     // Get misconduct records for this player
     const misconducts = (sanctionSystem.misconduct?.[team] || []).filter(r => String(r.person) === jerseyStr);
@@ -143,6 +137,8 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
         if (sanctionCards) {
           // Current set cards (bright)
           sanctionCards.currentSetCards.forEach((card, idx) => {
+            // One 🟥❌ only: misconduct DISQ duplicates sanctionSystem.disqualified inline icon
+            if (sanctionCards.disqualified && card.type === 'DISQ') return;
             cardElements.push(
               <span key={`current-${idx}`} title={card.type} style={{ marginLeft: '3px', fontSize: '11px' }}>
                 {card.symbol}
@@ -151,30 +147,33 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
           });
           // Previous set cards (dimmed)
           sanctionCards.previousSetCards.forEach((card, idx) => {
+            if (sanctionCards.disqualified && card.type === 'DISQ') return;
             cardElements.push(
               <span key={`prev-${idx}`} title={`${card.type} (Set ${card.set})`} style={{ marginLeft: '3px', fontSize: '11px', opacity: 0.4, fontStyle: 'italic' }}>
                 {card.symbol}<sup style={{ fontSize: '8px' }}>S{card.set}</sup>
               </span>
             );
           });
-          // Disqualified
-          if (sanctionCards.disqualified && !sanctionCards.currentSetCards.some((c) => c.type === 'DISQ') && !sanctionCards.previousSetCards.some((c) => c.type === 'DISQ')) {
-            cardElements.push(
-              <span key="disq" title="DISQUALIFIED — out for match" style={{ marginLeft: '3px', fontSize: '11px' }}>
-                🟥❌
-              </span>
-            );
-          }
         }
 
         const isInjuredLocked = (injuredPlayers?.[team] || []).includes(jersey);
         const isDisqualifiedLocked = sanctionCards?.disqualified === true;
         const isLocked = isInjuredLocked || isDisqualifiedLocked;
         return (
-          <div key={p.jersey} className={`referee-lineup-item ${onCourt ? 'on-court' : 'on-bench'}`}>
+          <div
+            key={p.jersey}
+            className={`referee-lineup-item ${onCourt ? 'on-court' : 'on-bench'}${isDisqualifiedLocked ? ' referee-lineup-item--disqualified' : ''}`}
+          >
             <span className="referee-lineup-pos">{position || '-'}</span>
-            <span style={isLocked ? { textDecoration: 'line-through', opacity: 0.7 } : undefined}>
+            <span className={isDisqualifiedLocked ? 'referee-lineup-name-disqualified' : undefined}>
               #{jersey} {p?.name || ''}
+              {/* Fix #6: icon-only disqualification marker (name struck through via CSS) */}
+              {isDisqualifiedLocked && (
+                <span className="referee-lineup-disq-icon" title="Disqualified — cannot play or re-enter" aria-label="Disqualified">
+                  {' '}
+                  🟥❌
+                </span>
+              )}
               {badges.length > 0 && badges}
               {isServer && ' 🏐'}
               {cardElements.length > 0 && cardElements}
@@ -219,7 +218,11 @@ export default function RefereePanel() {
   const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState('');
   const [timeoutModal, setTimeoutModal] = useState({ open: false, team: null });
-  const [subModal, setSubModal] = useState({ open: false, team: null });
+  const [subModal, setSubModal] = useState({ open: false, team: null, defaultPlayerOut: null });
+  /** Fix #3: deciding-set toss summary before lineup modal */
+  const [coinTossSummary, setCoinTossSummary] = useState(null);
+  /** Fix #7: filter history by team */
+  const [historyTeamFilter, setHistoryTeamFilter] = useState('all');
   const [officialsModalOpen, setOfficialsModalOpen] = useState(false);
   const [postMatchOfficialsPrompt, setPostMatchOfficialsPrompt] = useState(false);
   const [liberoModal, setLiberoModal] = useState({ open: false, team: null });
@@ -230,8 +233,14 @@ export default function RefereePanel() {
   const [decidingSetTossModalOpen, setDecidingSetTossModalOpen] = useState(false);
   const [matchDataModalOpen, setMatchDataModalOpen] = useState(false);
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
-  const loadMatchFileInputRef = useRef(null);
   const [rallyActive, setRallyActive] = useState(false);
+  /** Prefer Firestore `rallyActive`; avoid treating `undefined` as false so UI matches after "Start rally". */
+  const rallyOn = useMemo(() => {
+    if (!gameData) return rallyActive;
+    if (gameData.rallyActive === true) return true;
+    if (gameData.rallyActive === false) return false;
+    return rallyActive;
+  }, [gameData, gameData?.rallyActive, rallyActive]);
   const [matchTime, setMatchTime] = useState(0);
   const [setTime, setSetTime] = useState(0);
   const [setBreakTimer, setSetBreakTimer] = useState(null);
@@ -302,15 +311,26 @@ export default function RefereePanel() {
     setOfficialsModalOpen(true);
   }, [gameData, gameCode, loading]);
 
-  // Initialize rally state from Firestore
+  // Initialize rally state from Firestore (only when boolean is explicit — undefined does not force false)
   useEffect(() => {
-    if (gameData) {
-      setRallyActive(gameData.rallyActive || false);
-    }
+    if (!gameData) return;
+    if (gameData.rallyActive === true) setRallyActive(true);
+    else if (gameData.rallyActive === false) setRallyActive(false);
   }, [gameData?.rallyActive]);
 
+  // Fix #2: After Undo cancels "start next set", Firestore sets awaitingNextSet — reopen lineup modal.
+  useEffect(() => {
+    if (!gameData || loading || gameData.status === 'FINISHED') return;
+    if (!gameData.awaitingNextSet) return;
+    const cs = gameData.currentSet || 1;
+    const setRow = gameData.sets?.[cs - 1];
+    if (setRow?.winner) {
+      setNextSetModalOpen(true);
+    }
+  }, [gameData?.awaitingNextSet, gameData?.currentSet, gameData?.sets, gameData?.status, loading]);
+
   // Match time = from "Start New Game" / setup (prep session); falls back to createdAt if joined by code only.
-  // Set time = from when the game goes live (Firestore set 1 startTime / playStartedAt), not during roster/officials entry.
+  // Set time = from first "Start rally" in this set (setClockStartedAt on the set row).
   useEffect(() => {
     if (!gameData) return;
 
@@ -330,20 +350,18 @@ export default function RefereePanel() {
     const currentSetData = sets[currentSetNum - 1];
 
     let setStart = null;
-    if (currentSetData?.startTime) {
-      setStart = currentSetData.startTime.toDate
-        ? currentSetData.startTime.toDate()
-        : new Date(currentSetData.startTime);
-    } else if (currentSetNum === 1 && gameData.playStartedAt) {
-      setStart = gameData.playStartedAt.toDate
-        ? gameData.playStartedAt.toDate()
-        : new Date(gameData.playStartedAt);
+    if (currentSetData?.setClockStartedAt) {
+      setStart = currentSetData.setClockStartedAt.toDate
+        ? currentSetData.setClockStartedAt.toDate()
+        : new Date(currentSetData.setClockStartedAt);
     }
 
     if (setStart) {
       setTimerRef.current = setInterval(() => {
         setSetTime(calculateSetDuration(setStart));
       }, 1000);
+    } else {
+      setSetTime(0);
     }
 
     return () => {
@@ -411,8 +429,9 @@ export default function RefereePanel() {
     if (isFirstServe && lineupReady && !hasCheckedAutoEntryAtStartRef.current) {
       hasCheckedAutoEntryAtStartRef.current = true;
       pendingAutoLiberoModalRef.current = true;
-      autoLiberoModalLockRef.current = true;
-      
+      // Do not set autoLiberoModalLockRef here — checkAutoLiberoEntryWithCallback queues when lock is true
+      // and never runs the completion callback, so the start-of-set modals never open (see drainAutoLiberoQueue).
+
       // Show RECEIVING team modal FIRST, then SERVING team modal (like original HTML)
       const receivingTeam = serving === 'A' ? 'B' : 'A';
       const servingTeam = serving;
@@ -874,7 +893,7 @@ export default function RefereePanel() {
 
   const handleToggleRally = async () => {
     if (!gameCode || !gameData) return;
-    const newRallyState = !rallyActive;
+    const newRallyState = !rallyOn;
     if (newRallyState && hasIneligibleOnCourt) {
       alert('⛔ INELIGIBLE PLAYER ON COURT\n\nA disqualified or exceptionally substituted (injured) player is still on the court.\n\nPlease substitute them out. They cannot re-enter the match.');
       return;
@@ -905,8 +924,8 @@ export default function RefereePanel() {
   };
 
   const handleScoreUpdate = async (team, increment = 1) => {
-    if (updating || !gameCode || !rallyActive) {
-      if (!rallyActive) {
+    if (updating || !gameCode || !rallyOn) {
+      if (!rallyOn) {
         setMessage('Please start rally first');
         setTimeout(() => setMessage(''), 2000);
       }
@@ -922,9 +941,13 @@ export default function RefereePanel() {
     setMessage('');
     try {
       // Use addPoint which handles rotation and set completion
-      const result = await addPoint(gameCode, team, rallyActive);
+      const result = await addPoint(gameCode, team, rallyOn);
       
       if (result.completed) {
+        if (rallyOn) {
+          await updateRallyState(gameCode, false);
+          setRallyActive(false);
+        }
         setMessage(`Set ${gameData.currentSet} won by Team ${result.winner}!`);
         if (result.matchFinished) {
           setTimeout(() => {
@@ -948,7 +971,7 @@ export default function RefereePanel() {
         }
       } else {
         // Auto-stop rally when point is scored (like original HTML)
-        if (rallyActive) {
+        if (rallyOn) {
           await updateRallyState(gameCode, false);
           setRallyActive(false);
         }
@@ -1035,8 +1058,13 @@ export default function RefereePanel() {
     setUpdating(true);
     setMessage('');
     try {
-      await undoLastPoint(gameCode);
-      setMessage('Last point undone');
+      const result = await undoLastPoint(gameCode);
+      if (!result?.ok) {
+        setMessage(result?.message || 'Nothing to undo');
+        setTimeout(() => setMessage(''), 3000);
+        return;
+      }
+      setMessage(result?.message || 'Last point undone');
       setTimeout(() => setMessage(''), 2000);
     } catch (err) {
       setMessage(`Error: ${err.message}`);
@@ -1080,15 +1108,12 @@ export default function RefereePanel() {
     try {
       const result = await recordSubstitution(gameCode, team, playerOut, playerIn);
       if (result.ok) {
-        setSubModal({ open: false, team: null });
+        setSubModal({ open: false, team: null, defaultPlayerOut: null });
         const teams = gameData.teams || {};
         const outPlayer = teams[team]?.players?.find((p) => String(p.jersey) === playerOutStr);
         const inPlayer = teams[team]?.players?.find((p) => String(p.jersey) === playerInStr);
         let msg = '✓ Substitution complete!\nOUT: #' + (outPlayer?.jersey ?? playerOut) + ' ' + (outPlayer?.name ?? '') + '\nIN: #' + (inPlayer?.jersey ?? playerIn) + ' ' + (inPlayer?.name ?? '');
-        if (result.sanctionReplacement) {
-          msg += '\n\n🟧 Sanction replacement (exceptional, not counted).';
-          msg += '\n⚠️ No pairing is created. The sanctioned player cannot return.';
-        } else if (isReturning) {
+        if (isReturning) {
           msg += '\n\n📋 This is the 2nd substitution action with these players.';
           msg += '\n⚠️ Players #' + (outPlayer?.jersey ?? playerOut) + ' and #' + (inPlayer?.jersey ?? playerIn) + ' cannot be substituted again in this set.';
         } else {
@@ -1118,7 +1143,7 @@ export default function RefereePanel() {
     try {
       const result = await recordExceptionalSubstitution(gameCode, team, playerOut, playerIn);
       if (result.ok) {
-        setSubModal({ open: false, team: null });
+        setSubModal({ open: false, team: null, defaultPlayerOut: null });
         const teams = gameData.teams || {};
         const setData = gameData.sets?.[gameData.currentSet - 1];
         const outPlayer = teams[team]?.players?.find((p) => String(p.jersey) === String(playerOut));
@@ -1216,42 +1241,6 @@ export default function RefereePanel() {
       setTimeout(() => setMessage(''), 3000);
     } finally {
       setUpdating(false);
-    }
-  };
-
-  const handleSaveMatch = () => {
-    try {
-      const filename = saveMatch(gameData);
-      setMessage(`Match saved: ${filename}`);
-      setTimeout(() => setMessage(''), 3000);
-    } catch (err) {
-      setMessage(`Error saving match: ${err.message}`);
-      setTimeout(() => setMessage(''), 3000);
-    }
-  };
-
-  const handleLoadMatch = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    if (!window.confirm('⚠️ LOAD MATCH?\n\nThis will replace the current match data.\n\nMake sure you have saved the current match if needed!')) {
-      event.target.value = '';
-      return;
-    }
-
-    try {
-      const result = await loadMatch(file);
-      setMessage(`Match loaded: ${result.filename}`);
-      setTimeout(() => setMessage(''), 3000);
-      // Note: In a real implementation, you would update Firestore with the loaded data
-      // For now, we just show a message. The user would need to manually update the game.
-      alert('✅ MATCH LOADED!\n\nLoaded from: ' + result.filename + '\n\nNote: Match data has been loaded. You may need to manually update the game in Firestore.');
-    } catch (err) {
-      setMessage(`Error loading match: ${err.message}`);
-      setTimeout(() => setMessage(''), 3000);
-      alert('❌ ERROR LOADING FILE!\n\n' + err.message);
-    } finally {
-      event.target.value = '';
     }
   };
 
@@ -1553,15 +1542,6 @@ export default function RefereePanel() {
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           <button type="button" className="referee-btn-small referee-btn-roster" onClick={() => setRosterModalOpen(true)}>📋 ROSTER</button>
-          <button type="button" className="referee-btn-small" onClick={handleSaveMatch} style={{ background: '#4CAF50', color: '#fff' }}>💾 SAVE</button>
-          <input
-            type="file"
-            ref={loadMatchFileInputRef}
-            accept=".json"
-            style={{ display: 'none' }}
-            onChange={handleLoadMatch}
-          />
-          <button type="button" className="referee-btn-small" onClick={() => loadMatchFileInputRef.current?.click()} style={{ background: '#2196F3', color: '#fff' }}>📂 LOAD</button>
           <button type="button" className="referee-btn-small" onClick={() => setNextSetModalOpen(true)} disabled={updating || status === 'FINISHED' || !currentSetData?.winner}>📝 SETUP NEXT SET</button>
           <button type="button" className="referee-btn-small" onClick={() => setMatchDataModalOpen(true)} style={{ background: '#00ff00', color: '#000' }}>💾 DATA</button>
           <button type="button" className="referee-btn-small" onClick={() => setSummaryModalOpen(true)} style={{ background: '#ffd700', color: '#000' }}>📊 SUMMARY</button>
@@ -1681,20 +1661,20 @@ export default function RefereePanel() {
                 <div className="referee-btn-group">
                   <button 
                     type="button" 
-                    className={`referee-btn referee-btn-point ${!rallyActive ? 'rally-inactive' : ''}`} 
+                    className={`referee-btn referee-btn-point ${!rallyOn ? 'rally-inactive' : ''}`} 
                     onClick={() => handleScoreUpdate(leftTeam)} 
-                    disabled={updating || status === 'FINISHED' || !rallyActive}
+                    disabled={updating || status === 'FINISHED' || !rallyOn}
                   >
                     + POINT
                   </button>
                 </div>
                 <div className="referee-btn-group">
-                  <button type="button" className="referee-btn referee-btn-timeout" onClick={() => handleTimeout(leftTeam)} disabled={updating || status === 'FINISHED'}>⏱ TO</button>
-                  <button type="button" className="referee-btn referee-btn-sub" onClick={() => setSubModal({ open: true, team: leftTeam })} disabled={updating || status === 'FINISHED'}>👥 SUB</button>
+                  <button type="button" className="referee-btn referee-btn-timeout" onClick={() => handleTimeout(leftTeam)} disabled={updating || status === 'FINISHED' || rallyOn}>⏱ TO</button>
+                  <button type="button" className="referee-btn referee-btn-sub" onClick={() => setSubModal({ open: true, team: leftTeam, defaultPlayerOut: null })} disabled={updating || status === 'FINISHED' || rallyOn}>👥 SUB</button>
                 </div>
                 <div className="referee-btn-group">
-                  <button type="button" className="referee-btn referee-btn-libero" onClick={() => setLiberoModal({ open: true, team: leftTeam })} disabled={updating || status === 'FINISHED'}>🔄 LIBERO</button>
-                  <button type="button" className="referee-btn referee-btn-rot" onClick={() => handleRotate(leftTeam)} disabled={updating || status === 'FINISHED'} title="Manual rotation (corrections only)">🔄 ROT</button>
+                  <button type="button" className="referee-btn referee-btn-libero" onClick={() => setLiberoModal({ open: true, team: leftTeam })} disabled={updating || status === 'FINISHED' || rallyOn}>🔄 LIBERO</button>
+                  <button type="button" className="referee-btn referee-btn-rot" onClick={() => handleRotate(leftTeam)} disabled={updating || status === 'FINISHED' || rallyOn} title="Manual rotation (corrections only)">🔄 ROT</button>
                 </div>
               </div>
             </div>
@@ -1702,14 +1682,14 @@ export default function RefereePanel() {
             <div className="referee-rally-strip">
               <button
                 type="button"
-                className={`referee-rally-btn ${rallyActive ? 'active' : ''}`}
+                className={`referee-rally-btn ${rallyOn ? 'active' : ''}`}
                 onClick={handleToggleRally}
-                disabled={updating || status === 'FINISHED'}
+                disabled={updating || status === 'FINISHED' || (gameData?.awaitingNextSet && !rallyOn)}
               >
-                {rallyActive ? '⚡ ACTIVE' : '🏐 START RALLY'}
+                {rallyOn ? '⚡ ACTIVE' : '🏐 START RALLY'}
               </button>
               <div className="referee-rally-status">
-                {rallyActive ? 'IN PROGRESS' : 'STOPPED'}
+                {rallyOn ? 'IN PROGRESS' : 'STOPPED'}
               </div>
             </div>
 
@@ -1748,20 +1728,20 @@ export default function RefereePanel() {
                 <div className="referee-btn-group">
                   <button 
                     type="button" 
-                    className={`referee-btn referee-btn-point ${!rallyActive ? 'rally-inactive' : ''}`} 
+                    className={`referee-btn referee-btn-point ${!rallyOn ? 'rally-inactive' : ''}`} 
                     onClick={() => handleScoreUpdate(rightTeam)} 
-                    disabled={updating || status === 'FINISHED' || !rallyActive}
+                    disabled={updating || status === 'FINISHED' || !rallyOn}
                   >
                     + POINT
                   </button>
                 </div>
                 <div className="referee-btn-group">
-                  <button type="button" className="referee-btn referee-btn-timeout" onClick={() => handleTimeout(rightTeam)} disabled={updating || status === 'FINISHED'}>⏱ TO</button>
-                  <button type="button" className="referee-btn referee-btn-sub" onClick={() => setSubModal({ open: true, team: rightTeam })} disabled={updating || status === 'FINISHED'}>👥 SUB</button>
+                  <button type="button" className="referee-btn referee-btn-timeout" onClick={() => handleTimeout(rightTeam)} disabled={updating || status === 'FINISHED' || rallyOn}>⏱ TO</button>
+                  <button type="button" className="referee-btn referee-btn-sub" onClick={() => setSubModal({ open: true, team: rightTeam, defaultPlayerOut: null })} disabled={updating || status === 'FINISHED' || rallyOn}>👥 SUB</button>
                 </div>
                 <div className="referee-btn-group">
-                  <button type="button" className="referee-btn referee-btn-libero" onClick={() => setLiberoModal({ open: true, team: rightTeam })} disabled={updating || status === 'FINISHED'}>🔄 LIBERO</button>
-                  <button type="button" className="referee-btn referee-btn-rot" onClick={() => handleRotate(rightTeam)} disabled={updating || status === 'FINISHED'} title="Manual rotation (corrections only)">🔄 ROT</button>
+                  <button type="button" className="referee-btn referee-btn-libero" onClick={() => setLiberoModal({ open: true, team: rightTeam })} disabled={updating || status === 'FINISHED' || rallyOn}>🔄 LIBERO</button>
+                  <button type="button" className="referee-btn referee-btn-rot" onClick={() => handleRotate(rightTeam)} disabled={updating || status === 'FINISHED' || rallyOn} title="Manual rotation (corrections only)">🔄 ROT</button>
                 </div>
               </div>
             </div>
@@ -1843,7 +1823,8 @@ export default function RefereePanel() {
         sanctionSystem={gameData.sanctionSystem}
         onConfirm={handleSubConfirm}
         onExceptional={handleExceptionalSub}
-        onClose={() => setSubModal({ open: false, team: null })}
+        defaultPlayerOut={subModal.defaultPlayerOut}
+        onClose={() => setSubModal({ open: false, team: null, defaultPlayerOut: null })}
       />
       <SanctionModal
         open={sanctionModalOpen}
@@ -1854,19 +1835,24 @@ export default function RefereePanel() {
         currentSet={currentSet}
         teams={gameData.teams}
         onApply={async (mod, teamKey, payload) => {
+          setUpdating(true);
+          setMessage('');
           try {
-            setUpdating(true);
-            setMessage('');
-            await recordSanction(gameCode, teamKey, mod, payload);
+            const result = await recordSanction(gameCode, teamKey, mod, payload);
             setMessage('Sanction recorded.');
             setTimeout(() => setMessage(''), 2000);
-            // Don't close modal automatically - let user see the result
+            return result;
           } catch (err) {
             setMessage(err?.message || 'Failed to record sanction.');
             setTimeout(() => setMessage(''), 3000);
+            throw err;
           } finally {
             setUpdating(false);
           }
+        }}
+        onSubstitutionRequired={(sub) => {
+          setSanctionModalOpen(false);
+          setSubModal({ open: true, team: sub.team, defaultPlayerOut: sub.playerOut });
         }}
         onClose={() => setSanctionModalOpen(false)}
       />
@@ -1968,23 +1954,50 @@ export default function RefereePanel() {
         <div className="referee-modal-overlay" onClick={() => setHistoryModalOpen(false)}>
           <div className="referee-modal-content" onClick={(e) => e.stopPropagation()}>
             <h3 className="referee-modal-title">📋 MATCH HISTORY</h3>
+            {/* Fix #7: filter + show selected team’s points first for readability */}
+            <div className="referee-history-filter-row">
+              <span className="referee-history-filter-label">Show:</span>
+              <button type="button" className={historyTeamFilter === 'all' ? 'active' : ''} onClick={() => setHistoryTeamFilter('all')}>All</button>
+              <button type="button" className={historyTeamFilter === 'A' ? 'active' : ''} onClick={() => setHistoryTeamFilter('A')}>{teamAName}</button>
+              <button type="button" className={historyTeamFilter === 'B' ? 'active' : ''} onClick={() => setHistoryTeamFilter('B')}>{teamBName}</button>
+            </div>
             <div className="referee-history-content">
               {gameData.matchSummary && gameData.matchSummary.length > 0 ? (
                 <div className="referee-history-list">
-                  {gameData.matchSummary.map((event, idx) => (
-                    <div key={idx} className={`referee-history-item ${event.type?.toLowerCase() || ''}`}>
-                      <div className="referee-history-header">
-                        <span className="referee-history-team">{event.team === 'A' ? teamAName : teamBName}</span>
-                        <span className="referee-history-set">Set {event.setNumber || '-'}</span>
-                      </div>
-                      <div className="referee-history-description">{event.description || event.type || 'Event'}</div>
-                      {event.score && (
-                        <div className="referee-history-score">
-                          Score: {event.score.A} - {event.score.B}
+                  {(() => {
+                    const events = gameData.matchSummary || [];
+                    const isPointFor = (ev, side) => ev.type === 'POINT' && ev.team === side;
+                    let ordered;
+                    if (historyTeamFilter === 'all') {
+                      ordered = [...events];
+                    } else {
+                      const pts = events.filter((ev) => isPointFor(ev, historyTeamFilter));
+                      const rest = events.filter((ev) => !isPointFor(ev, historyTeamFilter));
+                      ordered = [...pts, ...rest];
+                    }
+                    return ordered.map((event, idx) => (
+                      <div key={idx} className={`referee-history-item ${event.type?.toLowerCase() || ''}`}>
+                        <div className="referee-history-header">
+                          <span className="referee-history-team">{event.team === 'A' ? teamAName : teamBName}</span>
+                          <span className="referee-history-set">Set {event.setNumber || '-'}</span>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        {event.score && (
+                          <div className="referee-history-score referee-history-score-first">
+                            {(() => {
+                              const a = event.score.A;
+                              const b = event.score.B;
+                              // Focal team (event.team) score first; neutral logs use filter, else Team A first
+                              const bFirst =
+                                event.team === 'B' || (event.team !== 'A' && historyTeamFilter === 'B');
+                              const s = bFirst ? `${b} - ${a}` : `${a} - ${b}`;
+                              return <>Score: {s}</>;
+                            })()}
+                          </div>
+                        )}
+                        <div className="referee-history-description">{event.description || event.type || 'Event'}</div>
+                      </div>
+                    ));
+                  })()}
                 </div>
               ) : (
                 <div className="referee-history-empty">No match history yet. Start the match to see live updates.</div>
@@ -2004,7 +2017,6 @@ export default function RefereePanel() {
           open={nextSetModalOpen}
           gameCode={gameCode}
           gameData={gameData}
-          onClose={() => setNextSetModalOpen(false)}
           onComplete={() => {
             setNextSetModalOpen(false);
             setMessage('Next set setup complete');
@@ -2020,11 +2032,39 @@ export default function RefereePanel() {
           gameCode={gameCode}
           gameData={gameData}
           onClose={() => setDecidingSetTossModalOpen(false)}
-          onComplete={() => {
+          onTossComplete={(summary) => {
             setDecidingSetTossModalOpen(false);
-            setNextSetModalOpen(true);
+            setCoinTossSummary(summary);
           }}
         />
+      )}
+
+      {/* Fix #3: Coin toss summary (serve / receive / winner) before next-set lineup */}
+      {coinTossSummary && (
+        <div className="referee-modal-overlay referee-modal-overlay--blocking" role="dialog" aria-modal="true">
+          <div className="referee-modal-content referee-coin-toss-summary-modal">
+            <h3 className="referee-modal-title">🎯 COIN TOSS — RESULT</h3>
+            <ul className="referee-coin-toss-summary-list">
+              <li><strong>Toss won by:</strong> {coinTossSummary.tossWinnerName}</li>
+              <li><strong>Choice:</strong> {coinTossSummary.choiceLabel}</li>
+              <li><strong>Serving first:</strong> {coinTossSummary.servingName}</li>
+              <li><strong>Receiving first:</strong> {coinTossSummary.receivingName}</li>
+              <li><strong>Court (display):</strong> {coinTossSummary.sideNote}</li>
+            </ul>
+            <div className="referee-modal-buttons referee-modal-buttons--single">
+              <button
+                type="button"
+                className="referee-btn-confirm"
+                onClick={() => {
+                  setCoinTossSummary(null);
+                  setNextSetModalOpen(true);
+                }}
+              >
+                Continue to lineup
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <MatchDataModal
@@ -2046,22 +2086,21 @@ export default function RefereePanel() {
 }
 
 // Next Set Setup Modal Component — click player then position (like HTML); liberos cannot be in starting lineup
-function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
+function NextSetSetupModal({ open, gameCode, gameData, onComplete }) {
   const [lineupA, setLineupA] = useState(Array(6).fill(null));
   const [lineupB, setLineupB] = useState(Array(6).fill(null));
   const [selectedPlayerForLineup, setSelectedPlayerForLineup] = useState(null); // { side: 'A'|'B', jersey }
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState('');
 
+  // Fix #9: empty grid for new set — do not pre-fill from previous set lineups in Firestore.
   useEffect(() => {
     if (open && gameData) {
-      const currentA = gameData.teams?.A?.lineup || [];
-      const currentB = gameData.teams?.B?.lineup || [];
-      setLineupA([...currentA, ...Array(6 - currentA.length).fill(null)].slice(0, 6));
-      setLineupB([...currentB, ...Array(6 - currentB.length).fill(null)].slice(0, 6));
+      setLineupA(Array(6).fill(null));
+      setLineupB(Array(6).fill(null));
       setSelectedPlayerForLineup(null);
     }
-  }, [open, gameData]);
+  }, [open, gameData?.currentSet]);
 
   const handleStartSet = async () => {
     if (!gameCode) return;
@@ -2094,11 +2133,12 @@ function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
   const disqB = new Set((gameData?.sanctionSystem?.disqualified?.B || []).map((e) => String(e.jersey)));
   const injA = new Set((gameData?.injuredPlayers?.A || []).map(String));
   const injB = new Set((gameData?.injuredPlayers?.B || []).map(String));
+  // Fix #8: list includes disqualified players (struck through, not selectable) for reference
   const playersA = (gameData?.teams?.A?.players || [])
-    .filter(p => p.jersey && !isLibero(p) && !disqA.has(String(p.jersey)) && !injA.has(String(p.jersey)))
+    .filter((p) => p.jersey && !isLibero(p))
     .sort((a, b) => Number(a.jersey) - Number(b.jersey));
   const playersB = (gameData?.teams?.B?.players || [])
-    .filter(p => p.jersey && !isLibero(p) && !disqB.has(String(p.jersey)) && !injB.has(String(p.jersey)))
+    .filter((p) => p.jersey && !isLibero(p))
     .sort((a, b) => Number(a.jersey) - Number(b.jersey));
   const posOrder = [4, 3, 2, 5, 6, 1];
   const posLabels = { 4: 'P4-LF', 3: 'P3-MF', 2: 'P2-RF', 5: 'P5-LB', 6: 'P6-MB', 1: 'P1-RB' };
@@ -2129,22 +2169,40 @@ function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
   };
 
   return (
-    <div className="referee-modal-overlay" onClick={onClose}>
-      <div className="referee-modal-content" style={{ maxWidth: '1000px' }} onClick={(e) => e.stopPropagation()}>
+    <div className="referee-modal-overlay referee-modal-overlay--blocking">
+      <div className="referee-modal-content" style={{ maxWidth: '1000px' }}>
         <h3 className="referee-modal-title">Select Starting Lineups for Set {gameData?.currentSet ? gameData.currentSet + 1 : 1}</h3>
         <div className="lineup-setup referee-lineup-setup">
           <div className="team-setup">
             <h3 style={{ color: '#ff6b6b' }}>TEAM A - {gameData?.teamAName || 'Team A'}</h3>
             <div className="player-roster">
-              {playersA.map(p => (
-                <div
-                  key={p.jersey}
-                  className={`roster-player ${selectedPlayerForLineup?.side === 'A' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}`}
-                  onClick={() => setSelectedPlayerForLineup(prev => prev?.side === 'A' && prev?.jersey === p.jersey ? null : { side: 'A', jersey: p.jersey })}
-                >
-                  <strong>#{p.jersey}</strong> {p.name || ''}
-                </div>
-              ))}
+              {playersA.map((p) => {
+                const disq = disqA.has(String(p.jersey));
+                const inj = injA.has(String(p.jersey));
+                const locked = disq || inj;
+                return (
+                  <div
+                    key={p.jersey}
+                    className={`roster-player ${selectedPlayerForLineup?.side === 'A' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${disq ? ' roster-player--disqualified' : ''}${locked ? ' roster-player--disabled' : ''}`}
+                    onClick={() => {
+                      if (locked) return;
+                      setSelectedPlayerForLineup((prev) =>
+                        prev?.side === 'A' && prev?.jersey === p.jersey ? null : { side: 'A', jersey: p.jersey }
+                      );
+                    }}
+                    title={disq ? 'Disqualified — cannot enter lineup' : inj ? 'Injured — cannot enter lineup' : undefined}
+                  >
+                    <strong className={disq ? 'roster-player-name-disq' : undefined}>#{p.jersey}</strong>{' '}
+                    <span className={disq ? 'roster-player-name-disq' : undefined}>{p.name || ''}</span>
+                    {disq && (
+                      <span className="referee-lineup-disq-icon" title="Disqualified" aria-label="Disqualified">
+                        {' '}
+                        🟥❌
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <div className="court-setup">
               <div className="court-setup-grid">
@@ -2168,15 +2226,33 @@ function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
           <div className="team-setup">
             <h3 style={{ color: '#4ecdc4' }}>TEAM B - {gameData?.teamBName || 'Team B'}</h3>
             <div className="player-roster">
-              {playersB.map(p => (
-                <div
-                  key={p.jersey}
-                  className={`roster-player ${selectedPlayerForLineup?.side === 'B' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}`}
-                  onClick={() => setSelectedPlayerForLineup(prev => prev?.side === 'B' && prev?.jersey === p.jersey ? null : { side: 'B', jersey: p.jersey })}
-                >
-                  <strong>#{p.jersey}</strong> {p.name || ''}
-                </div>
-              ))}
+              {playersB.map((p) => {
+                const disq = disqB.has(String(p.jersey));
+                const inj = injB.has(String(p.jersey));
+                const locked = disq || inj;
+                return (
+                  <div
+                    key={p.jersey}
+                    className={`roster-player ${selectedPlayerForLineup?.side === 'B' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${disq ? ' roster-player--disqualified' : ''}${locked ? ' roster-player--disabled' : ''}`}
+                    onClick={() => {
+                      if (locked) return;
+                      setSelectedPlayerForLineup((prev) =>
+                        prev?.side === 'B' && prev?.jersey === p.jersey ? null : { side: 'B', jersey: p.jersey }
+                      );
+                    }}
+                    title={disq ? 'Disqualified — cannot enter lineup' : inj ? 'Injured — cannot enter lineup' : undefined}
+                  >
+                    <strong className={disq ? 'roster-player-name-disq' : undefined}>#{p.jersey}</strong>{' '}
+                    <span className={disq ? 'roster-player-name-disq' : undefined}>{p.name || ''}</span>
+                    {disq && (
+                      <span className="referee-lineup-disq-icon" title="Disqualified" aria-label="Disqualified">
+                        {' '}
+                        🟥❌
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <div className="court-setup">
               <div className="court-setup-grid">
@@ -2202,8 +2278,7 @@ function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
 
         {error && <div className="referee-error">{error}</div>}
 
-        <div className="referee-modal-buttons">
-          <button type="button" className="referee-btn-cancel" onClick={onClose}>Cancel</button>
+        <div className="referee-modal-buttons referee-modal-buttons--single">
           <button type="button" className="referee-btn-confirm" onClick={handleStartSet} disabled={updating}>
             {updating ? 'Setting up...' : 'Start Set'}
           </button>
@@ -2213,8 +2288,8 @@ function NextSetSetupModal({ open, gameCode, gameData, onClose, onComplete }) {
   );
 }
 
-// Deciding Set Toss Modal Component
-function DecidingSetTossModal({ open, gameCode, gameData, onClose, onComplete }) {
+// Deciding Set Toss Modal Component — onTossComplete receives summary for Fix #3
+function DecidingSetTossModal({ open, gameCode, gameData, onClose, onTossComplete }) {
   const [tossWinner, setTossWinner] = useState(null);
   const [tossChoice, setTossChoice] = useState(null);
   const [updating, setUpdating] = useState(false);
@@ -2251,9 +2326,22 @@ function DecidingSetTossModal({ open, gameCode, gameData, onClose, onComplete })
       });
 
       setTossChoice(choice);
+      const aName = gameData?.teamAName || 'Team A';
+      const bName = gameData?.teamBName || 'Team B';
+      const receive = firstServer === 'A' ? 'B' : 'A';
+      const summary = {
+        tossWinnerName: tossWinner === 'A' ? aName : bName,
+        choiceLabel: choice === 'serve' ? 'Serve first' : 'Receive first',
+        servingName: firstServer === 'A' ? aName : bName,
+        receivingName: receive === 'A' ? aName : bName,
+        sideNote:
+          gameData?.swapped
+            ? `${bName} on left (Team B slot), ${aName} on right (Team A slot) — display swap active`
+            : `${aName} on left (Team A), ${bName} on right (Team B)`
+      };
       setTimeout(() => {
-        onComplete();
-      }, 1000);
+        onTossComplete(summary);
+      }, 600);
     } catch (err) {
       console.error('Error recording toss:', err);
     } finally {

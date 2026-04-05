@@ -12,9 +12,9 @@ import {
   importRosterFromJSON,
   createRosterData,
   saveTeamRostersToFirebase,
-  loadTeamRosterFromFirebase,
   saveSingleTeamRosterToFirebase,
-  loadSingleTeamRosterFromFirebase
+  listTeamRostersFromFirebase,
+  buildLocalSavedTeamSlots
 } from '../utils/rosterStorage';
 import './GameSetup.css';
 import OfficialsModal from '../components/OfficialsModal';
@@ -97,6 +97,10 @@ export default function GameSetup() {
   const [rosterToast, setRosterToast] = useState('');
   const [savedRosters, setSavedRosters] = useState({});
   const [showLoadRosterModal, setShowLoadRosterModal] = useState(false);
+  /** Fix #1: gate roster loads — user picks Team 1 / Team 2 / both before applying data */
+  const [rosterTeamLoadContext, setRosterTeamLoadContext] = useState(null);
+  /** Fix #1: modal list of all saved teams (local + Firebase) for Team 1 / Team 2 independently */
+  const [savedTeamPicker, setSavedTeamPicker] = useState(null);
   const fileInputRef = useRef(null);
   /** Captains / coaches / signatures from OfficialsModal (step 6) */
   const [officialsSheet, setOfficialsSheet] = useState(null);
@@ -149,33 +153,6 @@ export default function GameSetup() {
     }
   };
 
-  const handleLoadTeamRostersFromFirebase = async () => {
-    try {
-      const [team1Remote, team2Remote] = await Promise.all([
-        loadTeamRosterFromFirebase(team1.name),
-        loadTeamRosterFromFirebase(team2.name)
-      ]);
-      if (!team1Remote && !team2Remote) {
-        setRosterToast('❌ No Firebase team rosters found for current team names');
-        setTimeout(() => setRosterToast(''), 5000);
-        return;
-      }
-      if (team1Remote?.players) {
-        const newRoster1 = Array(14).fill(null).map((_, i) => team1Remote.players[i] || { jersey: '', name: '', role: 'player' });
-        setRoster1(newRoster1);
-      }
-      if (team2Remote?.players) {
-        const newRoster2 = Array(14).fill(null).map((_, i) => team2Remote.players[i] || { jersey: '', name: '', role: 'player' });
-        setRoster2(newRoster2);
-      }
-      setRosterToast('✅ Team rosters loaded from Firebase');
-      setTimeout(() => setRosterToast(''), 5000);
-    } catch (err) {
-      setRosterToast(`❌ Firebase load failed: ${err.message}`);
-      setTimeout(() => setRosterToast(''), 5000);
-    }
-  };
-
   const getTeamPlayersForSave = (teamNum) => {
     const roster = teamNum === 1 ? roster1 : roster2;
     return roster
@@ -189,28 +166,6 @@ export default function GameSetup() {
       const players = getTeamPlayersForSave(teamNum);
       await saveSingleTeamRosterToFirebase(teamName, players);
       setRosterToast(`✅ ${teamName || `Team ${teamNum}`} roster saved to Firebase`);
-      setTimeout(() => setRosterToast(''), 5000);
-    } catch (err) {
-      setRosterToast(`❌ ${err.message}`);
-      setTimeout(() => setRosterToast(''), 6000);
-    }
-  };
-
-  const handleLoadTeamRoster = async (teamNum) => {
-    try {
-      const teamName = teamNum === 1 ? team1.name : team2.name;
-      const remote = await loadSingleTeamRosterFromFirebase(teamName);
-      if (!remote?.players) {
-        setRosterToast(`❌ No Firebase roster found for ${teamName || `Team ${teamNum}`}`);
-        setTimeout(() => setRosterToast(''), 5000);
-        return;
-      }
-      const filled = Array(14)
-        .fill(null)
-        .map((_, i) => remote.players[i] || { jersey: '', name: '', role: 'player' });
-      if (teamNum === 1) setRoster1(filled);
-      else setRoster2(filled);
-      setRosterToast(`✅ ${teamName || `Team ${teamNum}`} roster loaded from Firebase`);
       setTimeout(() => setRosterToast(''), 5000);
     } catch (err) {
       setRosterToast(`❌ ${err.message}`);
@@ -233,49 +188,52 @@ export default function GameSetup() {
     setTimeout(() => setRosterToast(''), 5000);
   };
 
-  const handleLoadRosterFromFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    if (!window.confirm('⚠️ LOAD ROSTER?\n\nThis will replace the current roster data.\n\nContinue?')) {
-      e.target.value = '';
-      return;
-    }
-    
+  // Fix #1: apply JSON payload to one or both teams after user picks scope in modal
+  const applyRosterPayload = (loadedData, scope, { closeSavedModal = false } = {}) => {
+    if (!loadedData) return;
     try {
-      const loadedData = await importRosterFromJSON(file);
-      
-      // Load match info
-      if (loadedData.matchInfo) {
-        setMatchInfo(prev => ({
+      if (loadedData.matchInfo && (scope === 'both' || scope === '1' || scope === '2')) {
+        setMatchInfo((prev) => ({
           ...prev,
           competition: loadedData.matchInfo.competition || prev.competition,
           venue: loadedData.matchInfo.venue || prev.venue
         }));
       }
-      
-      // Load teams
-      if (loadedData.teams?.team1) {
-        setTeam1(prev => ({ ...prev, name: loadedData.matchInfo?.team1Name || prev.name }));
+      if ((scope === 'both' || scope === '1') && loadedData.teams?.team1) {
+        setTeam1((prev) => ({ ...prev, name: loadedData.matchInfo?.team1Name || prev.name }));
         const team1Players = loadedData.teams.team1.players || [];
-        const newRoster1 = Array(14).fill(null).map((_, i) => team1Players[i] || { jersey: '', name: '', role: 'player' });
+        const newRoster1 = Array(14)
+          .fill(null)
+          .map((_, i) => team1Players[i] || { jersey: '', name: '', role: 'player' });
         setRoster1(newRoster1);
       }
-      
-      if (loadedData.teams?.team2) {
-        setTeam2(prev => ({ ...prev, name: loadedData.matchInfo?.team2Name || prev.name }));
+      if ((scope === 'both' || scope === '2') && loadedData.teams?.team2) {
+        setTeam2((prev) => ({ ...prev, name: loadedData.matchInfo?.team2Name || prev.name }));
         const team2Players = loadedData.teams.team2.players || [];
-        const newRoster2 = Array(14).fill(null).map((_, i) => team2Players[i] || { jersey: '', name: '', role: 'player' });
+        const newRoster2 = Array(14)
+          .fill(null)
+          .map((_, i) => team2Players[i] || { jersey: '', name: '', role: 'player' });
         setRoster2(newRoster2);
       }
-      
-      // Load officials
-      if (loadedData.officials) {
-        setOfficials(prev => ({ ...prev, ...loadedData.officials }));
+      if (scope === 'both' && loadedData.officials) {
+        setOfficials((prev) => ({ ...prev, ...loadedData.officials }));
       }
-      
-      setRosterToast('✅ Roster loaded successfully!');
+      setRosterToast('✅ Roster data applied');
       setTimeout(() => setRosterToast(''), 5000);
+      setRosterTeamLoadContext(null);
+      if (closeSavedModal) setShowLoadRosterModal(false);
+    } catch (err) {
+      setRosterToast(`❌ Error: ${err.message}`);
+      setTimeout(() => setRosterToast(''), 5000);
+    }
+  };
+
+  const handleLoadRosterFromFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const loadedData = await importRosterFromJSON(file);
+      setRosterTeamLoadContext({ kind: 'file', data: loadedData });
       e.target.value = '';
     } catch (err) {
       setRosterToast(`❌ Error: ${err.message}`);
@@ -291,48 +249,128 @@ export default function GameSetup() {
       setTimeout(() => setRosterToast(''), 3000);
       return;
     }
-    
-    if (!window.confirm('⚠️ LOAD ROSTER?\n\nThis will replace the current roster data.\n\nContinue?')) {
-      return;
-    }
-    
+    setRosterTeamLoadContext({ kind: 'saved', rosterId, data: loadedData });
+  };
+
+  // Fix #1: load cloud + local saved teams into one picker list
+  const openSavedTeamPicker = async (forTeamNum) => {
+    setSavedTeamPicker({ forTeamNum, loading: true, error: '', rows: [] });
     try {
-      // Load match info
-      if (loadedData.matchInfo) {
-        setMatchInfo(prev => ({
-          ...prev,
-          competition: loadedData.matchInfo.competition || prev.competition,
-          venue: loadedData.matchInfo.venue || prev.venue
+      const fromCloud = await listTeamRostersFromFirebase();
+      const localMap = getSavedRosters();
+      const localRows = buildLocalSavedTeamSlots(localMap);
+      const cloudRows = (fromCloud || [])
+        .filter((r) => Array.isArray(r.players) && r.players.some((p) => p?.jersey && p?.name))
+        .map((r) => ({
+          key: `fb:${r.teamId}`,
+          sourceLabel: 'Cloud',
+          teamName: r.teamName || r.teamId || 'Team',
+          players: r.players,
+          subtitle: `${(r.players || []).length} players`
         }));
-      }
-      
-      // Load teams
-      if (loadedData.teams?.team1) {
-        setTeam1(prev => ({ ...prev, name: loadedData.matchInfo?.team1Name || prev.name }));
-        const team1Players = loadedData.teams.team1.players || [];
-        const newRoster1 = Array(14).fill(null).map((_, i) => team1Players[i] || { jersey: '', name: '', role: 'player' });
-        setRoster1(newRoster1);
-      }
-      
-      if (loadedData.teams?.team2) {
-        setTeam2(prev => ({ ...prev, name: loadedData.matchInfo?.team2Name || prev.name }));
-        const team2Players = loadedData.teams.team2.players || [];
-        const newRoster2 = Array(14).fill(null).map((_, i) => team2Players[i] || { jersey: '', name: '', role: 'player' });
-        setRoster2(newRoster2);
-      }
-      
-      // Load officials
-      if (loadedData.officials) {
-        setOfficials(prev => ({ ...prev, ...loadedData.officials }));
-      }
-      
-      setRosterToast('✅ Roster loaded successfully!');
-      setTimeout(() => setRosterToast(''), 5000);
-      setShowLoadRosterModal(false);
+      const rows = [...cloudRows, ...localRows];
+      setSavedTeamPicker({ forTeamNum, loading: false, error: '', rows });
     } catch (err) {
-      setRosterToast(`❌ Error: ${err.message}`);
-      setTimeout(() => setRosterToast(''), 5000);
+      const localRows = buildLocalSavedTeamSlots(getSavedRosters());
+      setSavedTeamPicker({
+        forTeamNum,
+        loading: false,
+        error: err?.message || 'Cloud list failed; showing local saves only.',
+        rows: localRows
+      });
     }
+  };
+
+  const applySavedTeamRow = (row) => {
+    if (!savedTeamPicker || !row?.players) return;
+    const n = savedTeamPicker.forTeamNum;
+    const filled = Array(14)
+      .fill(null)
+      .map((_, i) => row.players[i] || { jersey: '', name: '', role: 'player' });
+    if (n === 1) {
+      setTeam1((prev) => ({ ...prev, name: row.teamName || prev.name }));
+      setRoster1(filled);
+    } else {
+      setTeam2((prev) => ({ ...prev, name: row.teamName || prev.name }));
+      setRoster2(filled);
+    }
+    setSavedTeamPicker(null);
+    setRosterToast(`✅ Loaded saved team into Team ${n}`);
+    setTimeout(() => setRosterToast(''), 5000);
+  };
+
+  // DC_Volley_patched_fixed_2.html — determineCoinTossOutcome() (Team 1 / Team 2 names, pre–A-B assignment)
+  const getCoinTossResultLegacyStrings = () => {
+    if (!coinToss.winner || !coinToss.choice) return null;
+    const t1 = team1.name;
+    const t2 = team2.name;
+    const winner = coinToss.winner;
+    const loser = winner === 'team1' ? 'team2' : 'team1';
+    const winnerName = winner === 'team1' ? t1 : t2;
+    const loserName = loser === 'team1' ? t1 : t2;
+    let firstServer;
+    let firstReceiver;
+    let courtSides;
+    if (coinToss.choice === 'serve') {
+      firstServer = `${winnerName} (chose to serve)`;
+      firstReceiver = loserName;
+      courtSides = `${loserName} chooses their preferred side`;
+    } else if (coinToss.choice === 'receive') {
+      firstServer = loserName;
+      firstReceiver = `${winnerName} (chose to receive)`;
+      courtSides = `${loserName} chooses their preferred side`;
+    } else if (coinToss.choice === 'side') {
+      firstServer = `${loserName} (will serve first)`;
+      firstReceiver = winnerName;
+      courtSides = `${winnerName} chooses their preferred side`;
+    } else {
+      return null;
+    }
+    return { firstServer, firstReceiver, courtSides };
+  };
+
+  // Fix #3: inline coin toss panel summary (aligned with handleStartGame firstServer logic)
+  const getCoinTossSummary = () => {
+    if (!coinToss.teamAAssignment || !coinToss.teamBAssignment || coinToss.teamAAssignment === coinToss.teamBAssignment) {
+      return null;
+    }
+    const t1 = team1.name;
+    const t2 = team2.name;
+    const winnerName = coinToss.winner === 'team1' ? t1 : coinToss.winner === 'team2' ? t2 : '—';
+    const choiceLabel =
+      coinToss.choice === 'serve'
+        ? 'Serve first'
+        : coinToss.choice === 'receive'
+          ? 'Receive first'
+          : coinToss.choice === 'side'
+            ? 'Choose side / court end'
+            : '—';
+    const teamAName = coinToss.teamAAssignment === 'team1' ? t1 : t2;
+    const teamBName = coinToss.teamBAssignment === 'team1' ? t1 : t2;
+    let firstServer = 'A';
+    if (coinToss.choice === 'serve') {
+      firstServer = coinToss.winner === 'team1' && coinToss.teamAAssignment === 'team1' ? 'A' : 'B';
+    } else if (coinToss.choice === 'receive') {
+      firstServer = coinToss.winner === 'team1' && coinToss.teamAAssignment === 'team1' ? 'B' : 'A';
+    }
+    const servingTeamName = firstServer === 'A' ? teamAName : teamBName;
+    const receivingTeamName = firstServer === 'A' ? teamBName : teamAName;
+    const sideSelectedBy = coinToss.choice === 'side' ? winnerName : '—';
+    const sideNote =
+      coinToss.choice === 'side'
+        ? 'Winner chose side; first serve defaults to Team A (left) per setup — adjust if your competition rules differ.'
+        : null;
+    return {
+      winnerName,
+      choiceLabel,
+      teamAName,
+      teamBName,
+      servingTeamName,
+      receivingTeamName,
+      sideSelectedBy,
+      firstServerLabel: firstServer === 'A' ? `Team A (${teamAName})` : `Team B (${teamBName})`,
+      sideNote
+    };
   };
 
   const validateRoster = (roster, teamLabel) => {
@@ -889,8 +927,8 @@ export default function GameSetup() {
                   <button type="button" onClick={() => handleSaveTeamRoster(1)} style={{ padding: '7px 12px', background: '#00d9ff', color: '#000', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
                     💾 Save Team 1
                   </button>
-                  <button type="button" onClick={() => handleLoadTeamRoster(1)} style={{ padding: '7px 12px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
-                    ☁ Load Team 1
+                  <button type="button" onClick={() => openSavedTeamPicker(1)} style={{ padding: '7px 12px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+                    ☁ Choose saved team (Team 1)…
                   </button>
                   <button type="button" onClick={() => handleDownloadTeamRoster(1)} style={{ padding: '7px 12px', background: '#ffd700', color: '#000', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
                     ⬇ Download Team 1
@@ -961,8 +999,8 @@ export default function GameSetup() {
                   <button type="button" onClick={() => handleSaveTeamRoster(2)} style={{ padding: '7px 12px', background: '#00d9ff', color: '#000', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
                     💾 Save Team 2
                   </button>
-                  <button type="button" onClick={() => handleLoadTeamRoster(2)} style={{ padding: '7px 12px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
-                    ☁ Load Team 2
+                  <button type="button" onClick={() => openSavedTeamPicker(2)} style={{ padding: '7px 12px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
+                    ☁ Choose saved team (Team 2)…
                   </button>
                   <button type="button" onClick={() => handleDownloadTeamRoster(2)} style={{ padding: '7px 12px', background: '#ffd700', color: '#000', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 'bold', fontSize: 12 }}>
                     ⬇ Download Team 2
@@ -1193,18 +1231,59 @@ export default function GameSetup() {
                       </select>
                     </div>
                   </div>
-                  {coinToss.teamAAssignment && coinToss.teamBAssignment && coinToss.teamAAssignment !== coinToss.teamBAssignment && (
-                    <div className="coin-toss-result">
-                      <div><strong>First Server:</strong> {coinToss.choice === 'serve' ? (coinToss.winner === coinToss.teamAAssignment ? 'Team A' : 'Team B') : (coinToss.winner === coinToss.teamAAssignment ? 'Team B' : 'Team A')}</div>
-                      <div><strong>Court Sides:</strong> Team A ({coinToss.teamAAssignment === 'team1' ? team1.name : team2.name}) | Team B ({coinToss.teamBAssignment === 'team1' ? team1.name : team2.name})</div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
+
+            {/* Same block as DC_Volley_patched_fixed_2.html #coinTossResult (hidden until winner + choice) */}
+            {coinToss.winner && coinToss.choice && (() => {
+              const legacy = getCoinTossResultLegacyStrings();
+              const s = getCoinTossSummary();
+              const firstServer = s ? s.servingTeamName : legacy?.firstServer;
+              const firstReceiver = s ? s.receivingTeamName : legacy?.firstReceiver;
+              let courtSides = legacy?.courtSides ?? '';
+              if (s) {
+                courtSides = `Team A (${s.teamAName}) — Left | Team B (${s.teamBName}) — Right`;
+              }
+              return (
+                <div id="coinTossResult" className="coin-toss-result-box" aria-live="polite">
+                  <div className="coin-toss-result-heading">✓ Coin Toss Result:</div>
+                  <div className="coin-toss-result-body">
+                    <div>
+                      🎯 <strong>First Server:</strong> <span>{firstServer}</span>
+                    </div>
+                    <div>
+                      🔥 <strong>First Receiver:</strong> <span>{firstReceiver}</span>
+                    </div>
+                    <div>
+                      📍 <strong>Court Sides:</strong> <span>{courtSides}</span>
+                    </div>
+                    {s?.sideNote && <div className="coin-toss-result-note">{s.sideNote}</div>}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {(!coinToss.winner || !coinToss.choice) && (
+              <p className="coin-toss-summary-hint">
+                Select <strong>coin toss winner</strong> and <strong>winner&apos;s choice</strong> to see the toss result.
+              </p>
+            )}
+            {coinToss.winner && coinToss.choice && !getCoinTossSummary() && (
+              <p className="coin-toss-summary-hint">
+                Assign <strong>Team A (left)</strong> and <strong>Team B (right)</strong> above to lock court sides for the match.
+              </p>
+            )}
+
             <div className="setup-buttons">
               <button onClick={() => setCurrentStep(3)}>← Back</button>
-              <button onClick={() => setCurrentStep(5)} disabled={!coinToss.teamAAssignment || !coinToss.teamBAssignment || coinToss.teamAAssignment === coinToss.teamBAssignment}>Next →</button>
+              <button
+                type="button"
+                onClick={() => setCurrentStep(5)}
+                disabled={!coinToss.teamAAssignment || !coinToss.teamBAssignment || coinToss.teamAAssignment === coinToss.teamBAssignment}
+              >
+                Next →
+              </button>
             </div>
           </div>
         )}
@@ -1516,6 +1595,173 @@ export default function GameSetup() {
           </div>
         );
         })()}
+
+        {/* Fix #1: all saved teams (cloud + local) — pick one row to load into Team 1 or Team 2 */}
+        {savedTeamPicker && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.92)',
+              zIndex: 4100,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16
+            }}
+            onClick={() => !savedTeamPicker.loading && setSavedTeamPicker(null)}
+            role="presentation"
+          >
+            <div
+              style={{
+                background: '#16213e',
+                borderRadius: 10,
+                padding: 24,
+                maxWidth: 560,
+                width: '100%',
+                maxHeight: '85vh',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                border: '3px solid #533483',
+                color: '#fff'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ color: '#e94560', marginBottom: 12, textAlign: 'center' }}>
+                Select saved team for Team {savedTeamPicker.forTeamNum}
+              </h3>
+              <p style={{ color: '#aaa', fontSize: 13, textAlign: 'center', marginBottom: 12 }}>
+                Choose one roster from the cloud or from local match saves.
+              </p>
+              {savedTeamPicker.loading && <p style={{ textAlign: 'center' }}>Loading teams…</p>}
+              {savedTeamPicker.error && (
+                <p style={{ color: '#ff9800', fontSize: 13, textAlign: 'center', marginBottom: 8 }}>{savedTeamPicker.error}</p>
+              )}
+              {!savedTeamPicker.loading && savedTeamPicker.rows.length === 0 && (
+                <p style={{ color: '#888', textAlign: 'center', padding: 20 }}>
+                  No saved teams found. Use “Save Team” to sync to the cloud, or “Load Roster” for a full local save.
+                </p>
+              )}
+              <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {!savedTeamPicker.loading &&
+                  savedTeamPicker.rows.map((row) => (
+                    <button
+                      key={row.key}
+                      type="button"
+                      onClick={() => applySavedTeamRow(row)}
+                      style={{
+                        padding: 14,
+                        background: '#0f3460',
+                        border: '2px solid #533483',
+                        borderRadius: 8,
+                        color: '#fff',
+                        cursor: 'pointer',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div style={{ fontWeight: 'bold' }}>{row.teamName}</div>
+                      <div style={{ fontSize: 12, color: '#888' }}>
+                        {row.sourceLabel} · {row.subtitle}
+                      </div>
+                    </button>
+                  ))}
+              </div>
+              <div style={{ marginTop: 16, textAlign: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setSavedTeamPicker(null)}
+                  disabled={savedTeamPicker.loading}
+                  style={{ padding: '10px 20px', background: '#555', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Fix #1: confirm team / scope before file or full saved roster import */}
+        {rosterTeamLoadContext && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.9)',
+              zIndex: 4000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16
+            }}
+            onClick={() => setRosterTeamLoadContext(null)}
+            role="presentation"
+          >
+            <div
+              style={{
+                background: '#16213e',
+                borderRadius: 10,
+                padding: 28,
+                maxWidth: 480,
+                width: '100%',
+                border: '3px solid #533483',
+                color: '#fff'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {(rosterTeamLoadContext.kind === 'file' || rosterTeamLoadContext.kind === 'saved') && (
+                <>
+                  <h3 style={{ color: '#e94560', marginBottom: 16, textAlign: 'center' }}>👥 Team selection</h3>
+                  <p style={{ marginBottom: 20, lineHeight: 1.5, textAlign: 'center' }}>
+                    Choose which roster slot(s) receive this data. Officials are updated only when you choose <strong>Both teams</strong>.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        applyRosterPayload(rosterTeamLoadContext.data, '1', {
+                          closeSavedModal: rosterTeamLoadContext.kind === 'saved'
+                        })
+                      }
+                      style={{ padding: 12, background: '#ff6b6b', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      Team 1 only ({team1.name})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        applyRosterPayload(rosterTeamLoadContext.data, '2', {
+                          closeSavedModal: rosterTeamLoadContext.kind === 'saved'
+                        })
+                      }
+                      style={{ padding: 12, background: '#4ecdc4', color: '#000', border: 'none', borderRadius: 6, fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      Team 2 only ({team2.name})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        applyRosterPayload(rosterTeamLoadContext.data, 'both', {
+                          closeSavedModal: rosterTeamLoadContext.kind === 'saved'
+                        })
+                      }
+                      style={{ padding: 12, background: '#9c27b0', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      Both teams
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRosterTeamLoadContext(null)}
+                      style={{ padding: 10, background: '#333', color: '#ccc', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

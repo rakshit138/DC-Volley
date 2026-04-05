@@ -90,6 +90,21 @@ export default function MatchDataModal({ open, gameData, onClose }) {
                 {matchInfo.teamAName}: {setsWon.A} | {matchInfo.teamBName}: {setsWon.B}
               </span>
             </div>
+            {/* Fix #8: prominent current-set points for both teams */}
+            {sets[currentSet - 1] && (
+              <div className="match-data-item match-data-points-highlight">
+                <span className="match-data-label">Points (current set)</span>
+                <div className="match-data-points-row">
+                  <span className="match-data-value match-data-points-a">
+                    {matchInfo.teamAName}: {sets[currentSet - 1].score?.A ?? 0}
+                  </span>
+                  <span className="match-data-value match-data-points-sep">—</span>
+                  <span className="match-data-value match-data-points-b">
+                    {matchInfo.teamBName}: {sets[currentSet - 1].score?.B ?? 0}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

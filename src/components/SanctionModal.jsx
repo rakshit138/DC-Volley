@@ -27,7 +27,9 @@ export default function SanctionModal({
   currentSet,
   teams,
   onApply,
-  onClose
+  onClose,
+  /** Fix #5: parent opens SubModal when server returns promptSubstitution */
+  onSubstitutionRequired
 }) {
   const [module, setModule] = useState('misconduct');
   const [team, setTeam] = useState('A');
@@ -38,7 +40,6 @@ export default function SanctionModal({
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [showRedConfirm, setShowRedConfirm] = useState(false);
-  const [showSubRequired, setShowSubRequired] = useState(false);
   const [pendingSanction, setPendingSanction] = useState(null);
 
   if (!open) return null;
@@ -112,7 +113,7 @@ export default function SanctionModal({
     }
 
     // Apply warning directly
-    onApply('misconduct', team, {
+    void onApply('misconduct', team, {
       type: misconductType,
       personType,
       person: personType === 'coach' ? 'coach' : String(jersey).trim(),
@@ -125,18 +126,16 @@ export default function SanctionModal({
     setJersey('');
   };
 
-  const handleConfirmRedCard = () => {
+  const handleConfirmRedCard = async () => {
     if (!pendingSanction) return;
-    
-    onApply(pendingSanction.module, pendingSanction.team, pendingSanction.payload);
-    
-    // Check if expulsion or disqualification - may need substitute
-    if (pendingSanction.payload.type === 'EXP' || pendingSanction.payload.type === 'DISQ') {
-      if (pendingSanction.payload.personType === 'player') {
-        setShowSubRequired(true);
+    try {
+      const result = await onApply(pendingSanction.module, pendingSanction.team, pendingSanction.payload);
+      if (result?.promptSubstitution && onSubstitutionRequired) {
+        onSubstitutionRequired(result.promptSubstitution);
       }
+    } catch (e) {
+      console.error(e);
     }
-    
     setShowRedConfirm(false);
     setPendingSanction(null);
     setMisconductType(null);
@@ -368,19 +367,25 @@ export default function SanctionModal({
         </div>
       </div>
 
-      {/* Red Card Confirmation Modal */}
+      {/* Fix #4: Confirm copy matches sanction type; point text only when a point is actually awarded (P only for misconduct). */}
       {showRedConfirm && pendingSanction && (
         <div className="sanction-red-confirm-overlay" onClick={() => setShowRedConfirm(false)}>
           <div className="sanction-red-confirm-content" onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: '60px', marginBottom: '10px' }}>🟥</div>
-            <h3 style={{ color: '#ff4444', marginBottom: '10px', fontSize: '20px' }}>
-              CONFIRM RED CARD
+            <div style={{ fontSize: '60px', marginBottom: '10px' }}>
+              {pendingSanction.payload.type === 'P' ? '🟥' : pendingSanction.payload.type === 'EXP' ? '🟧' : '🟪'}
+            </div>
+            <h3 style={{ color: pendingSanction.payload.type === 'P' ? '#ff4444' : pendingSanction.payload.type === 'EXP' ? '#ff8800' : '#cc00cc', marginBottom: '10px', fontSize: '20px' }}>
+              {pendingSanction.payload.type === 'P'
+                ? 'CONFIRM PENALTY (RED CARD)'
+                : pendingSanction.payload.type === 'EXP'
+                  ? 'CONFIRM EXPULSION'
+                  : 'CONFIRM DISQUALIFICATION'}
             </h3>
             <p style={{ color: '#fff', marginBottom: '18px', fontSize: '14px', lineHeight: '1.6' }}>
               {pendingSanction.payload.personType === 'coach' 
                 ? `Coach of ${team === 'A' ? teamAName : teamBName}`
                 : `Player #${pendingSanction.payload.person} of ${team === 'A' ? teamAName : teamBName}`
-              } will receive a {pendingSanction.payload.type === 'P' ? 'PENALTY' : pendingSanction.payload.type === 'EXP' ? 'EXPULSION' : 'DISQUALIFICATION'}.
+              } will receive a {pendingSanction.payload.type === 'P' ? 'PENALTY (red card)' : pendingSanction.payload.type === 'EXP' ? 'EXPULSION' : 'DISQUALIFICATION'}.
             </p>
             <div style={{
               background: '#1a1a2e',
@@ -391,10 +396,10 @@ export default function SanctionModal({
               color: '#ffd700'
             }}>
               {pendingSanction.payload.type === 'P' 
-                ? 'Effect: +1 point to opponent. Player/Coach remains in match.'
+                ? 'Effect: +1 point to opponent. Player or coach remains eligible (unless further sanctions).'
                 : pendingSanction.payload.type === 'EXP'
-                ? 'Effect: +1 point to opponent. Player/Coach removed for this set only. Substitute required if player.'
-                : 'Effect: +1 point to opponent. Player/Coach removed for entire match. Substitute required if player.'
+                ? 'Effect: No penalty point. Expelled player or coach cannot participate for the remainder of this set. A substitute is required for an expelled player.'
+                : 'Effect: No penalty point. Disqualified player or coach cannot participate for the remainder of the match. A substitution will count toward the team substitution limit when replacing a disqualified player.'
               }
             </div>
             <div style={{ display: 'flex', gap: '12px' }}>
@@ -435,43 +440,6 @@ export default function SanctionModal({
                 ✗ CANCEL
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Substitute Required Modal */}
-      {showSubRequired && pendingSanction && pendingSanction.payload.personType === 'player' && (
-        <div className="sanction-sub-req-overlay" onClick={() => setShowSubRequired(false)}>
-          <div className="sanction-sub-req-content" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ color: '#ff8800', marginBottom: '12px', fontSize: '18px' }}>
-              🔄 SUBSTITUTE REQUIRED
-            </h3>
-            <p style={{ color: '#fff', marginBottom: '14px', fontSize: '13px', lineHeight: '1.6' }}>
-              Player #{pendingSanction.payload.person} has been {pendingSanction.payload.type === 'EXP' ? 'expelled' : 'disqualified'}.
-              {pendingSanction.payload.type === 'EXP' 
-                ? ' A substitute is required for this set.'
-                : ' A substitute is required for the remainder of the match.'
-              }
-            </p>
-            <p style={{ color: '#888', fontSize: '11px', marginBottom: '14px' }}>
-              Note: The substitution will be handled automatically. You can make a regular substitution if needed.
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowSubRequired(false)}
-              style={{
-                width: '100%',
-                padding: '12px',
-                background: '#555',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px'
-              }}
-            >
-              Done / Continue
-            </button>
           </div>
         </div>
       )}

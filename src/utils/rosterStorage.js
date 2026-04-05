@@ -2,7 +2,7 @@
  * Roster Storage Utilities
  * Handles saving and loading rosters to/from localStorage and JSON files
  */
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 const ROSTER_STORAGE_KEY = 'dc_volley_rosters';
@@ -245,4 +245,59 @@ export async function loadSingleTeamRosterFromFirebase(teamName) {
     const msg = err?.code ? `${err.code}: ${err.message}` : (err?.message || String(err));
     throw new Error(`Firebase load failed (${teamId}). ${msg}`);
   }
+}
+
+/**
+ * Fix #1: List all team roster documents from Firestore (saved teams API).
+ * @returns {Promise<Array<{ teamId: string, teamName: string, players: array }>>}
+ */
+export async function listTeamRostersFromFirebase() {
+  try {
+    const snap = await getDocs(collection(db, 'teamRosters'));
+    const rows = [];
+    snap.forEach((d) => {
+      const data = d.data() || {};
+      rows.push({
+        teamId: data.teamId || d.id,
+        teamName: data.teamName || data.teamId || d.id || 'Team',
+        players: Array.isArray(data.players) ? data.players : []
+      });
+    });
+    return rows.sort((a, b) => String(a.teamName || '').localeCompare(String(b.teamName || ''), undefined, { sensitivity: 'base' }));
+  } catch (err) {
+    console.error('listTeamRostersFromFirebase:', err);
+    return [];
+  }
+}
+
+/**
+ * Fix #1: Expand full match roster saves into selectable single-team rows for the picker modal.
+ */
+export function buildLocalSavedTeamSlots(savedRostersMap) {
+  const rows = [];
+  const values = savedRostersMap && typeof savedRostersMap === 'object' ? Object.values(savedRostersMap) : [];
+  values.forEach((roster) => {
+    if (!roster?.id) return;
+    const t1p = roster.teams?.team1?.players;
+    if (Array.isArray(t1p) && t1p.some((p) => p?.jersey && p?.name)) {
+      rows.push({
+        key: `local:${roster.id}:t1`,
+        sourceLabel: 'Local save',
+        teamName: roster.matchInfo?.team1Name || 'Team 1',
+        players: t1p,
+        subtitle: `${roster.matchInfo?.competition || 'Saved roster'} · ${roster.savedAt ? new Date(roster.savedAt).toLocaleDateString() : ''}`
+      });
+    }
+    const t2p = roster.teams?.team2?.players;
+    if (Array.isArray(t2p) && t2p.some((p) => p?.jersey && p?.name)) {
+      rows.push({
+        key: `local:${roster.id}:t2`,
+        sourceLabel: 'Local save',
+        teamName: roster.matchInfo?.team2Name || 'Team 2',
+        players: t2p,
+        subtitle: `${roster.matchInfo?.competition || 'Saved roster'} · ${roster.savedAt ? new Date(roster.savedAt).toLocaleDateString() : ''}`
+      });
+    }
+  });
+  return rows;
 }

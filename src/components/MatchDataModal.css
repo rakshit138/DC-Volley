@@ -22,6 +22,7 @@
   overflow-y: auto;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   border: 2px solid #00d9ff;
+  color: #fff;
 }
 
 .match-data-modal-title {
@@ -74,6 +75,38 @@
   color: #fff;
   font-size: 14px;
   font-weight: 500;
+}
+
+/* Fix #8: contrast + current-set points */
+.match-data-section ul,
+.match-data-section li {
+  color: #fff;
+}
+
+.match-data-points-highlight {
+  grid-column: 1 / -1;
+}
+
+.match-data-points-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.match-data-points-a {
+  color: #ff6b6b !important;
+}
+
+.match-data-points-b {
+  color: #4ecdc4 !important;
+}
+
+.match-data-points-sep {
+  color: #fff !important;
+  opacity: 0.7;
 }
 
 .match-data-modal-buttons {

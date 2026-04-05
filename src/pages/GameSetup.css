@@ -155,17 +155,47 @@
   margin-bottom: 15px;
 }
 
-.coin-toss-result {
-  background: #16213e;
+/* DC_Volley_patched_fixed_2.html #coinTossResult */
+.coin-toss-result-box {
+  background: #0f3460;
   padding: 15px;
   border-radius: 5px;
   margin-top: 15px;
-  color: #00d9ff;
-  font-size: 14px;
 }
 
-.coin-toss-result div {
-  margin-bottom: 8px;
+.coin-toss-result-heading {
+  color: #00d9ff;
+  font-weight: bold;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.coin-toss-result-body {
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.coin-toss-result-body > div {
+  margin-bottom: 0;
+}
+
+.coin-toss-result-body strong {
+  color: #fff;
+}
+
+.coin-toss-result-note {
+  color: #ffb74d;
+  font-size: 12px;
+  margin-top: 10px;
+  line-height: 1.45;
+}
+
+.coin-toss-summary-hint {
+  margin: 0;
+  color: #aaa;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .setup-buttons {

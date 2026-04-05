@@ -1,12 +1,45 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './SubModal.css';
 
 const isLiberoRole = (r) => r === 'libero1' || r === 'libero2' || r === 'liberocaptain';
 
-export default function SubModal({ open, team, teamName, teams, currentSet, sets, subLimit, injuredPlayers, liberoReplacements, sanctionSystem, onConfirm, onExceptional, onClose }) {
+export default function SubModal({
+  open,
+  team,
+  teamName,
+  teams,
+  currentSet,
+  sets,
+  subLimit,
+  injuredPlayers,
+  liberoReplacements,
+  sanctionSystem,
+  onConfirm,
+  onExceptional,
+  onClose,
+  /** Fix #5: pre-select expelled/disqualified player OUT after sanction */
+  defaultPlayerOut
+}) {
   const [playerOut, setPlayerOut] = useState(null);
   const [playerIn, setPlayerIn] = useState(null);
   const [showExceptional, setShowExceptional] = useState(false);
+
+  // Fix #5: auto-focus OUT when opened from expulsion / disqualification flow
+  useEffect(() => {
+    if (!open) {
+      setPlayerOut(null);
+      setPlayerIn(null);
+      setShowExceptional(false);
+      return;
+    }
+    setPlayerIn(null);
+    setShowExceptional(false);
+    if (defaultPlayerOut != null && String(defaultPlayerOut).trim() !== '') {
+      setPlayerOut(String(defaultPlayerOut).trim());
+    } else {
+      setPlayerOut(null);
+    }
+  }, [open, defaultPlayerOut]);
 
   if (!open || !teams?.[team]) return null;
 
@@ -27,6 +60,9 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
   const disqualified = sanctionSystem?.disqualified?.[team] || [];
   const expelledThisSet = (sanctionSystem?.expelled?.[team] || []).filter((e) => e.set === currentSet).map((e) => String(e.jersey));
   const sanctionLocked = new Set([...disqualified.map((d) => String(d.jersey)), ...expelledThisSet]);
+  const outJerseyStr = playerOut != null ? String(playerOut) : '';
+  const bypassSubCap =
+    outJerseyStr && (expelledThisSet.includes(outJerseyStr) || disqualified.some((d) => String(d.jersey) === outJerseyStr));
 
   // OUT: only non-libero players on court (liberos cannot be substituted - use Libero Replacement)
   const outCandidates = onCourtJerseys.filter((jersey) => {
@@ -51,9 +87,10 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
   const subsUsed = setData?.substitutions?.[team]?.length ?? 0;
   const limit = subLimit || 6;
   const canSub = subsUsed < limit;
+  const canConfirmRegular = canSub || bypassSubCap;
 
   const handleConfirm = () => {
-    if (playerOut && playerIn && canSub) {
+    if (playerOut && playerIn && canConfirmRegular) {
       onConfirm(team, playerOut, playerIn);
       setPlayerOut(null);
       setPlayerIn(null);
@@ -84,9 +121,13 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
       <div className="sub-modal-content" onClick={(e) => e.stopPropagation()}>
         <h3 className="sub-modal-title">Substitution – {teamName}</h3>
         <p className="sub-modal-info">
-          {canSub
-            ? `Substitution ${subsUsed + 1}/${limit} – Select player OUT, then player IN`
-            : `⚠️ Maximum ${limit} regular substitutions reached - Use Exceptional Substitution for injuries only`}
+          {defaultPlayerOut
+            ? `Expelled/disqualified replacement — #${defaultPlayerOut} is pre-selected OUT. Counts as a regular substitution (${subsUsed}/${limit} used). Choose IN.`
+            : canConfirmRegular
+              ? bypassSubCap && !canSub
+                ? `Replacing expelled/disqualified player — counts as a regular substitution (${subsUsed}/${limit} used). Select OUT, then IN.`
+                : `Substitution ${subsUsed + 1}/${limit} – Select player OUT, then player IN`
+              : `⚠️ Maximum ${limit} regular substitutions reached - Use Exceptional Substitution for injuries only`}
         </p>
 
         {outCandidates.length < onCourtJerseys.length && (
@@ -186,7 +227,7 @@ export default function SubModal({ open, team, teamName, teams, currentSet, sets
               type="button"
               className="sub-modal-btn confirm"
               onClick={handleConfirm}
-              disabled={!playerOut || !playerIn || !canSub}
+              disabled={!playerOut || !playerIn || (!canSub && !bypassSubCap)}
             >
               🔁 Regular Substitution
             </button>

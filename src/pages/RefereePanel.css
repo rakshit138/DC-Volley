@@ -651,6 +651,19 @@
   justify-content: center;
 }
 
+.referee-modal-buttons--single {
+  justify-content: center;
+}
+
+.referee-modal-buttons--single .referee-btn-confirm {
+  min-width: 220px;
+}
+
+/* Next-set lineup: overlay does not dismiss on click (must use Start Set) */
+.referee-modal-overlay--blocking {
+  cursor: default;
+}
+
 .referee-btn-close {
   background: #00d9ff;
   color: #000;
@@ -913,6 +926,24 @@
   border-color: #e94560;
 }
 
+/* Fix #8: next-set lineup — disqualified visible but not selectable */
+.referee-lineup-setup .roster-player.roster-player--disqualified {
+  opacity: 0.72;
+}
+
+.referee-lineup-setup .roster-player.roster-player--disabled {
+  cursor: not-allowed;
+}
+
+.referee-lineup-setup .roster-player.roster-player--disabled:hover {
+  border-color: transparent;
+  background: #16213e;
+}
+
+.referee-lineup-setup .roster-player-name-disq {
+  text-decoration: line-through;
+}
+
 .referee-lineup-setup .court-setup {
   background: #c67c3a;
   border: 3px solid #fff;
@@ -1045,6 +1076,73 @@
   font-size: 14px;
   font-weight: bold;
   cursor: pointer;
+}
+
+/* Fix #7: history modal team filter + score-first layout */
+.referee-history-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  justify-content: center;
+}
+
+.referee-history-filter-label {
+  color: #888;
+  font-size: 13px;
+  margin-right: 4px;
+}
+
+.referee-history-filter-row button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #533483;
+  background: #0f3460;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.referee-history-filter-row button.active {
+  background: #9c27b0;
+  border-color: #9c27b0;
+}
+
+.referee-history-score-first {
+  font-weight: bold;
+  color: #ffd700;
+  margin-bottom: 6px;
+  font-size: 15px;
+}
+
+/* Fix #3: coin toss summary */
+.referee-coin-toss-summary-modal .referee-coin-toss-summary-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+  line-height: 1.85;
+  color: #fff;
+  font-size: 15px;
+}
+
+/* Fix #10: disqualified player row */
+.referee-lineup-item--disqualified {
+  opacity: 0.7;
+}
+
+/* Fix #6: disqualification marker — icon only (no text pill) */
+.referee-lineup-disq-icon {
+  margin-left: 4px;
+  font-size: 12px;
+  vertical-align: middle;
+  text-decoration: none;
+  user-select: none;
+}
+
+.referee-lineup-name-disqualified {
+  text-decoration: line-through;
+  opacity: 0.9;
 }
 
 @media (max-width: 900px) {

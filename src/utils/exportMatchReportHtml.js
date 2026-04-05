@@ -112,6 +112,39 @@ function buildReportHTML(gameData) {
     return p ? '#' + jersey + ' ' + p.name : '#' + (jersey || 'N/A');
   }
 
+  // Fix #2/#7: ISO timestamps + detect all libero-related matchSummary rows for export
+  function formatExportTimestamp(ts) {
+    if (ts == null || ts === '') return '—';
+    try {
+      if (typeof ts.toDate === 'function') {
+        const d = ts.toDate();
+        return Number.isNaN(d.getTime()) ? '—' : d.toISOString();
+      }
+      if (ts instanceof Date) return Number.isNaN(ts.getTime()) ? '—' : ts.toISOString();
+      const d2 = new Date(ts);
+      return Number.isNaN(d2.getTime()) ? '—' : d2.toISOString();
+    } catch {
+      return '—';
+    }
+  }
+
+  function isMatchSummaryLiberoEvent(e) {
+    if (!e) return false;
+    const t = String(e.type || '').toLowerCase();
+    if (t === 'libero_replacement' || t === 'libero_exit' || t === 'libero_entry' || t === 'libero') return true;
+    if (String(e.type || '') === 'Libero') return true;
+    if (e.liberoAction) return true;
+    return false;
+  }
+
+  function liberoActionKind(e) {
+    const t = String(e.type || '').toLowerCase();
+    const la = String(e.liberoAction || '').toLowerCase();
+    if (t === 'libero_exit' || la === 'exit') return 'exit';
+    if (t === 'libero_entry' || la === 'entry') return 'entry';
+    return 'replacement';
+  }
+
   function scoreDisplay(scoreObj, team) {
     if (!scoreObj || typeof scoreObj !== 'object') return 'N/A';
     const opp = team === 'A' ? 'B' : 'A';
@@ -387,39 +420,56 @@ function buildReportHTML(gameData) {
       html += '<p class="no-data">No exceptional substitutions recorded for this set.</p>\n';
     }
 
-    const libA = [];
-    const libB = [];
-    if (gameData.matchSummary && gameData.matchSummary.length > 0) {
-      const liberoEventsA = gameData.matchSummary.filter((e) => e.type === 'Libero' && e.team === 'A' && e.setNumber === setIdx + 1);
-      const liberoEventsB = gameData.matchSummary.filter((e) => e.type === 'Libero' && e.team === 'B' && e.setNumber === setIdx + 1);
-      const parseDesc = (e) => {
-        const match = e.description?.match(/#(\d+)\s+([A-Z\.\s]+)\s*\([LI\d]+\)\s+replaces\s+#(\d+)\s+([A-Z\.\s]+)\s+in\s+(P\d+)\s+at\s+(\d+):(\d+)/);
-        if (match)
-          return { libero: match[1], liberoName: match[2].trim(), originalPlayer: match[3], originalName: match[4].trim(), position: match[5], scoreA: match[6], scoreB: match[7] };
-        return null;
-      };
-      liberoEventsA.forEach((e) => { const r = parseDesc(e); if (r) libA.push(r); });
-      liberoEventsB.forEach((e) => { const r = parseDesc(e); if (r) libB.push(r); });
-    }
+    const setNum = setIdx + 1;
+    const liberoForSet = (gameData.matchSummary || []).filter((e) => {
+      const sn = e.setNumber != null ? e.setNumber : e.set;
+      if (sn != null && sn !== setNum) return false;
+      return isMatchSummaryLiberoEvent(e);
+    });
+    liberoForSet.sort((a, b) => {
+      const ta = formatExportTimestamp(a.timestamp);
+      const tb = formatExportTimestamp(b.timestamp);
+      if (ta === '—' && tb === '—') return 0;
+      if (ta === '—') return 1;
+      if (tb === '—') return -1;
+      return ta.localeCompare(tb);
+    });
 
-    html += '<h3>Libero Replacements</h3>\n';
-    if (libA.length > 0 || libB.length > 0) {
-      html += '<table>\n<tr><th>Team</th><th>Score</th><th>Libero IN</th><th>Player OUT</th><th>Position</th></tr>\n';
-      ['A', 'B'].forEach((team) => {
-        const reps = team === 'A' ? libA : libB;
+    html += '<h3>Libero tracking</h3>\n';
+    html += '<p class="no-data" style="font-size:11px;margin:4px 0 8px">Replacements (libero in), exits (original restored), with timestamp and players.</p>\n';
+    if (liberoForSet.length > 0) {
+      html +=
+        '<table>\n<tr><th>Time (UTC)</th><th>Team</th><th>Action</th><th>Libero</th><th>Other player</th><th>Pos</th><th>Score A–B</th></tr>\n';
+      liberoForSet.forEach((e) => {
+        const team = e.team === 'B' ? 'B' : 'A';
         const teamName = team === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
-        reps.forEach((rep) => {
-          const scoreD = rep.scoreA + '-' + rep.scoreB;
-          html += '<tr><td class="team-' + team.toLowerCase() + '">' + teamName + '</td>';
-          html += '<td class="center">' + scoreD + '</td>';
-          html += '<td>#' + rep.libero + ' ' + rep.liberoName + '</td>';
-          html += '<td>#' + rep.originalPlayer + ' ' + rep.originalName + '</td>';
-          html += '<td class="center">' + rep.position + '</td></tr>\n';
-        });
+        const kind = liberoActionKind(e);
+        const actionLabel = kind === 'exit' ? 'Exit' : kind === 'entry' ? 'Entry' : 'Replacement';
+        const libJ = e.liberoJersey != null ? String(e.liberoJersey) : String(e.libero != null ? e.libero : '—');
+        let otherJ = '—';
+        if (kind === 'exit') {
+          otherJ = e.playerInJersey != null ? String(e.playerInJersey) : '—';
+        } else {
+          otherJ = e.playerOutJersey != null ? String(e.playerOutJersey) : '—';
+        }
+        const otherLabel =
+          kind === 'exit' ? 'Restored: ' + getPlayerName(team, otherJ) : 'Out: ' + getPlayerName(team, otherJ);
+        const posStr = e.position != null && e.position !== '' ? 'P' + e.position : '—';
+        const sc = e.score || {};
+        const scoreStr = (sc.A != null ? sc.A : '?') + ' – ' + (sc.B != null ? sc.B : '?');
+        html += '<tr>';
+        html += '<td style="font-size:11px">' + formatExportTimestamp(e.timestamp) + '</td>';
+        html += '<td class="team-' + team.toLowerCase() + '">' + teamName + '</td>';
+        html += '<td>' + actionLabel + '</td>';
+        html += '<td>' + getPlayerName(team, libJ) + '</td>';
+        html += '<td>' + otherLabel + '</td>';
+        html += '<td class="center">' + posStr + '</td>';
+        html += '<td class="center">' + scoreStr + '</td>';
+        html += '</tr>\n';
       });
       html += '</table>\n';
     } else {
-      html += '<p class="no-data">No libero replacements recorded for this set.</p>\n';
+      html += '<p class="no-data">No libero actions recorded for this set.</p>\n';
     }
 
     const toA = set.timeouts?.A || [];
