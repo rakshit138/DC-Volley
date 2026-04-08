@@ -529,9 +529,9 @@
 }
 
 .referee-interval-timer {
-  background: rgba(255,215,0,0.2) !important;
-  border-color: #ffd700 !important;
-  color: #ffd700 !important;
+  background: rgba(220, 38, 38, 0.35) !important;
+  border-color: #ff4444 !important;
+  color: #ffb4b4 !important;
 }
 
 .referee-btn-small {

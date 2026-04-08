@@ -133,6 +133,9 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
 
         // Get sanction cards
         const sanctionCards = getSanctionCards(p.jersey);
+        const isExpelledThisSet = (sanctionSystem?.expelled?.[team] || []).some(
+          (e) => String(e.jersey) === jersey && e.set === currentSet
+        );
         const cardElements = [];
         if (sanctionCards) {
           // Current set cards (bright)
@@ -159,19 +162,26 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
         const isInjuredLocked = (injuredPlayers?.[team] || []).includes(jersey);
         const isDisqualifiedLocked = sanctionCards?.disqualified === true;
         const isLocked = isInjuredLocked || isDisqualifiedLocked;
+        const grayedLikeDisq = isDisqualifiedLocked || isExpelledThisSet;
         return (
           <div
             key={p.jersey}
-            className={`referee-lineup-item ${onCourt ? 'on-court' : 'on-bench'}${isDisqualifiedLocked ? ' referee-lineup-item--disqualified' : ''}`}
+            className={`referee-lineup-item ${onCourt ? 'on-court' : 'on-bench'}${grayedLikeDisq ? ' referee-lineup-item--disqualified' : ''}`}
           >
             <span className="referee-lineup-pos">{position || '-'}</span>
-            <span className={isDisqualifiedLocked ? 'referee-lineup-name-disqualified' : undefined}>
+            <span className={grayedLikeDisq ? 'referee-lineup-name-disqualified' : undefined}>
               #{jersey} {p?.name || ''}
               {/* Fix #6: icon-only disqualification marker (name struck through via CSS) */}
               {isDisqualifiedLocked && (
                 <span className="referee-lineup-disq-icon" title="Disqualified — cannot play or re-enter" aria-label="Disqualified">
                   {' '}
                   🟥❌
+                </span>
+              )}
+              {!isDisqualifiedLocked && isExpelledThisSet && (
+                <span className="referee-lineup-disq-icon" title="Expelled — cannot return this set" aria-label="Expelled">
+                  {' '}
+                  🟨🟥
                 </span>
               )}
               {badges.length > 0 && badges}
@@ -386,7 +396,8 @@ export default function RefereePanel() {
       const elapsed = Math.floor((Date.now() - breakStart.getTime()) / 1000);
       const remaining = Math.max(0, 180 - elapsed);
       setSetBreakSeconds(remaining);
-      setSetBreakTimer(remaining > 0);
+      // Keep UI visible for entire set break (including 0:00 until next set is started)
+      setSetBreakTimer(true);
     };
     updateBreakClock();
     setBreakTimerRef.current = setInterval(updateBreakClock, 500);
@@ -1136,12 +1147,12 @@ export default function RefereePanel() {
     }
   };
 
-  const handleExceptionalSub = async (team, playerOut, playerIn) => {
+  const handleExceptionalSub = async (team, playerOut, playerIn, remarks) => {
     if (!gameCode) return;
     setUpdating(true);
     setMessage('');
     try {
-      const result = await recordExceptionalSubstitution(gameCode, team, playerOut, playerIn);
+      const result = await recordExceptionalSubstitution(gameCode, team, playerOut, playerIn, remarks);
       if (result.ok) {
         setSubModal({ open: false, team: null, defaultPlayerOut: null });
         const teams = gameData.teams || {};
@@ -1527,15 +1538,18 @@ export default function RefereePanel() {
           </div>
           <div
             className="referee-match-info-item"
-            title="Set clock: from when the game goes live (after officials), not from setup."
+            title="Set clock: from first Start rally in this set (setClockStartedAt)."
           >
             <span>⏲</span>
             Set: <strong>{formatDuration(setTime)}</strong>
           </div>
-          {setBreakTimer && (
-            <div className="referee-match-info-item referee-interval-timer">
+          {gameData?.awaitingNextSet && gameData?.setBreakStartedAt != null && (
+            <div
+              className="referee-match-info-item referee-interval-timer"
+              title="3:00 interval between sets (from Firestore setBreakStartedAt)."
+            >
               <span>⏳</span>
-              Interval: <strong>{formatDuration(setBreakSeconds)}</strong>
+              Break: <strong>{formatDuration(setBreakSeconds)}</strong>
             </div>
           )}
           <div className="referee-match-info-item">Game: <strong>{gameCode}</strong></div>
@@ -2022,6 +2036,7 @@ export default function RefereePanel() {
             setMessage('Next set setup complete');
             setTimeout(() => setMessage(''), 2000);
           }}
+          onCancel={() => setNextSetModalOpen(false)}
         />
       )}
 
@@ -2049,7 +2064,8 @@ export default function RefereePanel() {
               <li><strong>Choice:</strong> {coinTossSummary.choiceLabel}</li>
               <li><strong>Serving first:</strong> {coinTossSummary.servingName}</li>
               <li><strong>Receiving first:</strong> {coinTossSummary.receivingName}</li>
-              <li><strong>Court (display):</strong> {coinTossSummary.sideNote}</li>
+              <li><strong>Court (referee left):</strong> {coinTossSummary.courtLeftLabel || '—'}</li>
+              <li><strong>Display / scoreboard:</strong> {coinTossSummary.sideNote}</li>
             </ul>
             <div className="referee-modal-buttons referee-modal-buttons--single">
               <button
@@ -2086,7 +2102,7 @@ export default function RefereePanel() {
 }
 
 // Next Set Setup Modal Component — click player then position (like HTML); liberos cannot be in starting lineup
-function NextSetSetupModal({ open, gameCode, gameData, onComplete }) {
+function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
   const [lineupA, setLineupA] = useState(Array(6).fill(null));
   const [lineupB, setLineupB] = useState(Array(6).fill(null));
   const [selectedPlayerForLineup, setSelectedPlayerForLineup] = useState(null); // { side: 'A'|'B', jersey }
@@ -2114,9 +2130,15 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete }) {
       const currentSet = gameData.currentSet || 1;
       const nextSet = currentSet + 1;
       const format = Number(gameData.format) || 3;
-      const prevSet = gameData.sets?.[currentSet - 1];
-      const prevServer = prevSet?.serving || 'A';
-      const firstServer = prevServer === 'A' ? 'B' : 'A';
+      const isDecidingSet = (format === 5 && nextSet === 5) || (format === 3 && nextSet === 3);
+      let firstServer;
+      if (isDecidingSet && gameData.decidingSetToss?.firstServer) {
+        firstServer = gameData.decidingSetToss.firstServer;
+      } else {
+        const prevSet = gameData.sets?.[currentSet - 1];
+        const prevServer = prevSet?.serving || 'A';
+        firstServer = prevServer === 'A' ? 'B' : 'A';
+      }
       await setupNextSet(gameCode, { A: lineupA, B: lineupB }, firstServer);
       onComplete();
     } catch (err) {
@@ -2278,7 +2300,21 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete }) {
 
         {error && <div className="referee-error">{error}</div>}
 
-        <div className="referee-modal-buttons referee-modal-buttons--single">
+        <div className="referee-modal-buttons">
+          <button
+            type="button"
+            className="referee-btn-cancel"
+            onClick={() => {
+              const hasAny = lineupA.some(Boolean) || lineupB.some(Boolean);
+              if (hasAny && !window.confirm('Discard lineup selections and close? You can reopen setup from the referee bar.')) {
+                return;
+              }
+              onCancel?.();
+            }}
+            disabled={updating}
+          >
+            Cancel
+          </button>
           <button type="button" className="referee-btn-confirm" onClick={handleStartSet} disabled={updating}>
             {updating ? 'Setting up...' : 'Start Set'}
           </button>
@@ -2288,22 +2324,24 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete }) {
   );
 }
 
-// Deciding Set Toss Modal Component — onTossComplete receives summary for Fix #3
+// Deciding Set Toss Modal — persists winner, choice, set number, court side; applies display swap for referee left
 function DecidingSetTossModal({ open, gameCode, gameData, onClose, onTossComplete }) {
   const [tossWinner, setTossWinner] = useState(null);
   const [tossChoice, setTossChoice] = useState(null);
   const [updating, setUpdating] = useState(false);
 
-  const handleTossWinner = (team) => {
-    setTossWinner(team);
-  };
+  useEffect(() => {
+    if (!open) return;
+    setTossWinner(null);
+    setTossChoice(null);
+    setUpdating(false);
+  }, [open]);
 
-  const handleTossChoice = async (choice) => {
-    if (!gameCode || !tossWinner) return;
-    
+  const handleRecordToss = async (choice, teamOnRefereeLeft) => {
+    if (!gameCode || !tossWinner || !choice || !teamOnRefereeLeft) return;
+
     setUpdating(true);
     try {
-      // Determine first server based on toss
       let firstServer = 'A';
       if (choice === 'serve') {
         firstServer = tossWinner;
@@ -2313,35 +2351,38 @@ function DecidingSetTossModal({ open, gameCode, gameData, onClose, onTossComplet
 
       const currentSet = gameData.currentSet || 1;
       const nextSet = currentSet + 1;
-      
-      // Update game with toss result
+      const swapped = teamOnRefereeLeft === 'B';
+
       const gameRef = doc(db, 'games', gameCode);
       await updateDoc(gameRef, {
         decidingSetToss: {
           winner: tossWinner,
-          choice: choice,
-          firstServer: firstServer
+          choice,
+          firstServer,
+          setNumber: nextSet,
+          teamOnRefereeLeft
         },
+        swapped,
         updatedAt: serverTimestamp()
       });
 
-      setTossChoice(choice);
       const aName = gameData?.teamAName || 'Team A';
       const bName = gameData?.teamBName || 'Team B';
       const receive = firstServer === 'A' ? 'B' : 'A';
+      const courtLeftLabel = teamOnRefereeLeft === 'A' ? `${aName} (Team A)` : `${bName} (Team B)`;
       const summary = {
         tossWinnerName: tossWinner === 'A' ? aName : bName,
         choiceLabel: choice === 'serve' ? 'Serve first' : 'Receive first',
         servingName: firstServer === 'A' ? aName : bName,
         receivingName: receive === 'A' ? aName : bName,
-        sideNote:
-          gameData?.swapped
-            ? `${bName} on left (Team B slot), ${aName} on right (Team A slot) — display swap active`
-            : `${aName} on left (Team A), ${bName} on right (Team B)`
+        courtLeftLabel,
+        sideNote: swapped
+          ? `${bName} on left (Team B slot), ${aName} on right (Team A slot) — display swap active`
+          : `${aName} on left (Team A), ${bName} on right (Team B)`
       };
       setTimeout(() => {
         onTossComplete(summary);
-      }, 600);
+      }, 400);
     } catch (err) {
       console.error('Error recording toss:', err);
     } finally {
@@ -2351,12 +2392,15 @@ function DecidingSetTossModal({ open, gameCode, gameData, onClose, onTossComplet
 
   if (!open) return null;
 
+  const aName = gameData?.teamAName || 'TEAM A';
+  const bName = gameData?.teamBName || 'TEAM B';
+
   return (
     <div className="referee-modal-overlay" onClick={onClose}>
       <div className="referee-modal-content" onClick={(e) => e.stopPropagation()}>
         <h3 className="referee-modal-title">🎯 DECIDING SET COIN TOSS</h3>
         <p style={{ color: '#00d9ff', textAlign: 'center', marginBottom: '20px' }}>
-          Conduct coin toss to determine first service and court side
+          Record toss, service choice, and which team is on the referee&apos;s left
         </p>
 
         {!tossWinner ? (
@@ -2366,49 +2410,73 @@ function DecidingSetTossModal({ open, gameCode, gameData, onClose, onTossComplet
               <button
                 type="button"
                 className="referee-toss-team-btn"
-                onClick={() => handleTossWinner('A')}
+                onClick={() => setTossWinner('A')}
                 style={{ background: '#16213e', borderColor: '#ff6b6b', color: '#ff6b6b' }}
               >
-                {gameData?.teamAName || 'TEAM A'}
+                {aName}
               </button>
               <button
                 type="button"
                 className="referee-toss-team-btn"
-                onClick={() => handleTossWinner('B')}
+                onClick={() => setTossWinner('B')}
                 style={{ background: '#16213e', borderColor: '#4ecdc4', color: '#4ecdc4' }}
               >
-                {gameData?.teamBName || 'TEAM B'}
+                {bName}
+              </button>
+            </div>
+          </>
+        ) : !tossChoice ? (
+          <>
+            <h4 style={{ color: '#ffd700', textAlign: 'center', marginBottom: '20px' }}>
+              STEP 2: {tossWinner === 'A' ? aName : bName} CHOOSES
+            </h4>
+            <div className="referee-toss-buttons">
+              <button type="button" className="referee-toss-choice-btn" onClick={() => setTossChoice('serve')} disabled={updating}>
+                🏐 SERVE FIRST
+              </button>
+              <button type="button" className="referee-toss-choice-btn" onClick={() => setTossChoice('receive')} disabled={updating}>
+                📥 RECEIVE FIRST
               </button>
             </div>
           </>
         ) : (
           <>
-            <h4 style={{ color: '#ffd700', textAlign: 'center', marginBottom: '20px' }}>
-              STEP 2: {tossWinner === 'A' ? gameData?.teamAName : gameData?.teamBName} CHOOSES:
-            </h4>
+            <h4 style={{ color: '#ffd700', textAlign: 'center', marginBottom: '20px' }}>STEP 3: TEAM ON REFEREE&apos;S LEFT</h4>
+            <p style={{ color: '#aaa', textAlign: 'center', fontSize: 13, marginBottom: 16 }}>
+              Facing the court from the referee stand — which team is on your left side?
+            </p>
             <div className="referee-toss-buttons">
               <button
                 type="button"
-                className="referee-toss-choice-btn"
-                onClick={() => handleTossChoice('serve')}
+                className="referee-toss-team-btn"
+                onClick={() => handleRecordToss(tossChoice, 'A')}
                 disabled={updating}
+                style={{ background: '#16213e', borderColor: '#ff6b6b', color: '#ff6b6b' }}
               >
-                🏐 SERVE FIRST
+                {aName} on left
               </button>
               <button
                 type="button"
-                className="referee-toss-choice-btn"
-                onClick={() => handleTossChoice('receive')}
+                className="referee-toss-team-btn"
+                onClick={() => handleRecordToss(tossChoice, 'B')}
                 disabled={updating}
+                style={{ background: '#16213e', borderColor: '#4ecdc4', color: '#4ecdc4' }}
               >
-                📥 RECEIVE FIRST
+                {bName} on left
               </button>
             </div>
           </>
         )}
 
         <div className="referee-modal-buttons">
-          <button type="button" className="referee-btn-cancel" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="referee-btn-cancel"
+            onClick={onClose}
+            disabled={updating}
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>

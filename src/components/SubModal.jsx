@@ -23,6 +23,7 @@ export default function SubModal({
   const [playerOut, setPlayerOut] = useState(null);
   const [playerIn, setPlayerIn] = useState(null);
   const [showExceptional, setShowExceptional] = useState(false);
+  const [exceptionalRemarks, setExceptionalRemarks] = useState('');
 
   // Fix #5: auto-focus OUT when opened from expulsion / disqualification flow
   useEffect(() => {
@@ -30,10 +31,12 @@ export default function SubModal({
       setPlayerOut(null);
       setPlayerIn(null);
       setShowExceptional(false);
+      setExceptionalRemarks('');
       return;
     }
     setPlayerIn(null);
     setShowExceptional(false);
+    setExceptionalRemarks('');
     if (defaultPlayerOut != null && String(defaultPlayerOut).trim() !== '') {
       setPlayerOut(String(defaultPlayerOut).trim());
     } else {
@@ -101,10 +104,11 @@ export default function SubModal({
 
   const handleExceptional = () => {
     if (playerOut && playerIn && onExceptional) {
-      onExceptional(team, playerOut, playerIn);
+      onExceptional(team, playerOut, playerIn, exceptionalRemarks);
       setPlayerOut(null);
       setPlayerIn(null);
       setShowExceptional(false);
+      setExceptionalRemarks('');
       onClose();
     }
   };
@@ -113,6 +117,7 @@ export default function SubModal({
     setPlayerOut(null);
     setPlayerIn(null);
     setShowExceptional(false);
+    setExceptionalRemarks('');
     onClose();
   };
 
@@ -192,45 +197,69 @@ export default function SubModal({
           </p>
         )}
 
-        <div className="sub-modal-buttons">
-          <button type="button" className="sub-modal-btn cancel" onClick={handleClose}>
-            Cancel
-          </button>
-          {onExceptional && (
-            <button
-              type="button"
-              className="sub-modal-btn exceptional"
-              onClick={() => setShowExceptional(true)}
-              disabled={!playerOut || !playerIn}
-              style={{ background: '#ff3b3b', color: '#fff', border: '2px solid #ff6b6b' }}
-            >
-              🚑 Exceptional Substitution
+        <div className="sub-modal-actions">
+          <div className="sub-modal-buttons">
+            <button type="button" className="sub-modal-btn cancel" onClick={handleClose}>
+              Cancel
             </button>
-          )}
-          {showExceptional && onExceptional ? (
-            <>
+            {showExceptional && onExceptional ? (
+              <button
+                type="button"
+                className="sub-modal-btn sub-modal-btn-secondary"
+                onClick={() => setShowExceptional(false)}
+              >
+                ← Regular substitution
+              </button>
+            ) : (
+              <>
+                {onExceptional && (
+                  <button
+                    type="button"
+                    className="sub-modal-btn exceptional"
+                    onClick={() => setShowExceptional(true)}
+                    disabled={!playerOut || !playerIn}
+                  >
+                    🚑 Exceptional Substitution
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="sub-modal-btn confirm"
+                  onClick={handleConfirm}
+                  disabled={!playerOut || !playerIn || (!canSub && !bypassSubCap)}
+                >
+                  🔁 Regular Substitution
+                </button>
+              </>
+            )}
+          </div>
+
+          {showExceptional && onExceptional && (
+            <div className="sub-modal-exceptional-panel">
               <div className="sub-modal-exceptional-warning">
                 ⚠️ This substitution is for injured players only. It will NOT count toward the 6-substitution limit, and the injured player will be locked for the entire match.
               </div>
+              <label className="sub-modal-remarks-label" htmlFor="sub-modal-exceptional-remarks">
+                Remarks (optional)
+              </label>
+              <textarea
+                id="sub-modal-exceptional-remarks"
+                className="sub-modal-remarks-input"
+                rows={4}
+                maxLength={2000}
+                placeholder="e.g. ankle injury, medical timeout…"
+                value={exceptionalRemarks}
+                onChange={(e) => setExceptionalRemarks(e.target.value)}
+              />
               <button
                 type="button"
-                className="sub-modal-btn confirm"
+                className="sub-modal-btn confirm sub-modal-btn-exceptional-confirm"
                 onClick={handleExceptional}
                 disabled={!playerOut || !playerIn}
-                style={{ background: '#ff3b3b', color: '#fff' }}
               >
-                Confirm Exceptional Substitution
+                Confirm exceptional substitution
               </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="sub-modal-btn confirm"
-              onClick={handleConfirm}
-              disabled={!playerOut || !playerIn || (!canSub && !bypassSubCap)}
-            >
-              🔁 Regular Substitution
-            </button>
+            </div>
           )}
         </div>
       </div>

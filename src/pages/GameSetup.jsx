@@ -608,7 +608,9 @@ export default function GameSetup() {
         coinToss: {
           winner: coinToss.winner,
           choice: coinToss.choice,
-          firstServer: firstServer
+          firstServer: firstServer,
+          team1Name: team1.name || 'Team 1 (setup)',
+          team2Name: team2.name || 'Team 2 (setup)'
         },
         teams: {
           A: {

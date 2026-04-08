@@ -1,3 +1,5 @@
+import { firestoreTimeToDate, matchSummarySetWonTime } from './firestoreTime';
+
 /**
  * Generate FIVB Match Report as HTML — same structure and style as match_report_generator.html.
  * @param {Object} gameData - Firestore game document (will be normalized to match report shape)
@@ -70,11 +72,43 @@ function normalizeGameDataForReport(doc) {
     sanctionSystem: doc.sanctionSystem || null,
     sanctions: doc.sanctions || null,
     matchSummary: doc.matchSummary || [],
-    injuredPlayers: doc.injuredPlayers || { A: [], B: [] }
+    injuredPlayers: doc.injuredPlayers || { A: [], B: [] },
+    playStartedAt: doc.playStartedAt,
+    createdAt: doc.createdAt,
+    decidingSetToss: doc.decidingSetToss || null,
+    coinToss: doc.coinToss || null,
+    status: doc.status,
+    updatedAt: doc.updatedAt
   };
 }
 
 function buildReportHTML(gameData) {
+  const toJsDate = firestoreTimeToDate;
+
+  function effectiveSetStart(set) {
+    if (!set) return null;
+    return toJsDate(set.startTime) || toJsDate(set.setClockStartedAt);
+  }
+
+  function effectiveSetEnd(set, setIdxZeroBased) {
+    if (!set) return null;
+    return toJsDate(set.endTime) || matchSummarySetWonTime(gameData.matchSummary, setIdxZeroBased + 1);
+  }
+
+  function formatSetDuration(startRaw, endRaw) {
+    const start =
+      startRaw instanceof Date && !Number.isNaN(startRaw.getTime()) ? startRaw : toJsDate(startRaw);
+    const end = endRaw instanceof Date && !Number.isNaN(endRaw.getTime()) ? endRaw : toJsDate(endRaw);
+    if (!start || !end) return 'N/A';
+    const ms = end.getTime() - start.getTime();
+    if (isNaN(ms) || ms < 0) return 'N/A';
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    if (m === 0) return '0:' + (s < 10 ? '0' : '') + s + ' min';
+    return m + ':' + (s < 10 ? '0' : '') + s + ' min';
+  }
+
   const setsWonA = gameData.sets.filter((s) => s.winner === 'A').length;
   const setsWonB = gameData.sets.filter((s) => s.winner === 'B').length;
   const winner =
@@ -114,18 +148,8 @@ function buildReportHTML(gameData) {
 
   // Fix #2/#7: ISO timestamps + detect all libero-related matchSummary rows for export
   function formatExportTimestamp(ts) {
-    if (ts == null || ts === '') return '—';
-    try {
-      if (typeof ts.toDate === 'function') {
-        const d = ts.toDate();
-        return Number.isNaN(d.getTime()) ? '—' : d.toISOString();
-      }
-      if (ts instanceof Date) return Number.isNaN(ts.getTime()) ? '—' : ts.toISOString();
-      const d2 = new Date(ts);
-      return Number.isNaN(d2.getTime()) ? '—' : d2.toISOString();
-    } catch {
-      return '—';
-    }
+    const d = firestoreTimeToDate(ts);
+    return d ? d.toISOString() : '—';
   }
 
   function isMatchSummaryLiberoEvent(e) {
@@ -285,7 +309,80 @@ function buildReportHTML(gameData) {
   html += '<div class="info-label">Pool / Phase:</div><div>' + (gameData.matchInfo.pool || 'N/A') + '</div>\n';
   html += '<div class="info-label">Format:</div><div>Best of ' + (gameData.matchInfo.format || 'N/A') + '</div>\n';
   html += '<div class="info-label">Substitution Limit:</div><div>' + subLimit + ' per set</div>\n';
+  const matchStartDt =
+    toJsDate(gameData.playStartedAt) ||
+    toJsDate(gameData.createdAt) ||
+    effectiveSetStart(gameData.sets?.[0]);
+  html +=
+    '<div class="info-label">Match start (clock):</div><div>' +
+    (matchStartDt
+      ? matchStartDt.toLocaleString() +
+        ' <span style="font-size:11px;color:#666">(' +
+        matchStartDt.toISOString() +
+        ')</span>'
+      : 'N/A') +
+    '</div>\n';
+  let latestSetEnd = null;
+  (gameData.sets || []).forEach((set, i) => {
+    if (!set?.winner) return;
+    const e = effectiveSetEnd(set, i);
+    if (e && (!latestSetEnd || e.getTime() > latestSetEnd.getTime())) latestSetEnd = e;
+  });
+  const matchDurStr =
+    matchStartDt && latestSetEnd ? formatSetDuration(matchStartDt, latestSetEnd) : 'N/A';
+  html +=
+    '<div class="info-label">Match duration (clock start → latest completed set):</div><div>' +
+    matchDurStr +
+    '</div>\n';
   html += '</div>\n';
+
+  const ct = gameData.coinToss;
+  if (ct && (ct.winner || ct.firstServer)) {
+    const t1n = ct.team1Name || 'Team 1 (setup)';
+    const t2n = ct.team2Name || 'Team 2 (setup)';
+    const winName = ct.winner === 'team1' ? t1n : ct.winner === 'team2' ? t2n : ct.winner ? String(ct.winner) : '—';
+    const choiceLabel =
+      ct.choice === 'serve'
+        ? 'Serve first'
+        : ct.choice === 'receive'
+          ? 'Receive first'
+          : ct.choice === 'side'
+            ? 'Choice of side'
+            : ct.choice
+              ? String(ct.choice)
+              : '—';
+    const serveTeamName =
+      ct.firstServer === 'A'
+        ? gameData.matchInfo.teamAName
+        : ct.firstServer === 'B'
+          ? gameData.matchInfo.teamBName
+          : '—';
+    html += '<h2>Pre-match coin toss</h2>\n<div class="info-grid">\n';
+    html += '<div class="info-label">Toss winner (setup):</div><div>' + winName + '</div>\n';
+    html += '<div class="info-label">Choice:</div><div>' + choiceLabel + '</div>\n';
+    html += '<div class="info-label">First serve (Team A / B slot):</div><div>' + serveTeamName + '</div>\n';
+    html += '<div class="info-label">Court teams:</div><div>' + gameData.matchInfo.teamAName + ' (A) vs ' + gameData.matchInfo.teamBName + ' (B)</div>\n';
+    html += '</div>\n';
+  }
+
+  const dst = gameData.decidingSetToss;
+  if (dst && dst.winner) {
+    const wName = dst.winner === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
+    const choiceLabel = dst.choice === 'serve' ? 'Serve first' : dst.choice === 'receive' ? 'Receive first' : String(dst.choice || '—');
+    const leftName =
+      dst.teamOnRefereeLeft === 'B'
+        ? gameData.matchInfo.teamBName
+        : dst.teamOnRefereeLeft === 'A'
+          ? gameData.matchInfo.teamAName
+          : '—';
+    html += '<h2>Deciding set coin toss</h2>\n<div class="info-grid">\n';
+    html += '<div class="info-label">Set number:</div><div>' + (dst.setNumber != null ? dst.setNumber : '—') + '</div>\n';
+    html += '<div class="info-label">Toss winner:</div><div>' + wName + ' (Team ' + dst.winner + ')</div>\n';
+    html += '<div class="info-label">Toss decision:</div><div>' + choiceLabel + '</div>\n';
+    html += '<div class="info-label">Team on referee&apos;s left:</div><div>' + leftName + '</div>\n';
+    html += '<div class="info-label">First server (Team):</div><div>' + (dst.firstServer === 'B' ? gameData.matchInfo.teamBName : dst.firstServer === 'A' ? gameData.matchInfo.teamAName : '—') + '</div>\n';
+    html += '</div>\n';
+  }
 
   html += '<h2>Match Result</h2>\n<table>\n';
   html += '<tr><th class="team-a" style="width:35%">' + gameData.matchInfo.teamAName + '</th><th class="center" style="width:30%">Sets</th><th class="team-b" style="width:35%">' + gameData.matchInfo.teamBName + '</th></tr>\n';
@@ -297,23 +394,13 @@ function buildReportHTML(gameData) {
   html += '<h2>Set-by-Set Scores</h2>\n<table>\n';
   html += '<tr><th>Set</th><th class="team-a">' + gameData.matchInfo.teamAName + '</th><th class="center">Score</th><th class="team-b">' + gameData.matchInfo.teamBName + '</th><th>Duration</th><th>Winner</th></tr>\n';
 
-  function formatDuration(startTime, endTime) {
-    if (!startTime || !endTime) return 'N/A';
-    const start = new Date(startTime).getTime();
-    const end = new Date(endTime).getTime();
-    const ms = end - start;
-    if (isNaN(ms) || ms < 0) return 'N/A';
-    const totalSec = Math.floor(ms / 1000);
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    if (m === 0) return '0:' + (s < 10 ? '0' : '') + s + ' min';
-    return m + ':' + (s < 10 ? '0' : '') + s + ' min';
-  }
   function totalDurationSeconds(setsData) {
     let totalSec = 0;
-    setsData.forEach((set) => {
-      if (!set.endTime || !set.startTime) return;
-      const ms = new Date(set.endTime).getTime() - new Date(set.startTime).getTime();
+    setsData.forEach((set, i) => {
+      const start = effectiveSetStart(set);
+      const end = effectiveSetEnd(set, i);
+      if (!start || !end) return;
+      const ms = end.getTime() - start.getTime();
       if (!isNaN(ms) && ms >= 0) totalSec += Math.floor(ms / 1000);
     });
     return totalSec;
@@ -325,7 +412,7 @@ function buildReportHTML(gameData) {
     if (!set.winner && set.score.A === 0 && set.score.B === 0) return;
     totalPointsA += set.score.A || 0;
     totalPointsB += set.score.B || 0;
-    const durStr = formatDuration(set.startTime, set.endTime);
+    const durStr = formatSetDuration(effectiveSetStart(set), effectiveSetEnd(set, idx));
     const setWinner = set.winner ? (set.winner === 'A' ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName) : '-';
     html += '<tr><td class="center"><strong>Set ' + (idx + 1) + '</strong></td>';
     html += '<td class="team-a center">' + set.score.A + '</td>';
@@ -335,24 +422,47 @@ function buildReportHTML(gameData) {
     html += '<td class="center">' + setWinner + '</td></tr>\n';
   });
   const totalSec = totalDurationSeconds(gameData.sets);
-  const totalDurStr = totalSec > 0
-    ? (totalSec < 60 ? '0:' + String(totalSec).padStart(2, '0') + ' min' : Math.floor(totalSec / 60) + ':' + String(totalSec % 60).padStart(2, '0') + ' min')
-    : '0 min';
-  html += '<tr class="totals-row"><td class="center">TOTALS</td><td class="team-a center">' + totalPointsA + '</td><td class="center">' + totalDurStr + '</td><td class="team-b center">' + totalPointsB + '</td><td></td><td></td></tr>\n';
+  const totalDurStr =
+    totalSec > 0
+      ? totalSec < 60
+        ? '0:' + String(totalSec).padStart(2, '0') + ' min'
+        : Math.floor(totalSec / 60) + ':' + String(totalSec % 60).padStart(2, '0') + ' min'
+      : 'N/A';
+  html +=
+    '<tr class="totals-row"><td class="center">TOTALS</td><td class="team-a center">' +
+    totalPointsA +
+    '</td><td class="center">—</td><td class="team-b center">' +
+    totalPointsB +
+    '</td><td class="center">' +
+    totalDurStr +
+    '</td><td></td></tr>\n';
   html += '</table>\n';
 
   gameData.sets.forEach((set, setIdx) => {
     if (!set.winner && set.score.A === 0 && set.score.B === 0) return;
 
-    const durStr = formatDuration(set.startTime, set.endTime);
-    const startFmt = set.startTime ? new Date(set.startTime).toLocaleTimeString() : 'N/A';
-    const endFmt = set.endTime ? new Date(set.endTime).toLocaleTimeString() : 'N/A';
+    const startForDur = effectiveSetStart(set);
+    const endForDur = effectiveSetEnd(set, setIdx);
+    const durStr = formatSetDuration(startForDur, endForDur);
+    const startDt = toJsDate(set.startTime);
+    const rallyStartDt = toJsDate(set.setClockStartedAt);
+    const endDt = toJsDate(set.endTime) || endForDur;
+    const startFmt = startDt
+      ? startDt.toLocaleString() + ' <span style="font-size:11px;color:#666">(' + startDt.toISOString() + ')</span>'
+      : 'N/A';
+    const rallyFmt = rallyStartDt
+      ? rallyStartDt.toLocaleString() + ' <span style="font-size:11px;color:#666">(' + rallyStartDt.toISOString() + ')</span>'
+      : '—';
+    const endFmt = endDt
+      ? endDt.toLocaleString() + ' <span style="font-size:11px;color:#666">(' + endDt.toISOString() + ')</span>'
+      : 'N/A';
 
     html += '<h2>Set ' + (setIdx + 1) + ' Details</h2>\n';
     html += '<div class="info-grid">';
-    html += '<div class="info-label">Start Time:</div><div>' + startFmt + '</div>';
-    html += '<div class="info-label">End Time:</div><div>' + endFmt + '</div>';
-    html += '<div class="info-label">Duration:</div><div>' + durStr + '</div>';
+    html += '<div class="info-label">Set start (lineup / set begins):</div><div>' + startFmt + '</div>\n';
+    html += '<div class="info-label">First rally started:</div><div>' + rallyFmt + '</div>\n';
+    html += '<div class="info-label">Set end:</div><div>' + endFmt + '</div>';
+    html += '<div class="info-label">Duration (end − start):</div><div>' + durStr + '</div>';
     html += '<div class="info-label">Final Score:</div><div>' + gameData.matchInfo.teamAName + ' ' + set.score.A + ' – ' + set.score.B + ' ' + gameData.matchInfo.teamBName + '</div>';
     html += '</div>\n';
 

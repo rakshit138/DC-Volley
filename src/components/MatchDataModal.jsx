@@ -1,4 +1,5 @@
 import React from 'react';
+import { firestoreTimeToDate, matchSummarySetWonTime } from '../utils/firestoreTime';
 import './MatchDataModal.css';
 
 export default function MatchDataModal({ open, gameData, onClose }) {
@@ -25,6 +26,27 @@ export default function MatchDataModal({ open, gameData, onClose }) {
   const sets = gameData.sets || [];
   const currentSet = gameData.currentSet || 1;
   const setsWon = gameData.setsWon || { A: 0, B: 0 };
+  const matchSummary = gameData.matchSummary || [];
+  const matchStartDt =
+    firestoreTimeToDate(gameData.playStartedAt) ||
+    firestoreTimeToDate(gameData.createdAt) ||
+    (sets[0]
+      ? firestoreTimeToDate(sets[0].startTime) || firestoreTimeToDate(sets[0].setClockStartedAt)
+      : null);
+  let latestSetEnd = null;
+  sets.forEach((set, i) => {
+    if (!set?.winner) return;
+    const e = firestoreTimeToDate(set.endTime) || matchSummarySetWonTime(matchSummary, i + 1);
+    if (e && (!latestSetEnd || e.getTime() > latestSetEnd.getTime())) latestSetEnd = e;
+  });
+  const matchDurMs =
+    matchStartDt && latestSetEnd ? latestSetEnd.getTime() - matchStartDt.getTime() : null;
+  const matchDurLabel =
+    matchDurMs != null && matchDurMs >= 0
+      ? `${Math.floor(matchDurMs / 60000)}:${String(Math.floor((matchDurMs % 60000) / 1000)).padStart(2, '0')}`
+      : null;
+  const dst = gameData.decidingSetToss;
+  const ct = gameData.coinToss;
 
   return (
     <div className="match-data-modal-overlay" onClick={onClose}>
@@ -66,8 +88,86 @@ export default function MatchDataModal({ open, gameData, onClose }) {
               <span className="match-data-label">Substitution Limit:</span>
               <span className="match-data-value">{matchInfo.subLimit} per set</span>
             </div>
+            <div className="match-data-item">
+              <span className="match-data-label">Match start (clock):</span>
+              <span className="match-data-value">{matchStartDt ? matchStartDt.toLocaleString() : 'N/A'}</span>
+            </div>
+            <div className="match-data-item">
+              <span className="match-data-label">Match duration (to latest set end):</span>
+              <span className="match-data-value">{matchDurLabel ?? 'N/A'}</span>
+            </div>
           </div>
         </div>
+
+        {ct && (ct.winner || ct.firstServer) && (
+          <div className="match-data-section">
+            <h4>Pre-match coin toss</h4>
+            <div className="match-data-grid">
+              <div className="match-data-item">
+                <span className="match-data-label">Toss winner:</span>
+                <span className="match-data-value">
+                  {ct.winner === 'team1'
+                    ? ct.team1Name || 'Team 1 (setup)'
+                    : ct.winner === 'team2'
+                      ? ct.team2Name || 'Team 2 (setup)'
+                      : ct.winner || '—'}
+                </span>
+              </div>
+              <div className="match-data-item">
+                <span className="match-data-label">Choice:</span>
+                <span className="match-data-value">
+                  {ct.choice === 'serve'
+                    ? 'Serve first'
+                    : ct.choice === 'receive'
+                      ? 'Receive first'
+                      : ct.choice === 'side'
+                        ? 'Choice of side'
+                        : ct.choice || '—'}
+                </span>
+              </div>
+              <div className="match-data-item">
+                <span className="match-data-label">First serve:</span>
+                <span className="match-data-value">
+                  {ct.firstServer === 'A' ? matchInfo.teamAName : ct.firstServer === 'B' ? matchInfo.teamBName : '—'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {dst?.winner && (
+          <div className="match-data-section">
+            <h4>Deciding set toss</h4>
+            <div className="match-data-grid">
+              <div className="match-data-item">
+                <span className="match-data-label">Set:</span>
+                <span className="match-data-value">{dst.setNumber ?? '—'}</span>
+              </div>
+              <div className="match-data-item">
+                <span className="match-data-label">Toss winner:</span>
+                <span className="match-data-value">
+                  {dst.winner === 'A' ? matchInfo.teamAName : matchInfo.teamBName}
+                </span>
+              </div>
+              <div className="match-data-item">
+                <span className="match-data-label">Decision:</span>
+                <span className="match-data-value">
+                  {dst.choice === 'serve' ? 'Serve first' : dst.choice === 'receive' ? 'Receive first' : '—'}
+                </span>
+              </div>
+              <div className="match-data-item">
+                <span className="match-data-label">Referee&apos;s left:</span>
+                <span className="match-data-value">
+                  {dst.teamOnRefereeLeft === 'A'
+                    ? matchInfo.teamAName
+                    : dst.teamOnRefereeLeft === 'B'
+                      ? matchInfo.teamBName
+                      : '—'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="match-data-section">
           <h4>Teams</h4>

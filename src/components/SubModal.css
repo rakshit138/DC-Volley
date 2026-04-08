@@ -90,10 +90,55 @@
   text-align: center;
 }
 
+.sub-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+}
+
 .sub-modal-buttons {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.sub-modal-buttons .sub-modal-btn {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.sub-modal-exceptional-panel {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  margin-top: 20px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 59, 59, 0.45);
+  border-radius: 8px;
+}
+
+.sub-modal-btn-secondary {
+  background: #3d4f6f !important;
+  color: #fff !important;
+  border: 2px solid #5a6d8f !important;
+}
+
+.sub-modal-btn.exceptional {
+  background: #ff3b3b;
+  color: #fff;
+  border: 2px solid #ff6b6b;
+}
+
+.sub-modal-btn-exceptional-confirm {
+  width: 100%;
+  flex: none !important;
+  background: #ff3b3b !important;
+  color: #fff !important;
+  border: 2px solid #ff6b6b !important;
+  padding: 14px 16px !important;
+  font-size: 15px !important;
 }
 
 .sub-modal-btn {
@@ -147,4 +192,34 @@
   margin-bottom: 15px;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.sub-modal-remarks-label {
+  display: block;
+  color: #00d9ff;
+  font-size: 13px;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.sub-modal-remarks-input {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 0;
+  padding: 12px 14px;
+  border-radius: 6px;
+  border: 2px solid #533483;
+  background: #0f3460;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.45;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 96px;
+}
+
+.sub-modal-remarks-input:focus {
+  outline: none;
+  border-color: #00d9ff;
 }

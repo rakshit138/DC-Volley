@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { allowsP1Replacement } from '../utils/liberoServe';
+import { sanitizeFirestoreWrite } from '../utils/firestoreSanitize';
 
 const GAMES_COLLECTION = 'games';
 
@@ -1276,9 +1277,10 @@ export async function addPoint(gameCode, team, rallyActive = false) {
  * @param {string} team - 'A' or 'B'
  * @param {string} playerOut - Jersey number of injured player
  * @param {string} playerIn - Jersey number of replacement
+ * @param {string} [userRemarks] - Optional free-text remarks (stored and shown on reports)
  * @returns {Promise<{ ok: boolean, message?: string }>}
  */
-export async function recordExceptionalSubstitution(gameCode, team, playerOut, playerIn) {
+export async function recordExceptionalSubstitution(gameCode, team, playerOut, playerIn, userRemarks) {
   const gameRef = doc(db, GAMES_COLLECTION, gameCode);
   const gameSnap = await getDoc(gameRef);
   
@@ -1318,12 +1320,15 @@ export async function recordExceptionalSubstitution(gameCode, team, playerOut, p
   const otherTeam = team === 'A' ? 'B' : 'A';
   const scoreText = (set.score?.[team] ?? 0) + ':' + (set.score?.[otherTeam] ?? 0);
   const autoRemark = `Exceptional substitution: #${playerOut} replaced by #${playerIn} (injury) – Set ${currentSet} at ${scoreText}`;
+  const remarksTrim = typeof userRemarks === 'string' ? userRemarks.trim() : '';
+  const remarkCombined =
+    remarksTrim.length > 0 ? `${autoRemark} | Remarks: ${remarksTrim}` : autoRemark;
 
   // Add to exceptional substitutions (separate from regular, exact HTML format)
   if (!set.exceptionalSubstitutions) {
     set.exceptionalSubstitutions = { A: [], B: [] };
   }
-  set.exceptionalSubstitutions[team].push({
+  const excSubRow = {
     time: Date.now(),
     score: { A: set.score?.A ?? 0, B: set.score?.B ?? 0 },
     playerOut: String(playerOut),
@@ -1331,9 +1336,13 @@ export async function recordExceptionalSubstitution(gameCode, team, playerOut, p
     position: posIndex + 1,
     timestamp: timeStr,
     setNumber: currentSet,
-    remark: autoRemark,
+    remark: remarkCombined,
     tag: 'E'
-  });
+  };
+  if (remarksTrim.length > 0) {
+    excSubRow.remarks = remarksTrim;
+  }
+  set.exceptionalSubstitutions[team].push(excSubRow);
   
   // Update lineup
   lineup[posIndex] = String(playerIn);
@@ -1357,6 +1366,9 @@ export async function recordExceptionalSubstitution(gameCode, team, playerOut, p
     setNumber: currentSet,
     previousLineup: previousLineup
   };
+  if (remarksTrim.length > 0) {
+    actionToSave.remarks = remarksTrim;
+  }
   
   // Update action history (keep last 50 actions)
   const updatedActionHistory = [...actionHistory, actionToSave];
@@ -1369,20 +1381,26 @@ export async function recordExceptionalSubstitution(gameCode, team, playerOut, p
     type: 'EXCEPTIONAL_SUBSTITUTION',
     team,
     setNumber: currentSet,
-    description: `Exceptional substitution Team ${team}: #${playerOut} OUT (injury), #${playerIn} IN`,
+    description:
+      remarksTrim.length > 0
+        ? `Exceptional substitution Team ${team}: #${playerOut} OUT (injury), #${playerIn} IN — ${remarksTrim}`
+        : `Exceptional substitution Team ${team}: #${playerOut} OUT (injury), #${playerIn} IN`,
     score: { A: set.score?.A ?? 0, B: set.score?.B ?? 0 },
     timestamp: new Date()
   });
 
-  await updateDoc(gameRef, {
-    sets,
-    teams,
-    injuredPlayers,
-    actionHistory: updatedActionHistory,
-    matchSummary,
-    updatedAt: serverTimestamp()
-  });
-  
+  await updateDoc(
+    gameRef,
+    sanitizeFirestoreWrite({
+      sets,
+      teams,
+      injuredPlayers,
+      actionHistory: updatedActionHistory,
+      matchSummary,
+      updatedAt: serverTimestamp()
+    })
+  );
+
   return { ok: true };
 }
 
