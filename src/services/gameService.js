@@ -1713,12 +1713,12 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
   const mergedHistory = [...prevActionHistory, nextSetAction];
   if (mergedHistory.length > 50) mergedHistory.shift();
 
+  // Keep setBreakStartedAt until the first "Start rally" of this new set (cleared in updateRallyState).
   await updateDoc(gameRef, {
     sets,
     teams,
     currentSet: nextSet,
     awaitingNextSet: false,
-    setBreakStartedAt: null,
     actionHistory: mergedHistory,
     updatedAt: serverTimestamp()
   });
@@ -1781,6 +1781,7 @@ export async function updateRallyState(gameCode, rallyActive) {
       await updateDoc(gameRef, {
         sets,
         rallyActive,
+        setBreakStartedAt: null,
         updatedAt: serverTimestamp()
       });
       return;
@@ -1789,6 +1790,7 @@ export async function updateRallyState(gameCode, rallyActive) {
 
   await updateDoc(gameRef, {
     rallyActive,
+    ...(rallyActive ? { setBreakStartedAt: null } : {}),
     updatedAt: serverTimestamp()
   });
 }

@@ -113,6 +113,21 @@
   font-size: 14px;
 }
 
+.sanction-player-combobox {
+  margin-top: 8px;
+}
+
+.sanction-roster-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.sanction-roster-hint--err {
+  color: #ff6b6b;
+  font-weight: 600;
+}
+
 .sanction-type-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

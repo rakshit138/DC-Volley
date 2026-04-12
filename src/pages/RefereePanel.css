@@ -944,6 +944,15 @@
   text-decoration: line-through;
 }
 
+.referee-lineup-setup .roster-player--injured {
+  opacity: 0.85;
+}
+
+.referee-lineup-setup .roster-player-name-unavailable {
+  text-decoration: line-through;
+  color: #ff6b6b;
+}
+
 .referee-lineup-setup .court-setup {
   background: #c67c3a;
   border: 3px solid #fff;
@@ -1127,8 +1136,13 @@
 }
 
 /* Fix #10: disqualified player row */
-.referee-lineup-item--disqualified {
+.referee-lineup-item--disqualified,
+.referee-lineup-item--ineligible {
   opacity: 0.7;
+}
+
+.referee-lineup-item--ineligible {
+  color: #ff8a8a;
 }
 
 /* Fix #6: disqualification marker — icon only (no text pill) */
@@ -1140,9 +1154,34 @@
   user-select: none;
 }
 
-.referee-lineup-name-disqualified {
+.referee-lineup-name-disqualified,
+.referee-lineup-name-ineligible {
   text-decoration: line-through;
-  opacity: 0.9;
+  opacity: 0.95;
+}
+
+.referee-lineup-name-ineligible {
+  color: #ff6b6b;
+}
+
+.referee-interval-timer--late {
+  color: #ffb020 !important;
+  font-weight: 800;
+}
+
+.referee-btn-fivb {
+  background: linear-gradient(135deg, #ffd700, #ff8c00) !important;
+  color: #000 !important;
+  font-weight: 900 !important;
+  border: 2px solid #fff !important;
+  font-size: 11px !important;
+}
+
+.referee-btn-sanction {
+  background: #ff0000 !important;
+  color: #fff !important;
+  font-weight: 800;
+  border: 2px solid rgba(255, 255, 255, 0.85);
 }
 
 @media (max-width: 900px) {

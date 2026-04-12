@@ -33,8 +33,6 @@ import {
   getLiberos,
   isLibero,
   formatDuration,
-  calculateMatchDuration,
-  calculateSetDuration,
   validateRotation,
   validateLineupCompleteness,
   validateLiberoPosition,
@@ -51,7 +49,8 @@ import AutoLiberoExitModal from '../components/AutoLiberoExitModal';
 import MatchDataModal from '../components/MatchDataModal';
 import SummaryModal from '../components/SummaryModal';
 import { downloadMatchReportHtml } from '../utils/exportMatchReportHtml';
-import { getPrepSessionStart } from '../utils/setupSession';
+import { exportFivbReport } from '../utils/exportFivbReport';
+import { firestoreTimeToDate } from '../utils/firestoreTime';
 import './RefereePanel.css';
 
 const POS_LABELS = { 1: 'P1-RB', 2: 'P2-RF', 3: 'P3-MF', 4: 'P4-LF', 5: 'P5-LB', 6: 'P6-MB' };
@@ -161,21 +160,26 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
 
         const isInjuredLocked = (injuredPlayers?.[team] || []).includes(jersey);
         const isDisqualifiedLocked = sanctionCards?.disqualified === true;
-        const isLocked = isInjuredLocked || isDisqualifiedLocked;
-        const grayedLikeDisq = isDisqualifiedLocked || isExpelledThisSet;
+        const grayedIneligible = isDisqualifiedLocked || isExpelledThisSet || isInjuredLocked;
         return (
           <div
             key={p.jersey}
-            className={`referee-lineup-item ${onCourt ? 'on-court' : 'on-bench'}${grayedLikeDisq ? ' referee-lineup-item--disqualified' : ''}`}
+            className={`referee-lineup-item ${onCourt ? 'on-court' : 'on-bench'}${grayedIneligible ? ' referee-lineup-item--ineligible' : ''}`}
           >
             <span className="referee-lineup-pos">{position || '-'}</span>
-            <span className={grayedLikeDisq ? 'referee-lineup-name-disqualified' : undefined}>
+            <span className={grayedIneligible ? 'referee-lineup-name-ineligible' : undefined}>
               #{jersey} {p?.name || ''}
               {/* Fix #6: icon-only disqualification marker (name struck through via CSS) */}
               {isDisqualifiedLocked && (
                 <span className="referee-lineup-disq-icon" title="Disqualified — cannot play or re-enter" aria-label="Disqualified">
                   {' '}
                   🟥❌
+                </span>
+              )}
+              {isInjuredLocked && (
+                <span className="referee-lineup-disq-icon" title="Unable to play (injury / exceptional sub)" aria-label="Injured">
+                  {' '}
+                  🚑
                 </span>
               )}
               {!isDisqualifiedLocked && isExpelledThisSet && (
@@ -253,8 +257,8 @@ export default function RefereePanel() {
   }, [gameData, gameData?.rallyActive, rallyActive]);
   const [matchTime, setMatchTime] = useState(0);
   const [setTime, setSetTime] = useState(0);
-  const [setBreakTimer, setSetBreakTimer] = useState(null);
-  const [setBreakSeconds, setSetBreakSeconds] = useState(0);
+  /** Seconds elapsed since set break started (Firestore setBreakStartedAt). */
+  const [setBreakElapsed, setSetBreakElapsed] = useState(0);
   const [autoLiberoEntryModal, setAutoLiberoEntryModal] = useState({ open: false, team: null, targetData: null, liberos: [] });
   const [autoLiberoExitModal, setAutoLiberoExitModal] = useState({ open: false, exitData: null });
   const [liberoServeAvailableDialogOpen, setLiberoServeAvailableDialogOpen] = useState(false);
@@ -339,73 +343,88 @@ export default function RefereePanel() {
     }
   }, [gameData?.awaitingNextSet, gameData?.currentSet, gameData?.sets, gameData?.status, loading]);
 
-  // Match time = from "Start New Game" / setup (prep session); falls back to createdAt if joined by code only.
-  // Set time = from first "Start rally" in this set (setClockStartedAt on the set row).
+  // Match clock: from playStartedAt (match document) until End Match (finishedAt); no prep-session skew.
+  // Set clock: from first "Start rally" (setClockStartedAt) until the set is won (freezes on set.endTime).
   useEffect(() => {
     if (!gameData) return;
 
-    const prepStart = getPrepSessionStart();
-    const created =
-      gameData.createdAt?.toDate?.() ?? (gameData.createdAt ? new Date(gameData.createdAt) : null);
-    const matchAnchor = prepStart || created;
+    if (matchTimerRef.current) clearInterval(matchTimerRef.current);
+    if (setTimerRef.current) clearInterval(setTimerRef.current);
 
-    if (matchAnchor) {
-      matchTimerRef.current = setInterval(() => {
-        setMatchTime(calculateMatchDuration(matchAnchor));
-      }, 1000);
+    const status = gameData.status || 'LIVE';
+    const playStart =
+      firestoreTimeToDate(gameData.playStartedAt) || firestoreTimeToDate(gameData.createdAt);
+    const matchFrozenEnd = status === 'FINISHED' ? firestoreTimeToDate(gameData.finishedAt) || new Date() : null;
+
+    const tickMatch = () => {
+      if (!playStart) {
+        setMatchTime(0);
+        return;
+      }
+      const end = matchFrozenEnd || new Date();
+      setMatchTime(Math.max(0, Math.floor((end.getTime() - playStart.getTime()) / 1000)));
+    };
+    tickMatch();
+    if (!matchFrozenEnd) {
+      matchTimerRef.current = setInterval(tickMatch, 1000);
     }
 
     const currentSetNum = gameData.currentSet || 1;
     const sets = gameData.sets || [];
-    const currentSetData = sets[currentSetNum - 1];
+    const row = sets[currentSetNum - 1];
+    const setStart = row?.setClockStartedAt ? firestoreTimeToDate(row.setClockStartedAt) : null;
+    const setEnded = !!row?.winner;
+    const setEndAnchor = setEnded
+      ? firestoreTimeToDate(row.endTime) || firestoreTimeToDate(gameData.finishedAt) || new Date()
+      : null;
 
-    let setStart = null;
-    if (currentSetData?.setClockStartedAt) {
-      setStart = currentSetData.setClockStartedAt.toDate
-        ? currentSetData.setClockStartedAt.toDate()
-        : new Date(currentSetData.setClockStartedAt);
-    }
-
-    if (setStart) {
-      setTimerRef.current = setInterval(() => {
-        setSetTime(calculateSetDuration(setStart));
-      }, 1000);
-    } else {
-      setSetTime(0);
+    const tickSet = () => {
+      if (!setStart) {
+        setSetTime(0);
+        return;
+      }
+      const end = setEnded && setEndAnchor ? setEndAnchor : new Date();
+      setSetTime(Math.max(0, Math.floor((end.getTime() - setStart.getTime()) / 1000)));
+    };
+    tickSet();
+    if (setStart && !setEnded) {
+      setTimerRef.current = setInterval(tickSet, 1000);
     }
 
     return () => {
       if (matchTimerRef.current) clearInterval(matchTimerRef.current);
       if (setTimerRef.current) clearInterval(setTimerRef.current);
     };
-  }, [gameData]);
+  }, [
+    gameData,
+    gameData?.status,
+    gameData?.playStartedAt,
+    gameData?.createdAt,
+    gameData?.finishedAt,
+    gameData?.currentSet,
+    gameData?.sets
+  ]);
 
-  // Set Break Timer (3 minutes between sets, persistent via Firestore timestamp)
+  // Set break: from end of prior set until first "Start rally" of the next set (setBreakStartedAt cleared in gameService).
   useEffect(() => {
     if (!gameData) return;
     if (setBreakTimerRef.current) clearInterval(setBreakTimerRef.current);
-    const breakStart = gameData.setBreakStartedAt?.toDate
-      ? gameData.setBreakStartedAt.toDate()
-      : (gameData.setBreakStartedAt ? new Date(gameData.setBreakStartedAt) : null);
-    if (!gameData.awaitingNextSet || !breakStart) {
-      setSetBreakTimer(false);
-      setSetBreakSeconds(0);
+    const breakStart = firestoreTimeToDate(gameData.setBreakStartedAt);
+    if (!breakStart || gameData.status === 'FINISHED') {
+      setSetBreakElapsed(0);
       return;
     }
     const updateBreakClock = () => {
       const elapsed = Math.floor((Date.now() - breakStart.getTime()) / 1000);
-      const remaining = Math.max(0, 180 - elapsed);
-      setSetBreakSeconds(remaining);
-      // Keep UI visible for entire set break (including 0:00 until next set is started)
-      setSetBreakTimer(true);
+      setSetBreakElapsed(Math.max(0, elapsed));
     };
     updateBreakClock();
     setBreakTimerRef.current = setInterval(updateBreakClock, 500);
-    
+
     return () => {
       if (setBreakTimerRef.current) clearInterval(setBreakTimerRef.current);
     };
-  }, [gameData?.awaitingNextSet, gameData?.setBreakStartedAt]);
+  }, [gameData?.setBreakStartedAt, gameData?.status]);
 
   // Auto Libero Entry/Exit Checking
   useEffect(() => {
@@ -1531,25 +1550,30 @@ export default function RefereePanel() {
           </div>
           <div
             className="referee-match-info-item"
-            title="Match clock: from Start New Game / setup (rosters and officials). Join-by-code uses game creation time."
+            title="Match clock: from match start (playStartedAt) until End Match."
           >
             <span>⏱</span>
             Match: <strong>{formatDuration(matchTime)}</strong>
           </div>
           <div
             className="referee-match-info-item"
-            title="Set clock: from first Start rally in this set (setClockStartedAt)."
+            title="Set clock: from first Start rally in this set; stops when the set is completed."
           >
             <span>⏲</span>
             Set: <strong>{formatDuration(setTime)}</strong>
           </div>
-          {gameData?.awaitingNextSet && gameData?.setBreakStartedAt != null && (
+          {gameData?.status !== 'FINISHED' && gameData?.setBreakStartedAt != null && (
             <div
-              className="referee-match-info-item referee-interval-timer"
-              title="3:00 interval between sets (from Firestore setBreakStartedAt)."
+              className={`referee-match-info-item referee-interval-timer${setBreakElapsed > 180 ? ' referee-interval-timer--late' : ''}`}
+              title="3:00 between sets. Amber shows time past 3:00 until Start rally for the next set."
             >
               <span>⏳</span>
-              Break: <strong>{formatDuration(setBreakSeconds)}</strong>
+              Break:{' '}
+              <strong>
+                {setBreakElapsed > 180
+                  ? `+${formatDuration(setBreakElapsed - 180)}`
+                  : formatDuration(Math.max(0, 180 - setBreakElapsed))}
+              </strong>
             </div>
           )}
           <div className="referee-match-info-item">Game: <strong>{gameCode}</strong></div>
@@ -1561,6 +1585,13 @@ export default function RefereePanel() {
           <button type="button" className="referee-btn-small" onClick={() => setSummaryModalOpen(true)} style={{ background: '#ffd700', color: '#000' }}>📊 SUMMARY</button>
           <button type="button" className="referee-btn-small" onClick={() => setHistoryModalOpen(true)}>📋 HISTORY</button>
           <button type="button" className="referee-btn-small referee-btn-export" onClick={() => downloadMatchReportHtml(gameData)}>📄 Export PDF</button>
+          <button
+            type="button"
+            className="referee-btn-small referee-btn-fivb"
+            onClick={() => exportFivbReport(gameData)}
+          >
+            🏐 FIVB REPORT
+          </button>
           <button type="button" className="referee-btn-small" onClick={() => window.open(`/lineup?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: '#fff' }}>👥 Lineup</button>
           <button type="button" className="referee-btn-small" onClick={() => window.open(`/scoreboard?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: '#fff' }}>📺 Scoreboard</button>
           <button
@@ -1573,7 +1604,7 @@ export default function RefereePanel() {
           >
             👥 OFFICIALS
           </button>
-          <button type="button" className="referee-btn-small referee-btn-sanction" onClick={() => setSanctionModalOpen(true)} style={{ background: '#ff0000', color: '#fff' }}>⚠️ SANCTION</button>
+          <button type="button" className="referee-btn-small referee-btn-sanction" onClick={() => setSanctionModalOpen(true)}>⚠️ SANCTION</button>
           <button type="button" className="referee-btn-small referee-btn-swap" onClick={handleSwap} disabled={updating || status === 'FINISHED'} title="Swap which team is on left/right">🔄 SWAP</button>
           <button type="button" className="referee-btn-small" onClick={handleUndo} disabled={updating || status === 'FINISHED'} style={{ background: '#ff9500', color: '#fff' }}>↶ UNDO</button>
           <button type="button" className="referee-btn-small" onClick={handleFinishGame} disabled={updating || status === 'FINISHED'}>End Match</button>
@@ -2205,21 +2236,27 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
                 return (
                   <div
                     key={p.jersey}
-                    className={`roster-player ${selectedPlayerForLineup?.side === 'A' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${disq ? ' roster-player--disqualified' : ''}${locked ? ' roster-player--disabled' : ''}`}
+                    className={`roster-player ${selectedPlayerForLineup?.side === 'A' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${disq ? ' roster-player--disqualified' : ''}${inj ? ' roster-player--injured' : ''}${locked ? ' roster-player--disabled' : ''}`}
                     onClick={() => {
                       if (locked) return;
                       setSelectedPlayerForLineup((prev) =>
                         prev?.side === 'A' && prev?.jersey === p.jersey ? null : { side: 'A', jersey: p.jersey }
                       );
                     }}
-                    title={disq ? 'Disqualified — cannot enter lineup' : inj ? 'Injured — cannot enter lineup' : undefined}
+                    title={disq ? 'Disqualified — cannot enter lineup' : inj ? 'Unable to play (injury) — cannot enter lineup' : undefined}
                   >
-                    <strong className={disq ? 'roster-player-name-disq' : undefined}>#{p.jersey}</strong>{' '}
-                    <span className={disq ? 'roster-player-name-disq' : undefined}>{p.name || ''}</span>
+                    <strong className={locked ? 'roster-player-name-unavailable' : undefined}>#{p.jersey}</strong>{' '}
+                    <span className={locked ? 'roster-player-name-unavailable' : undefined}>{p.name || ''}</span>
                     {disq && (
                       <span className="referee-lineup-disq-icon" title="Disqualified" aria-label="Disqualified">
                         {' '}
                         🟥❌
+                      </span>
+                    )}
+                    {inj && !disq && (
+                      <span className="referee-lineup-disq-icon" title="Unable to play" aria-label="Injured">
+                        {' '}
+                        🚑
                       </span>
                     )}
                   </div>
@@ -2255,21 +2292,27 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
                 return (
                   <div
                     key={p.jersey}
-                    className={`roster-player ${selectedPlayerForLineup?.side === 'B' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${disq ? ' roster-player--disqualified' : ''}${locked ? ' roster-player--disabled' : ''}`}
+                    className={`roster-player ${selectedPlayerForLineup?.side === 'B' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${disq ? ' roster-player--disqualified' : ''}${inj ? ' roster-player--injured' : ''}${locked ? ' roster-player--disabled' : ''}`}
                     onClick={() => {
                       if (locked) return;
                       setSelectedPlayerForLineup((prev) =>
                         prev?.side === 'B' && prev?.jersey === p.jersey ? null : { side: 'B', jersey: p.jersey }
                       );
                     }}
-                    title={disq ? 'Disqualified — cannot enter lineup' : inj ? 'Injured — cannot enter lineup' : undefined}
+                    title={disq ? 'Disqualified — cannot enter lineup' : inj ? 'Unable to play (injury) — cannot enter lineup' : undefined}
                   >
-                    <strong className={disq ? 'roster-player-name-disq' : undefined}>#{p.jersey}</strong>{' '}
-                    <span className={disq ? 'roster-player-name-disq' : undefined}>{p.name || ''}</span>
+                    <strong className={locked ? 'roster-player-name-unavailable' : undefined}>#{p.jersey}</strong>{' '}
+                    <span className={locked ? 'roster-player-name-unavailable' : undefined}>{p.name || ''}</span>
                     {disq && (
                       <span className="referee-lineup-disq-icon" title="Disqualified" aria-label="Disqualified">
                         {' '}
                         🟥❌
+                      </span>
+                    )}
+                    {inj && !disq && (
+                      <span className="referee-lineup-disq-icon" title="Unable to play" aria-label="Injured">
+                        {' '}
+                        🚑
                       </span>
                     )}
                   </div>

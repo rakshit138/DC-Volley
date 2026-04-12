@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import './SanctionModal.css';
 
 const MISCONDUCT_TYPES = [
@@ -41,6 +41,23 @@ export default function SanctionModal({
   const [notes, setNotes] = useState('');
   const [showRedConfirm, setShowRedConfirm] = useState(false);
   const [pendingSanction, setPendingSanction] = useState(null);
+
+  const rosterPlayers = useMemo(() => {
+    const list = [...(teams?.[team]?.players || [])].filter(
+      (p) => p != null && p.jersey != null && String(p.jersey).trim() !== ''
+    );
+    list.sort((a, b) => (Number(a.jersey) || 0) - (Number(b.jersey) || 0));
+    return list;
+  }, [teams, team]);
+
+  const jerseyOnRoster = useMemo(
+    () =>
+      personType === 'coach' ||
+      rosterPlayers.some((p) => String(p.jersey) === String(jersey).trim()),
+    [personType, rosterPlayers, jersey]
+  );
+
+  const rosterListId = `sanction-roster-${team}-${(gameCode || 'x').replace(/\W/g, '')}`;
 
   if (!open) return null;
 
@@ -93,6 +110,10 @@ export default function SanctionModal({
       if (!j) return;
       const num = parseInt(j, 10);
       if (isNaN(num) || num < 1 || num > 99) return;
+      if (!jerseyOnRoster) {
+        window.alert('Jersey is not on this team’s roster. Pick a player from the list or correct the number.');
+        return;
+      }
     }
 
     // Check if red card (P, EXP, DISQ) - show confirmation
@@ -147,18 +168,24 @@ export default function SanctionModal({
   const handleApplyDelay = () => {
     const typeToApply = delayType || suggestedDelayType;
     if (!typeToApply) return;
-    
-    // Auto-suggest based on count
-    if (!delayType) {
-      setDelayType(suggestedDelayType);
-    }
-    
     onApply('delay', team, { type: typeToApply });
     setDelayType(null);
   };
 
-  const canApplyMisconduct = misconductType && (personType !== 'player' || (jersey.trim() && /^[1-9]\d{0,2}$/.test(String(jersey).trim())));
-  const canApplyDelay = !!delayType;
+  const canApplyMisconduct =
+    misconductType &&
+    (personType !== 'player' ||
+      (jersey.trim() && /^[1-9]\d{0,2}$/.test(String(jersey).trim()) && jerseyOnRoster));
+  const canApplyDelay = !!(delayType || suggestedDelayType);
+
+  const misconductConsequence = misconductType
+    ? {
+        W: 'Effect: Formal warning (yellow card). No point to the opponent.',
+        P: 'Effect: Penalty (red card). One point and next serve awarded to the opponent.',
+        EXP: 'Effect: Expulsion. Player or coach must leave the playing area for the rest of this set; no point (unless combined progression). Substitute required for an expelled player.',
+        DISQ: 'Effect: Disqualification. Player or coach excluded for the rest of the match; replacing a disqualified player uses a team substitution.'
+      }[misconductType]
+    : null;
 
   return (
     <div className="sanction-modal-overlay" onClick={onClose}>
@@ -185,10 +212,24 @@ export default function SanctionModal({
         <div className="sanction-field">
           <label>Select Team</label>
           <div className="sanction-team-btns">
-            <button type="button" className={team === 'A' ? 'active' : ''} onClick={() => setTeam('A')}>
+            <button
+              type="button"
+              className={team === 'A' ? 'active' : ''}
+              onClick={() => {
+                setTeam('A');
+                setJersey('');
+              }}
+            >
               {teamAName || 'Team A'}
             </button>
-            <button type="button" className={team === 'B' ? 'active' : ''} onClick={() => setTeam('B')}>
+            <button
+              type="button"
+              className={team === 'B' ? 'active' : ''}
+              onClick={() => {
+                setTeam('B');
+                setJersey('');
+              }}
+            >
               {teamBName || 'Team B'}
             </button>
           </div>
@@ -209,16 +250,34 @@ export default function SanctionModal({
                 }}>🧢 Coach / Staff</button>
               </div>
               {personType === 'player' && (
-                <input
-                  type="text"
-                  className="sanction-jersey-input"
-                  placeholder="Jersey number (e.g. 7)"
-                  maxLength={3}
-                  value={jersey}
-                  onChange={(e) => {
-                    setJersey(e.target.value.replace(/\D/g, '').slice(0, 3));
-                  }}
-                />
+                <div className="sanction-player-combobox">
+                  <input
+                    type="text"
+                    className="sanction-jersey-input"
+                    list={rosterListId}
+                    placeholder="Jersey # (pick from roster list)"
+                    maxLength={3}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
+                    value={jersey}
+                    onChange={(e) => {
+                      setJersey(e.target.value.replace(/\D/g, '').slice(0, 3));
+                    }}
+                  />
+                  <datalist id={rosterListId}>
+                    {rosterPlayers.map((p) => (
+                      <option key={String(p.jersey)} value={String(p.jersey)}>
+                        {p.name ? `#${p.jersey} — ${p.name}` : `#${p.jersey}`}
+                      </option>
+                    ))}
+                  </datalist>
+                  {jersey.trim() && !jerseyOnRoster && (
+                    <div className="sanction-roster-hint sanction-roster-hint--err">
+                      Not on {team === 'A' ? teamAName || 'Team A' : teamBName || 'Team B'} roster — choose a jersey from the dropdown.
+                    </div>
+                  )}
+                </div>
               )}
               
               {/* Escalation History */}
@@ -251,6 +310,23 @@ export default function SanctionModal({
                 ))}
               </div>
             </div>
+            {misconductConsequence && (
+              <div
+                className="sanction-consequence"
+                style={{
+                  background: '#1a2f1a',
+                  border: '2px solid #00cc44',
+                  borderRadius: '6px',
+                  padding: '12px',
+                  marginBottom: '14px',
+                  fontSize: '13px',
+                  color: '#fff'
+                }}
+              >
+                <strong style={{ color: '#00cc44' }}>📌 CONSEQUENCE:</strong>
+                <div style={{ marginTop: '5px' }}>{misconductConsequence}</div>
+              </div>
+            )}
             <div className="sanction-field">
               <label>Reason / Notes</label>
               <select className="sanction-select" value={reason} onChange={(e) => setReason(e.target.value)}>
