@@ -51,6 +51,7 @@ import SummaryModal from '../components/SummaryModal';
 import { downloadMatchReportHtml } from '../utils/exportMatchReportHtml';
 import { exportFivbReport } from '../utils/exportFivbReport';
 import { firestoreTimeToDate } from '../utils/firestoreTime';
+import dcVolleyLogo from '../assets/dc_volley_logo.jpeg';
 import './RefereePanel.css';
 
 const POS_LABELS = { 1: 'P1-RB', 2: 'P2-RF', 3: 'P3-MF', 4: 'P4-LF', 5: 'P5-LB', 6: 'P6-MB' };
@@ -136,6 +137,7 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
           (e) => String(e.jersey) === jersey && e.set === currentSet
         );
         const cardElements = [];
+        const hasExpulsionCardThisSet = sanctionCards?.currentSetCards?.some((c) => c.type === 'EXP');
         if (sanctionCards) {
           // Current set cards (bright)
           sanctionCards.currentSetCards.forEach((card, idx) => {
@@ -182,7 +184,7 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
                   🚑
                 </span>
               )}
-              {!isDisqualifiedLocked && isExpelledThisSet && (
+              {!isDisqualifiedLocked && isExpelledThisSet && !hasExpulsionCardThisSet && (
                 <span className="referee-lineup-disq-icon" title="Expelled — cannot return this set" aria-label="Expelled">
                   {' '}
                   🟨🟥
@@ -1189,7 +1191,10 @@ export default function RefereePanel() {
         msg += '• Score: ' + scoreText + '\n';
         msg += '• Time: ' + timeStr + '\n\n';
         msg += '⚠️ IMPORTANT:\n';
-        msg += '• This substitution does NOT count toward the 6-substitution limit\n';
+        msg +=
+          '• This substitution does NOT count toward the ' +
+          (Number(gameData?.subLimit) || 6) +
+          '-substitution limit\n';
         msg += '• Player #' + (outPlayer?.jersey ?? playerOut) + ' is LOCKED and cannot return to play in this match\n';
         msg += '• Tagged with "E" in match records';
         alert(msg);
@@ -1542,7 +1547,9 @@ export default function RefereePanel() {
         </div>
       )}
       <div className="referee-top-bar">
-        <h1>🏐 DC_Volley</h1>
+        <div className="referee-top-brand">
+          <img src={dcVolleyLogo} alt="DC Volley" className="referee-top-logo" />
+        </div>
         <div className="referee-match-info">
           <div className="referee-match-info-item">
             <span>🏆</span>
@@ -1578,7 +1585,7 @@ export default function RefereePanel() {
           )}
           <div className="referee-match-info-item">Game: <strong>{gameCode}</strong></div>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+        <div className="referee-top-actions">
           <button type="button" className="referee-btn-small referee-btn-roster" onClick={() => setRosterModalOpen(true)}>📋 ROSTER</button>
           <button type="button" className="referee-btn-small" onClick={() => setNextSetModalOpen(true)} disabled={updating || status === 'FINISHED' || !currentSetData?.winner}>📝 SETUP NEXT SET</button>
           <button type="button" className="referee-btn-small" onClick={() => setMatchDataModalOpen(true)} style={{ background: '#00ff00', color: '#000' }}>💾 DATA</button>

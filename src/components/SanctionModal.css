@@ -34,6 +34,11 @@
   margin-bottom: 18px;
 }
 
+.sanction-type-icon {
+  font-size: 1.15em;
+  vertical-align: -0.08em;
+}
+
 .sanction-tab {
   padding: 14px;
   border: 3px solid #533483;

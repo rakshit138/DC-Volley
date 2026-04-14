@@ -237,7 +237,7 @@ export default function SubModal({
           {showExceptional && onExceptional && (
             <div className="sub-modal-exceptional-panel">
               <div className="sub-modal-exceptional-warning">
-                ⚠️ This substitution is for injured players only. It will NOT count toward the 6-substitution limit, and the injured player will be locked for the entire match.
+                ⚠️ This substitution is for injured players only. It will NOT count toward the {limit}-substitution limit, and the injured player will be locked for the entire match.
               </div>
               <label className="sub-modal-remarks-label" htmlFor="sub-modal-exceptional-remarks">
                 Remarks (optional)

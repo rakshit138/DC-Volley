@@ -393,47 +393,6 @@ export function exportFivbReport(gameData) {
   o('<div class="sec">IMPROPER REQUESTS</div>');
   o('<table><tr><th>TEAM A</th><th>TEAM B</th></tr><tr><td style="height:10px"></td><td></td></tr></table>');
 
-  o('<div class="sec">APPROVAL &amp; SIGNATURES</div>');
-  const sigs = (G.officials && G.officials.signatures) || {};
-  function sigBox(label, name, imgKey) {
-    o('<div class="sig-box"><div class="slbl">' + label + '</div><div class="sname">' + val(name) + '</div>');
-    if (sigs[imgKey]) o('<img src="' + sigs[imgKey] + '">');
-    o('<div class="sline"></div></div>');
-  }
-  o('<div class="sig-wrap">');
-  sigBox('1st Referee', mi.ref1, 'firstRefSign');
-  sigBox('2nd Referee', mi.ref2, 'secondRefSign');
-  sigBox('Scorer', mi.scorer, 'scorerSign');
-  sigBox('Asst. Scorer', mi.assistScorer, 'assistScorerSign');
-  o('</div>');
-
-  ['A', 'B'].forEach((team) => {
-    const players = (G.teams[team] && G.teams[team].players) || [];
-    const cap = players.find((p) => p.role === 'captain');
-    const capName = cap ? '#' + cap.jersey + ' ' + cap.name : '—';
-    const off = G.officials || {};
-    const coach = (team === 'A' ? off.coachA : off.coachB) || '';
-    const asst = (team === 'A' ? off.asstCoachA : off.asstCoachB) || '';
-    o(
-      '<div style="background:' +
-        (team === 'A' ? '#fff0f3' : '#f0f5ff') +
-        ';padding:2px 5px;font-size:9px;font-weight:bold;margin:3px 0 1px">'
-    );
-    o(
-      (team === 'A' ? tA : tB) +
-        ' — Captain: ' +
-        capName +
-        (coach ? ' | Coach: ' + coach : '') +
-        (asst ? ' | Asst: ' + asst : '')
-    );
-    o('</div>');
-    o('<div class="sig-wrap">');
-    sigBox('Captain — Before Match', capName, 'captainSign' + team + '1');
-    sigBox('Captain — After Match', capName, 'captainSign' + team + '2');
-    sigBox('Coach', coach, 'coachSign' + team);
-    o('</div>');
-  });
-
   o('<div class="sec">REMARKS</div>');
   o('<div style="border:1px solid #bbb;padding:3px 5px;min-height:10mm;font-size:9px">' + val(G.remarks || G.notes || '') + '</div>');
 
@@ -775,6 +734,49 @@ export function exportFivbReport(gameData) {
 
     o('</div>');
   });
+
+  const sigs = (G.officials && G.officials.signatures) || {};
+  function sigBox(label, name, imgKey) {
+    o('<div class="sig-box"><div class="slbl">' + label + '</div><div class="sname">' + val(name) + '</div>');
+    if (sigs[imgKey]) o('<img src="' + sigs[imgKey] + '">');
+    o('<div class="sline"></div></div>');
+  }
+  o('<div class="newpage">');
+  o('<div class="sec">APPROVAL &amp; SIGNATURES</div>');
+  o('<div class="sig-wrap">');
+  sigBox('1st Referee', mi.ref1, 'firstRefSign');
+  sigBox('2nd Referee', mi.ref2, 'secondRefSign');
+  sigBox('Scorer', mi.scorer, 'scorerSign');
+  sigBox('Asst. Scorer', mi.assistScorer, 'assistScorerSign');
+  o('</div>');
+
+  ['A', 'B'].forEach((team) => {
+    const players = (G.teams[team] && G.teams[team].players) || [];
+    const cap = players.find((p) => p.role === 'captain');
+    const capName = cap ? '#' + cap.jersey + ' ' + cap.name : '—';
+    const off = G.officials || {};
+    const coach = (team === 'A' ? off.coachA : off.coachB) || '';
+    const asst = (team === 'A' ? off.asstCoachA : off.asstCoachB) || '';
+    o(
+      '<div style="background:' +
+        (team === 'A' ? '#fff0f3' : '#f0f5ff') +
+        ';padding:2px 5px;font-size:9px;font-weight:bold;margin:3px 0 1px">'
+    );
+    o(
+      (team === 'A' ? tA : tB) +
+        ' — Captain: ' +
+        capName +
+        (coach ? ' | Coach: ' + coach : '') +
+        (asst ? ' | Asst: ' + asst : '')
+    );
+    o('</div>');
+    o('<div class="sig-wrap">');
+    sigBox('Captain — Before Match', capName, 'captainSign' + team + '1');
+    sigBox('Captain — After Match', capName, 'captainSign' + team + '2');
+    sigBox('Coach', coach, 'coachSign' + team);
+    o('</div>');
+  });
+  o('</div>');
 
   o('</body></html>');
 

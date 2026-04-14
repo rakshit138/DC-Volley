@@ -2,15 +2,15 @@ import { useState, useMemo } from 'react';
 import './SanctionModal.css';
 
 const MISCONDUCT_TYPES = [
-  { id: 'W', label: 'WARNING', sub: 'Yellow Card • No point', color: '#ffd700' },
-  { id: 'P', label: 'PENALTY', sub: 'Red Card • +1 pt opponent', color: '#ff4444' },
-  { id: 'EXP', label: 'EXPULSION', sub: 'Out this set only', color: '#ff8800' },
-  { id: 'DISQ', label: 'DISQUALIFICATION', sub: 'Out entire match', color: '#cc00cc' }
+  { id: 'W', label: 'WARNING', sub: 'Yellow Card • No point', color: '#ffd700', icon: '🟨' },
+  { id: 'P', label: 'PENALTY', sub: 'Red Card • +1 pt opponent', color: '#ff4444', icon: '🟥' },
+  { id: 'EXP', label: 'EXPULSION', sub: 'Out this set only', color: '#ff8800', icon: '🟨🟥' },
+  { id: 'DISQ', label: 'DISQUALIFICATION', sub: 'Out entire match', color: '#cc00cc', icon: '🟥❌' }
 ];
 
 const DELAY_TYPES = [
-  { id: 'DW', label: 'DELAY WARNING', sub: '1st delay • No point', color: '#ffd700' },
-  { id: 'DP', label: 'DELAY PENALTY', sub: '2nd+ delay • +1 pt opponent', color: '#ff4444' }
+  { id: 'DW', label: 'DELAY WARNING', sub: '1st delay • No point', color: '#ffd700', icon: '🟨' },
+  { id: 'DP', label: 'DELAY PENALTY', sub: '2nd+ delay • +1 pt opponent', color: '#ff4444', icon: '🟥' }
 ];
 
 const REASON_OPTIONS = [
@@ -305,6 +305,7 @@ export default function SanctionModal({
                     style={{ borderColor: t.color, color: t.color }}
                     onClick={() => setMisconductType(t.id)}
                   >
+                    <span className="sanction-type-icon" aria-hidden="true">{t.icon}</span>{' '}
                     {t.label}<br /><span className="type-sub">{t.sub}</span>
                   </button>
                 ))}
@@ -343,7 +344,8 @@ export default function SanctionModal({
             </div>
             <div className="sanction-actions">
               <button type="button" className="sanction-apply misconduct" onClick={handleApplyMisconduct} disabled={!canApplyMisconduct}>
-                ⚠️ APPLY SANCTION
+                {(MISCONDUCT_TYPES.find((x) => x.id === misconductType)?.icon || '⚠️') + ' '}
+                APPLY SANCTION
               </button>
               <button type="button" className="sanction-cancel" onClick={onClose}>Cancel</button>
             </div>
@@ -400,6 +402,7 @@ export default function SanctionModal({
                       }}
                       onClick={() => setDelayType(t.id)}
                     >
+                      <span className="sanction-type-icon" aria-hidden="true">{t.icon}</span>{' '}
                       {t.label}<br /><span className="type-sub">{t.sub}</span>
                       {isSuggested && <span style={{ fontSize: '10px', display: 'block', marginTop: '4px', color: '#00d9ff' }}>← Suggested</span>}
                     </button>
@@ -430,7 +433,9 @@ export default function SanctionModal({
             )}
             <div className="sanction-actions">
               <button type="button" className="sanction-apply delay" onClick={handleApplyDelay} disabled={!canApplyDelay}>
-                ⏱ APPLY DELAY SANCTION
+                ⏱{' '}
+                {(DELAY_TYPES.find((x) => x.id === (delayType || suggestedDelayType))?.icon || '🟨') + ' '}
+                APPLY DELAY SANCTION
               </button>
               <button type="button" className="sanction-cancel" onClick={onClose}>Cancel</button>
             </div>
