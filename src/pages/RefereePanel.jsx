@@ -1549,8 +1549,11 @@ export default function RefereePanel() {
         </div>
       )}
       <div className="referee-top-bar">
-        <div className="referee-top-brand">
-          <img src={dcVolleyLogo} alt="VolleySync" className="referee-top-logo" />
+        <div className="referee-top-brand-stack">
+          <div className="referee-top-brand">
+            <img src={dcVolleyLogo} alt="VolleySync" className="referee-top-logo" />
+          </div>
+          <span className="referee-top-brand-name">volleySync</span>
         </div>
         <div className="referee-match-info">
           <div className="referee-match-info-item">
