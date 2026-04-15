@@ -108,7 +108,7 @@ export function exportRosterAsJSON(rosterData, filename = null) {
     const team1 = rosterData.matchInfo?.team1Name || rosterData.teams?.team1?.name || 'Team1';
     const team2 = rosterData.matchInfo?.team2Name || rosterData.teams?.team2?.name || 'Team2';
     const date = new Date().toISOString().split('T')[0];
-    const defaultFilename = `Roster_${team1}_vs_${team2}_${date}.json`;
+    const defaultFilename = `VolleySync_Roster_${team1}_vs_${team2}_${date}.json`;
     
     const a = document.createElement('a');
     a.href = url;

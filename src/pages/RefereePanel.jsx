@@ -1287,7 +1287,7 @@ export default function RefereePanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Match_History_${gameData.teamAName || 'TeamA'}_vs_${gameData.teamBName || 'TeamB'}.html`;
+    a.download = `VolleySync_Match_History_${gameData.teamAName || 'TeamA'}_vs_${gameData.teamBName || 'TeamB'}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1307,7 +1307,7 @@ export default function RefereePanel() {
     const teamBName = gameData.teamBName || 'Team B';
     const matchSummary = gameData.matchSummary || [];
     
-    let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Match History</title>';
+    let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>VolleySync — Match History</title>';
     html += '<style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5;}';
     html += '.container{max-width:1100px;margin:0 auto;background:white;padding:40px;box-shadow:0 0 20px rgba(0,0,0,0.1);}';
     html += 'h1{text-align:center;color:#1e3c72;border-bottom:3px solid #1e3c72;padding-bottom:15px;}';
@@ -1316,6 +1316,7 @@ export default function RefereePanel() {
     html += '.history-team{font-weight:bold;color:#1e3c72;}';
     html += '.history-set{color:#888;}';
     html += '</style></head><body><div class="container">';
+    html += '<p style="text-align:center;color:#2a5298;font-weight:bold;margin:0 0 8px 0;font-size:15px;">VolleySync</p>';
     html += '<h1>📋 MATCH HISTORY REPORT</h1>';
     html += '<p><strong>' + (gameData.competition || '') + ' | ' + (gameData.venue || '') + '</strong></p>';
     html += '<p><strong>' + teamAName + ' vs ' + teamBName + '</strong></p>';
@@ -1347,7 +1348,7 @@ export default function RefereePanel() {
     const sets = gameData.sets || [];
     const setsWon = gameData.setsWon || { A: 0, B: 0 };
     
-    let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Match Summary</title>';
+    let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>VolleySync — Match Summary</title>';
     html += '<style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5;}';
     html += '.container{max-width:1100px;margin:0 auto;background:white;padding:40px;box-shadow:0 0 20px rgba(0,0,0,0.1);}';
     html += 'h1{text-align:center;color:#1e3c72;border-bottom:3px solid #1e3c72;padding-bottom:15px;}';
@@ -1355,6 +1356,7 @@ export default function RefereePanel() {
     html += 'th,td{border:1px solid #ddd;padding:10px;text-align:left;}';
     html += 'th{background:#1e3c72;color:white;}';
     html += '</style></head><body><div class="container">';
+    html += '<p style="text-align:center;color:#2a5298;font-weight:bold;margin:0 0 8px 0;font-size:15px;">VolleySync</p>';
     html += '<h1>📊 MATCH SUMMARY REPORT</h1>';
     html += '<p><strong>' + (gameData.competition || '') + ' | ' + (gameData.venue || '') + '</strong></p>';
     html += '<p><strong>' + teamAName + ' vs ' + teamBName + '</strong></p>';
@@ -1548,7 +1550,7 @@ export default function RefereePanel() {
       )}
       <div className="referee-top-bar">
         <div className="referee-top-brand">
-          <img src={dcVolleyLogo} alt="DC Volley" className="referee-top-logo" />
+          <img src={dcVolleyLogo} alt="VolleySync" className="referee-top-logo" />
         </div>
         <div className="referee-match-info">
           <div className="referee-match-info-item">

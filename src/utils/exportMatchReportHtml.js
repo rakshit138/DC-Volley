@@ -275,7 +275,7 @@ function buildReportHTML(gameData) {
   }
 
   // Same CSS as match_report_generator.html
-  let html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n<title>FIVB Match Report</title>\n<style>\n';
+  let html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n<title>VolleySync — FIVB Match Report</title>\n<style>\n';
   html += 'body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5;}';
   html += '.container{max-width:1100px;margin:0 auto;background:white;padding:40px;box-shadow:0 0 20px rgba(0,0,0,0.1);}';
   html += 'h1{text-align:center;color:#1e3c72;border-bottom:3px solid #1e3c72;padding-bottom:15px;margin-bottom:20px;}';
@@ -294,6 +294,7 @@ function buildReportHTML(gameData) {
   html += '@media print{body{margin:0;background:white;}.container{box-shadow:none;padding:20px;}}';
   html += '\n</style>\n</head>\n<body>\n<div class="container">\n';
 
+  html += '<p style="text-align:center;color:#2a5298;font-weight:bold;margin:0 0 6px 0;font-size:15px;">VolleySync</p>\n';
   html += '<h1>🏐 FIVB Official Match Report</h1>\n';
 
   html += '<h2>Match Information</h2>\n<div class="info-grid">\n';
@@ -685,7 +686,7 @@ function buildReportHTML(gameData) {
   const generatedAt = new Date().toLocaleString();
   const gameCode = gameData.gameCode || '';
   html += '<div style="text-align:center;margin-top:60px;padding-top:20px;border-top:2px solid #ddd;color:#888;">';
-  html += '<p>DC_Volley &copy; 2025 | Digital Volleyball Scoresheet</p>';
+  html += '<p>VolleySync &copy; 2025 | Digital Volleyball Scoresheet</p>';
   html += '<p>Report generated from <strong>live match data</strong> at ' + generatedAt + '</p>';
   if (gameCode) html += '<p>Game code: ' + gameCode + '</p>';
   html += '</div>\n';
@@ -707,7 +708,7 @@ export function downloadMatchReportHtml(gameData, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename || 'FIVB_Match_Report_' + (gameData.teamAName || 'TeamA') + '_vs_' + (gameData.teamBName || 'TeamB') + '.html';
+  a.download = filename || 'VolleySync_FIVB_Match_Report_' + (gameData.teamAName || 'TeamA') + '_vs_' + (gameData.teamBName || 'TeamB') + '.html';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

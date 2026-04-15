@@ -10,10 +10,15 @@ export function exportMatchReportPdf(gameData, filename) {
   const doc = new jsPDF();
   const teamAName = gameData.teamAName || 'Team A';
   const teamBName = gameData.teamBName || 'Team B';
-  const name = filename || `Match_Report_${teamAName}_vs_${teamBName}.pdf`;
+  const name = filename || `VolleySync_Match_Report_${teamAName}_vs_${teamBName}.pdf`;
 
   let y = 20;
 
+  doc.setFontSize(10);
+  doc.setTextColor(42, 82, 152);
+  doc.text('VolleySync', 105, y, { align: 'center' });
+  y += 7;
+  doc.setTextColor(0, 0, 0);
   doc.setFontSize(18);
   doc.text('FIVB Match Report', 105, y, { align: 'center' });
   y += 12;
@@ -92,6 +97,11 @@ export function exportMatchReportPdf(gameData, filename) {
       }
     });
   }
+
+  doc.setFontSize(8);
+  doc.setTextColor(136, 136, 136);
+  doc.text('VolleySync © 2025 | Digital Volleyball Scoresheet', 105, 287, { align: 'center' });
+  doc.setTextColor(0, 0, 0);
 
   doc.save(name);
 }

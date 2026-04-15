@@ -50,7 +50,7 @@ export default function Home() {
   return (
     <div className="home-container">
       <div className="home-card">
-        <h1 className="home-title">🏐 DC Volley</h1>
+        <h1 className="home-title">🏐 VolleySync</h1>
         <p className="home-subtitle">Real-Time Volleyball Scoreboard</p>
 
         <div className="home-input-group">

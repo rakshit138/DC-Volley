@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Generate FIVB Match Report</title>
+<title>VolleySync — FIVB Match Report Generator</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
@@ -29,8 +29,8 @@ h1 { color: #1e3c72; margin-bottom: 10px; text-align: center; }
 </head>
 <body>
 <div class="container">
-  <h1>🏐 FIVB Match Report Generator</h1>
-  <p class="subtitle">Official Volleyball Scoresheet</p>
+  <h1>🏐 VolleySync</h1>
+  <p class="subtitle">FIVB Match Report Generator · Official Volleyball Scoresheet</p>
   <div class="info-box">
     <h3>📋 About This Tool</h3>
     <p>Generates a comprehensive FIVB match report including match info, set scores, lineups, substitutions, exceptional substitutions, timeouts, sanctions, officials and signatures.</p>
@@ -80,7 +80,7 @@ function generateReport() {
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
-  a.download = 'FIVB_Match_Report_' + (gameData.matchInfo.teamAName || 'TeamA') + '_vs_' + (gameData.matchInfo.teamBName || 'TeamB') + '.html';
+  a.download = 'VolleySync_FIVB_Match_Report_' + (gameData.matchInfo.teamAName || 'TeamA') + '_vs_' + (gameData.matchInfo.teamBName || 'TeamB') + '.html';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -244,7 +244,7 @@ function generateHTMLReport() {
     return list;
   }
 
-  var html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n<title>FIVB Match Report</title>\n<style>\n';
+  var html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n<title>VolleySync — FIVB Match Report</title>\n<style>\n';
   html += 'body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5;}';
   html += '.container{max-width:1100px;margin:0 auto;background:white;padding:40px;box-shadow:0 0 20px rgba(0,0,0,0.1);}';
   html += 'h1{text-align:center;color:#1e3c72;border-bottom:3px solid #1e3c72;padding-bottom:15px;margin-bottom:20px;}';
@@ -263,6 +263,7 @@ function generateHTMLReport() {
   html += '@media print{body{margin:0;background:white;}.container{box-shadow:none;padding:20px;}}';
   html += '\n</style>\n</head>\n<body>\n<div class="container">\n';
 
+  html += '<p style="text-align:center;color:#2a5298;font-weight:bold;margin:0 0 6px 0;font-size:15px;">VolleySync</p>\n';
   html += '<h1>🏐 FIVB Official Match Report</h1>\n';
 
   // ── MATCH INFORMATION ──
@@ -576,7 +577,7 @@ function generateHTMLReport() {
   html += '</table>\n';
 
   html += '<div style="text-align:center;margin-top:60px;padding-top:20px;border-top:2px solid #ddd;color:#888;">';
-  html += '<p>DC_Volley &copy; 2025 | Digital Volleyball Scoresheet</p>';
+  html += '<p>VolleySync &copy; 2025 | Digital Volleyball Scoresheet</p>';
   html += '<p>Generated: ' + new Date().toLocaleString() + '</p></div>\n';
   html += '</div>\n</body>\n</html>';
 
@@ -590,7 +591,7 @@ function downloadJSON() {
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
-  a.download = 'match_data_' + (gameData.matchInfo.teamAName || 'TeamA') + '_vs_' + (gameData.matchInfo.teamBName || 'TeamB') + '.json';
+  a.download = 'VolleySync_match_data_' + (gameData.matchInfo.teamAName || 'TeamA') + '_vs_' + (gameData.matchInfo.teamBName || 'TeamB') + '.json';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

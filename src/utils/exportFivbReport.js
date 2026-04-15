@@ -153,7 +153,7 @@ export function exportFivbReport(gameData) {
   const endMs = tsToMs(G.finishedAt || G.matchEndTime || G.endTime);
 
   o('<!DOCTYPE html><html><head><meta charset="UTF-8">');
-  o('<title>FIVB Scoresheet — ' + tA + ' vs ' + tB + '</title>');
+  o('<title>VolleySync — FIVB Scoresheet — ' + tA + ' vs ' + tB + '</title>');
   o('<style>');
   o('* { margin:0; padding:0; box-sizing:border-box; }');
   o('body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background: #fff; padding: 8mm; }');
@@ -206,7 +206,7 @@ export function exportFivbReport(gameData) {
   o('</style></head><body>');
   o('<button class="noprint" onclick="window.print()">🖨️ Print / Save as PDF</button>');
 
-  o('<div class="fivb-hdr"><h1>FEDERATION INTERNATIONALE DE VOLLEYBALL</h1><p>INTERNATIONAL SCORESHEET — DC_Volley</p></div>');
+  o('<div class="fivb-hdr"><h1>FEDERATION INTERNATIONALE DE VOLLEYBALL</h1><p>INTERNATIONAL SCORESHEET — VolleySync</p></div>');
 
   o('<div class="info-band">');
   const infoFields = [

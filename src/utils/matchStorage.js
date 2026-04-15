@@ -64,7 +64,7 @@ export function saveMatch(gameData) {
   const teamA = gameData.teamAName || 'TeamA';
   const teamB = gameData.teamBName || 'TeamB';
   const date = gameData.matchDate || gameData.date || new Date().toISOString().split('T')[0];
-  const filename = `VolleyMatch_${teamA}_vs_${teamB}_${date}.json`;
+  const filename = `VolleySync_Match_${teamA}_vs_${teamB}_${date}.json`;
 
   // Create download link
   const blob = new Blob([jsonString], { type: 'application/json' });
