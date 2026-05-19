@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
@@ -103,9 +103,6 @@ export default function Login() {
         </form>
 
         {error && <div className="home-error">{error}</div>}
-        <Link className="register-back-link" to="/register">
-          Create an account
-        </Link>
       </div>
     </div>
   );
