@@ -35,7 +35,7 @@ export default function Lineup() {
       <div className="lineup-container">
         <div className="lineup-error">
           {error || 'Game not found'}
-          <button onClick={() => navigate('/')} className="lineup-back-btn">
+          <button onClick={() => navigate('/home')} className="lineup-back-btn">
             Go Home
           </button>
         </div>
@@ -61,6 +61,8 @@ export default function Lineup() {
   const serving = currentSetData.serving || 'A';
   const format = gameData.format || 3;
   const subLimit = gameData.subLimit ?? 6;
+  const teamAColor = gameData.teamAColor || '#ff6b6b';
+  const teamBColor = gameData.teamBColor || '#4ecdc4';
 
   const isLiberoRole = (role) =>
     role === 'libero1' || role === 'libero2' || role === 'liberocaptain';
@@ -70,6 +72,7 @@ export default function Lineup() {
     const lineup = teamData.lineup || [];
     const players = teamData.players || [];
     const teamName = team === 'A' ? gameData.teamAName : gameData.teamBName;
+    const teamColor = team === 'A' ? teamAColor : teamBColor;
     const lineupStrs = lineup.map((j) => String(j));
     const timeoutsUsed = currentSetData.timeouts?.[team]?.length ?? 0;
     const subsUsed = currentSetData.substitutions?.[team]?.length ?? 0;
@@ -83,7 +86,7 @@ export default function Lineup() {
     return (
       <div className="lineup-team-section">
         <div className="lineup-team-header">
-          <h3 className={`lineup-title ${team === 'A' ? 'team-a-color' : 'team-b-color'}`}>
+          <h3 className="lineup-title" style={{ color: teamColor }}>
             {teamName || `Team ${team}`}
           </h3>
         </div>
@@ -160,12 +163,12 @@ export default function Lineup() {
 
         <div className="stats-row">
           <div className="stat-item">
-            <span className="stat-label">Timeouts Left</span>
-            <span className="stat-value">{2 - timeoutsUsed} / 2</span>
+            <span className="stat-label" style={{ color: teamColor }}>Timeouts Left</span>
+            <span className="stat-value" style={{ color: teamColor }}>{2 - timeoutsUsed} / 2</span>
           </div>
           <div className="stat-item">
-            <span className="stat-label">Subs Left</span>
-            <span className="stat-value">{subLimit - subsUsed} / {subLimit}</span>
+            <span className="stat-label" style={{ color: teamColor }}>Subs Left</span>
+            <span className="stat-value" style={{ color: teamColor }}>{subLimit - subsUsed} / {subLimit}</span>
           </div>
         </div>
       </div>
@@ -183,10 +186,10 @@ export default function Lineup() {
 
       <div className="lineup-score-display score-display-strip">
         <div className="lineup-score-item team-score-box">
-          <div className="lineup-score-team team-name-big team-a-color">
+          <div className="lineup-score-team team-name-big" style={{ color: teamAColor }}>
             {gameData.teamAName || 'Team A'}
           </div>
-          <div className="lineup-score-value score-big team-a-color">{scoreA}</div>
+          <div className="lineup-score-value score-big" style={{ color: teamAColor }}>{scoreA}</div>
         </div>
         <div className="set-info-middle">
           <div className="set-number">SET {currentSet}</div>
@@ -206,10 +209,10 @@ export default function Lineup() {
           </div>
         </div>
         <div className="lineup-score-item team-score-box">
-          <div className="lineup-score-team team-name-big team-b-color">
+          <div className="lineup-score-team team-name-big" style={{ color: teamBColor }}>
             {gameData.teamBName || 'Team B'}
           </div>
-          <div className="lineup-score-value score-big team-b-color">{scoreB}</div>
+          <div className="lineup-score-value score-big" style={{ color: teamBColor }}>{scoreB}</div>
         </div>
       </div>
 

@@ -17,3 +17,11 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* splash_screen_logo.jpeg — circular everywhere */
+.home-brand-logo,
+.splash-screen-logo {
+  border-radius: 50%;
+  object-fit: cover;
+  aspect-ratio: 1;
+}

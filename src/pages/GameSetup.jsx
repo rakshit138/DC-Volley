@@ -18,6 +18,7 @@ import {
 } from '../utils/rosterStorage';
 import './GameSetup.css';
 import OfficialsModal from '../components/OfficialsModal';
+import { getSetupCoinTossOutcome, getFirstServerForSetup } from '../utils/coinTossLogic';
 
 export default function GameSetup() {
   const { setGameCode } = useGame();
@@ -299,79 +300,11 @@ export default function GameSetup() {
     setTimeout(() => setRosterToast(''), 5000);
   };
 
-  // DC_Volley_patched_fixed_2.html — determineCoinTossOutcome() (Team 1 / Team 2 names, pre–A-B assignment)
-  const getCoinTossResultLegacyStrings = () => {
-    if (!coinToss.winner || !coinToss.choice) return null;
-    const t1 = team1.name;
-    const t2 = team2.name;
-    const winner = coinToss.winner;
-    const loser = winner === 'team1' ? 'team2' : 'team1';
-    const winnerName = winner === 'team1' ? t1 : t2;
-    const loserName = loser === 'team1' ? t1 : t2;
-    let firstServer;
-    let firstReceiver;
-    let courtSides;
-    if (coinToss.choice === 'serve') {
-      firstServer = `${winnerName} (chose to serve)`;
-      firstReceiver = loserName;
-      courtSides = `${loserName} chooses their preferred side`;
-    } else if (coinToss.choice === 'receive') {
-      firstServer = loserName;
-      firstReceiver = `${winnerName} (chose to receive)`;
-      courtSides = `${loserName} chooses their preferred side`;
-    } else if (coinToss.choice === 'side') {
-      firstServer = `${loserName} (will serve first)`;
-      firstReceiver = winnerName;
-      courtSides = `${winnerName} chooses their preferred side`;
-    } else {
-      return null;
-    }
-    return { firstServer, firstReceiver, courtSides };
-  };
-
-  // Fix #3: inline coin toss panel summary (aligned with handleStartGame firstServer logic)
-  const getCoinTossSummary = () => {
-    if (!coinToss.teamAAssignment || !coinToss.teamBAssignment || coinToss.teamAAssignment === coinToss.teamBAssignment) {
-      return null;
-    }
-    const t1 = team1.name;
-    const t2 = team2.name;
-    const winnerName = coinToss.winner === 'team1' ? t1 : coinToss.winner === 'team2' ? t2 : '—';
-    const choiceLabel =
-      coinToss.choice === 'serve'
-        ? 'Serve first'
-        : coinToss.choice === 'receive'
-          ? 'Receive first'
-          : coinToss.choice === 'side'
-            ? 'Choose side / court end'
-            : '—';
-    const teamAName = coinToss.teamAAssignment === 'team1' ? t1 : t2;
-    const teamBName = coinToss.teamBAssignment === 'team1' ? t1 : t2;
-    let firstServer = 'A';
-    if (coinToss.choice === 'serve') {
-      firstServer = coinToss.winner === 'team1' && coinToss.teamAAssignment === 'team1' ? 'A' : 'B';
-    } else if (coinToss.choice === 'receive') {
-      firstServer = coinToss.winner === 'team1' && coinToss.teamAAssignment === 'team1' ? 'B' : 'A';
-    }
-    const servingTeamName = firstServer === 'A' ? teamAName : teamBName;
-    const receivingTeamName = firstServer === 'A' ? teamBName : teamAName;
-    const sideSelectedBy = coinToss.choice === 'side' ? winnerName : '—';
-    const sideNote =
-      coinToss.choice === 'side'
-        ? 'Winner chose side; first serve defaults to Team A (left) per setup — adjust if your competition rules differ.'
-        : null;
-    return {
-      winnerName,
-      choiceLabel,
-      teamAName,
-      teamBName,
-      servingTeamName,
-      receivingTeamName,
-      sideSelectedBy,
-      firstServerLabel: firstServer === 'A' ? `Team A (${teamAName})` : `Team B (${teamBName})`,
-      sideNote
-    };
-  };
+  const getCoinTossSummary = () =>
+    getSetupCoinTossOutcome(coinToss, {
+      team1Name: team1.name,
+      team2Name: team2.name
+    });
 
   const validateRoster = (roster, teamLabel) => {
     const errors = [];
@@ -445,15 +378,6 @@ export default function GameSetup() {
     }
     if (field === 'teamBAssignment') {
       if (value) newCoinToss.teamAAssignment = value === 'team1' ? 'team2' : 'team1';
-    }
-    if (field === 'winner' && value && newCoinToss.choice) {
-      if (value === 'team1' && (newCoinToss.choice === 'serve' || newCoinToss.choice === 'receive')) {
-        newCoinToss.teamAAssignment = 'team1';
-        newCoinToss.teamBAssignment = 'team2';
-      } else if (value === 'team2' && (newCoinToss.choice === 'serve' || newCoinToss.choice === 'receive')) {
-        newCoinToss.teamAAssignment = 'team2';
-        newCoinToss.teamBAssignment = 'team1';
-      }
     }
     setCoinToss(newCoinToss);
   };
@@ -548,13 +472,7 @@ export default function GameSetup() {
           role: p.role
         }));
 
-      // Determine first server based on coin toss
-      let firstServer = 'A';
-      if (coinToss.choice === 'serve') {
-        firstServer = coinToss.winner === 'team1' && coinToss.teamAAssignment === 'team1' ? 'A' : 'B';
-      } else if (coinToss.choice === 'receive') {
-        firstServer = coinToss.winner === 'team1' && coinToss.teamAAssignment === 'team1' ? 'B' : 'A';
-      }
+      const firstServer = getFirstServerForSetup(coinToss);
 
       // Generate game code
       let code = generateGameCode();
@@ -810,7 +728,7 @@ export default function GameSetup() {
               </div>
             </div>
             <div className="setup-buttons">
-              <button onClick={() => navigate('/')}>Cancel</button>
+              <button onClick={() => navigate('/home')}>Cancel</button>
               <button onClick={() => setCurrentStep(2)}>Next →</button>
             </div>
           </div>
@@ -1207,8 +1125,12 @@ export default function GameSetup() {
 
               {coinToss.winner && coinToss.choice && (
                 <div className="coin-toss-assignment">
-                  <h3>Assign Team Positions</h3>
-                  <p>Choose which team will be Team A (left side) or Team B (right side):</p>
+                  <h3>
+                    {coinToss.choice === 'side'
+                      ? `${coinToss.winner === 'team1' ? team1.name : team2.name} — choose court side`
+                      : `${coinToss.winner === 'team1' ? team2.name : team1.name} — choose court side`}
+                  </h3>
+                  <p>Team A = left side · Team B = right side (scoreboard / display)</p>
                   <div className="form-row">
                     <div className="form-group">
                       <label style={{ color: '#ff6b6b' }}>Team A (Left Side)</label>
@@ -1239,28 +1161,29 @@ export default function GameSetup() {
 
             {/* Same block as DC_Volley_patched_fixed_2.html #coinTossResult (hidden until winner + choice) */}
             {coinToss.winner && coinToss.choice && (() => {
-              const legacy = getCoinTossResultLegacyStrings();
               const s = getCoinTossSummary();
-              const firstServer = s ? s.servingTeamName : legacy?.firstServer;
-              const firstReceiver = s ? s.receivingTeamName : legacy?.firstReceiver;
-              let courtSides = legacy?.courtSides ?? '';
-              if (s) {
-                courtSides = `Team A (${s.teamAName}) — Left | Team B (${s.teamBName}) — Right`;
-              }
+              if (!s) return null;
               return (
                 <div id="coinTossResult" className="coin-toss-result-box" aria-live="polite">
                   <div className="coin-toss-result-heading">✓ Coin Toss Result:</div>
                   <div className="coin-toss-result-body">
                     <div>
-                      🎯 <strong>First Server:</strong> <span>{firstServer}</span>
+                      🏆 <strong>Toss won by:</strong> <span>{s.winnerName}</span>
                     </div>
                     <div>
-                      🔥 <strong>First Receiver:</strong> <span>{firstReceiver}</span>
+                      ✅ <strong>Winner&apos;s choice:</strong> <span>{s.choiceLabel}</span>
                     </div>
                     <div>
-                      📍 <strong>Court Sides:</strong> <span>{courtSides}</span>
+                      🎯 <strong>Serving first:</strong> <span>{s.servingTeamName}</span>
                     </div>
-                    {s?.sideNote && <div className="coin-toss-result-note">{s.sideNote}</div>}
+                    <div>
+                      🔥 <strong>Receiving first:</strong> <span>{s.receivingTeamName}</span>
+                    </div>
+                    <div className="coin-toss-result-note">{s.autoNote}</div>
+                    <div>
+                      📍 <strong>Court sides:</strong> <span>{s.courtSidesText}</span>
+                    </div>
+                    {!s.teamAName && <div className="coin-toss-result-note">{s.sideNote}</div>}
                   </div>
                 </div>
               );
@@ -1271,7 +1194,7 @@ export default function GameSetup() {
                 Select <strong>coin toss winner</strong> and <strong>winner&apos;s choice</strong> to see the toss result.
               </p>
             )}
-            {coinToss.winner && coinToss.choice && !getCoinTossSummary() && (
+            {coinToss.winner && coinToss.choice && getCoinTossSummary() && !getCoinTossSummary()?.teamAName && (
               <p className="coin-toss-summary-hint">
                 Assign <strong>Team A (left)</strong> and <strong>Team B (right)</strong> above to lock court sides for the match.
               </p>

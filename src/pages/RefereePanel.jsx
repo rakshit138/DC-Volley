@@ -21,6 +21,7 @@ import {
   updateRallyState
 } from '../services/gameService';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { getDecidingSetTossSummary } from '../utils/coinTossLogic';
 import { db } from '../firebase/config';
 import {
   shouldCompleteSet,
@@ -201,10 +202,34 @@ function LineupList({ team, teamName, lineup, players, serving, currentSetData, 
   );
 }
 
-function CourtGrid({ team, lineup, players, serving, liberoJerseys }) {
+/** Tag follows the libero on court (rotation-safe); position in data is where they entered. */
+function getLiberoReplacementAt(replacements, liberoJersey, courtPosition) {
+  if (!replacements?.length || liberoJersey == null) return null;
+  const lib = String(liberoJersey);
+  const forLibero = replacements.filter((r) => String(r.libero) === lib);
+  if (forLibero.length === 0) return null;
+
+  const exact = forLibero.find((r) => Number(r.position) === courtPosition);
+  if (exact?.originalPlayer) return String(exact.originalPlayer);
+
+  // One active libero on court — show replaced player wherever that libero is now
+  if (forLibero.length === 1 && forLibero[0].originalPlayer) {
+    return String(forLibero[0].originalPlayer);
+  }
+
+  const legacyIndex = forLibero.find((r) => Number(r.position) === courtPosition - 1);
+  if (legacyIndex?.originalPlayer) return String(legacyIndex.originalPlayer);
+
+  return forLibero[0]?.originalPlayer ? String(forLibero[0].originalPlayer) : null;
+}
+
+function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, currentSet }) {
   const arr = Array.isArray(lineup) ? lineup : [];
   const padded = [...arr];
   while (padded.length < 6) padded.push(null);
+  const replacements = (liberoReplacements?.[team] || []).filter(
+    (r) => !r.set || r.set === currentSet
+  );
 
   return (
     <div className="referee-court-grid">
@@ -212,11 +237,17 @@ function CourtGrid({ team, lineup, players, serving, liberoJerseys }) {
         const jersey = padded[pos - 1];
         const isServer = serving === team && pos === 1;
         const isLibero = jersey != null && liberoJerseys && liberoJerseys.has(String(jersey));
+        const replacedJersey = isLibero
+          ? getLiberoReplacementAt(replacements, jersey, pos)
+          : null;
         return (
           <div
             key={pos}
             className={`referee-court-pos ${isServer ? 'server' : ''} ${isLibero ? 'libero-on-court' : ''}`}
           >
+            {replacedJersey && (
+              <span className="referee-libero-replaced-tag">#{replacedJersey}</span>
+            )}
             <span className="referee-pos-label">{POS_LABELS[pos]}</span>
             <span className="referee-pos-jersey">{jersey != null ? jersey : '-'}</span>
           </div>
@@ -314,7 +345,7 @@ export default function RefereePanel() {
 
   useEffect(() => {
     if (!gameCode) {
-      navigate('/');
+      navigate('/home');
     }
   }, [gameCode, navigate]);
 
@@ -1452,7 +1483,7 @@ export default function RefereePanel() {
       <div className="referee-container">
         <div className="referee-error">
           {error || 'Game not found'}
-          <button onClick={() => navigate('/')} className="referee-back-btn">Go Home</button>
+          <button onClick={() => navigate('/home')} className="referee-back-btn">Go Home</button>
         </div>
       </div>
     );
@@ -1709,9 +1740,10 @@ export default function RefereePanel() {
                 <CourtGrid
                   team={leftTeam}
                   lineup={lineupLeft}
-                  players={playersLeft}
                   serving={serving}
                   liberoJerseys={liberoJerseysLeft}
+                  liberoReplacements={gameData.liberoReplacements}
+                  currentSet={currentSet}
                 />
               </div>
               <div className="referee-court-controls">
@@ -1776,9 +1808,10 @@ export default function RefereePanel() {
                 <CourtGrid
                   team={rightTeam}
                   lineup={lineupRight}
-                  players={playersRight}
                   serving={serving}
                   liberoJerseys={liberoJerseysRight}
+                  liberoReplacements={gameData.liberoReplacements}
+                  currentSet={currentSet}
                 />
               </div>
               <div className="referee-court-controls">
@@ -2104,9 +2137,13 @@ export default function RefereePanel() {
             <h3 className="referee-modal-title">🎯 COIN TOSS — RESULT</h3>
             <ul className="referee-coin-toss-summary-list">
               <li><strong>Toss won by:</strong> {coinTossSummary.tossWinnerName}</li>
-              <li><strong>Choice:</strong> {coinTossSummary.choiceLabel}</li>
+              <li><strong>Winner&apos;s choice:</strong> {coinTossSummary.choiceLabel}</li>
+              {coinTossSummary.autoLine && (
+                <li><strong>Automatic:</strong> {coinTossSummary.autoLine}</li>
+              )}
               <li><strong>Serving first:</strong> {coinTossSummary.servingName}</li>
               <li><strong>Receiving first:</strong> {coinTossSummary.receivingName}</li>
+              <li><strong>Court side chosen by:</strong> {coinTossSummary.sideChooserName}</li>
               <li><strong>Court (referee left):</strong> {coinTossSummary.courtLeftLabel || '—'}</li>
               <li><strong>Display / scoreboard:</strong> {coinTossSummary.sideNote}</li>
             </ul>
@@ -2397,11 +2434,10 @@ function DecidingSetTossModal({ open, gameCode, gameData, onClose, onTossComplet
 
     setUpdating(true);
     try {
-      let firstServer = 'A';
-      if (choice === 'serve') {
-        firstServer = tossWinner;
-      } else {
-        firstServer = tossWinner === 'A' ? 'B' : 'A';
+      const loser = tossWinner === 'A' ? 'B' : 'A';
+      let firstServer = tossWinner;
+      if (choice === 'receive' || choice === 'side') {
+        firstServer = loser;
       }
 
       const currentSet = gameData.currentSet || 1;
@@ -2423,18 +2459,14 @@ function DecidingSetTossModal({ open, gameCode, gameData, onClose, onTossComplet
 
       const aName = gameData?.teamAName || 'Team A';
       const bName = gameData?.teamBName || 'Team B';
-      const receive = firstServer === 'A' ? 'B' : 'A';
-      const courtLeftLabel = teamOnRefereeLeft === 'A' ? `${aName} (Team A)` : `${bName} (Team B)`;
-      const summary = {
-        tossWinnerName: tossWinner === 'A' ? aName : bName,
-        choiceLabel: choice === 'serve' ? 'Serve first' : 'Receive first',
-        servingName: firstServer === 'A' ? aName : bName,
-        receivingName: receive === 'A' ? aName : bName,
-        courtLeftLabel,
-        sideNote: swapped
-          ? `${bName} on left (Team B slot), ${aName} on right (Team A slot) — display swap active`
-          : `${aName} on left (Team A), ${bName} on right (Team B)`
-      };
+      const summary = getDecidingSetTossSummary({
+        tossWinner,
+        choice,
+        teamOnRefereeLeft,
+        teamAName: aName,
+        teamBName: bName,
+        swapped
+      });
       setTimeout(() => {
         onTossComplete(summary);
       }, 400);
@@ -2492,13 +2524,24 @@ function DecidingSetTossModal({ open, gameCode, gameData, onClose, onTossComplet
               <button type="button" className="referee-toss-choice-btn" onClick={() => setTossChoice('receive')} disabled={updating}>
                 📥 RECEIVE FIRST
               </button>
+              <button type="button" className="referee-toss-choice-btn" onClick={() => setTossChoice('side')} disabled={updating}>
+                📍 CHOOSE SIDE
+              </button>
             </div>
           </>
         ) : (
           <>
-            <h4 style={{ color: '#ffd700', textAlign: 'center', marginBottom: '20px' }}>STEP 3: TEAM ON REFEREE&apos;S LEFT</h4>
+            <h4 style={{ color: '#ffd700', textAlign: 'center', marginBottom: '20px' }}>
+              STEP 3:{' '}
+              {tossChoice === 'side'
+                ? `${tossWinner === 'A' ? aName : bName} — COURT SIDE`
+                : `${tossWinner === 'A' ? bName : aName} — COURT SIDE`}
+            </h4>
             <p style={{ color: '#aaa', textAlign: 'center', fontSize: 13, marginBottom: 16 }}>
-              Facing the court from the referee stand — which team is on your left side?
+              {tossChoice === 'side'
+                ? `${tossWinner === 'A' ? bName : aName} serves first · ${tossWinner === 'A' ? aName : bName} receives (automatic). `
+                : `${tossWinner === 'A' ? aName : bName} chose ${tossChoice === 'serve' ? 'serve' : 'receive'} · ${tossWinner === 'A' ? bName : aName} gets the other role (automatic). `}
+              Facing the court from the referee stand — which team is on your left?
             </p>
             <div className="referee-toss-buttons">
               <button

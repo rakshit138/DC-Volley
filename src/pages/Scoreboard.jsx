@@ -35,7 +35,7 @@ export default function Scoreboard() {
       <div className="scoreboard-container">
         <div className="scoreboard-error">
           {error || 'Game not found'}
-          <button onClick={() => navigate('/')} className="scoreboard-back-btn">
+          <button onClick={() => navigate('/home')} className="scoreboard-back-btn">
             Go Home
           </button>
         </div>
@@ -72,20 +72,6 @@ export default function Scoreboard() {
   return (
     <div className="scoreboard-container">
       <div className="scoreboard">
-        {/* Match Header */}
-        <div className="scoreboard-header">
-          <div className="scoreboard-title">
-            {gameData.competition || 'VOLLEYBALL MATCH'}
-          </div>
-          {(gameData.venue || gameData.matchDate) && (
-            <div className="scoreboard-subtitle">
-              {gameData.venue || ''}
-              {gameData.venue && gameData.matchDate ? ' | ' : ''}
-              {gameData.matchDate || ''}
-            </div>
-          )}
-        </div>
-
         {/* Score Container */}
         <div className="scoreboard-scores">
           {/* Team A */}
@@ -117,21 +103,59 @@ export default function Scoreboard() {
 
         {/* Set Indicator */}
         <div className="scoreboard-set-indicator">
-          <div className="scoreboard-set-number">SET {currentSet}</div>
+          <div
+            className="scoreboard-set-number"
+            style={{
+              background: `linear-gradient(90deg, ${teamAColor}, ${teamBColor})`,
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              color: 'transparent',
+              WebkitTextFillColor: 'transparent'
+            }}
+          >
+            SET {currentSet}
+          </div>
           <div className="scoreboard-set-dots">
             {Array.from({ length: format }).map((_, i) => {
               const set = sets[i];
               const isWon = set?.winner;
-              let dotClass = 'scoreboard-set-dot';
-              
+              const base = { borderColor: '#fff' };
               if (isWon === 'A') {
-                dotClass += ' set-won-a';
-              } else if (isWon === 'B') {
-                dotClass += ' set-won-b';
+                return (
+                  <div
+                    key={i}
+                    className="scoreboard-set-dot"
+                    style={{
+                      ...base,
+                      background: teamAColor,
+                      borderColor: teamAColor,
+                      color: '#fff',
+                      boxShadow: `0 0 22px ${teamAColor}`
+                    }}
+                  >
+                    {i + 1}
+                  </div>
+                );
               }
-
+              if (isWon === 'B') {
+                return (
+                  <div
+                    key={i}
+                    className="scoreboard-set-dot"
+                    style={{
+                      ...base,
+                      background: teamBColor,
+                      borderColor: teamBColor,
+                      color: '#fff',
+                      boxShadow: `0 0 22px ${teamBColor}`
+                    }}
+                  >
+                    {i + 1}
+                  </div>
+                );
+              }
               return (
-                <div key={i} className={dotClass}>
+                <div key={i} className="scoreboard-set-dot" style={base}>
                   {i + 1}
                 </div>
               );
@@ -139,12 +163,12 @@ export default function Scoreboard() {
           </div>
           <div className="scoreboard-set-legend">
             <div className="scoreboard-legend-item">
-              <div className="scoreboard-legend-dot team-a-dot"></div>
-              <span className="team-a-color">{gameData.teamAName || 'Team A'}</span>
+              <div className="scoreboard-legend-dot" style={{ background: teamAColor, boxShadow: `0 0 12px ${teamAColor}` }} />
+              <span style={{ color: teamAColor }}>{gameData.teamAName || 'Team A'}</span>
             </div>
             <div className="scoreboard-legend-item">
-              <div className="scoreboard-legend-dot team-b-dot"></div>
-              <span className="team-b-color">{gameData.teamBName || 'Team B'}</span>
+              <div className="scoreboard-legend-dot" style={{ background: teamBColor, boxShadow: `0 0 12px ${teamBColor}` }} />
+              <span style={{ color: teamBColor }}>{gameData.teamBName || 'Team B'}</span>
             </div>
           </div>
         </div>
@@ -152,21 +176,33 @@ export default function Scoreboard() {
         {/* Footer Info */}
         <div className="scoreboard-footer">
           <div className="scoreboard-footer-item">
-            <div className="scoreboard-footer-label">SETS WON</div>
+            <div className="scoreboard-footer-label-row">
+              <span className="scoreboard-footer-label">SETS</span>
+            </div>
             <div className="scoreboard-footer-value">
-              {setsWon.A} - {setsWon.B}
+              <span style={{ color: teamAColor }}>{setsWon.A}</span>
+              <span className="scoreboard-footer-sep"> — </span>
+              <span style={{ color: teamBColor }}>{setsWon.B}</span>
             </div>
           </div>
           <div className="scoreboard-footer-item">
-            <div className="scoreboard-footer-label">TIMEOUTS REMAINING</div>
+            <div className="scoreboard-footer-label-row">
+              <span className="scoreboard-footer-label">TIMEOUTS</span>
+            </div>
             <div className="scoreboard-footer-value">
-              {2 - timeoutsUsedA} - {2 - timeoutsUsedB}
+              <span style={{ color: teamAColor }}>{2 - timeoutsUsedA}</span>
+              <span className="scoreboard-footer-sep"> — </span>
+              <span style={{ color: teamBColor }}>{2 - timeoutsUsedB}</span>
             </div>
           </div>
           <div className="scoreboard-footer-item">
-            <div className="scoreboard-footer-label">SUBS REMAINING</div>
+            <div className="scoreboard-footer-label-row">
+              <span className="scoreboard-footer-label">SUBS</span>
+            </div>
             <div className="scoreboard-footer-value">
-              {subLimit - subsUsedA} - {subLimit - subsUsedB}
+              <span style={{ color: teamAColor }}>{subLimit - subsUsedA}</span>
+              <span className="scoreboard-footer-sep"> — </span>
+              <span style={{ color: teamBColor }}>{subLimit - subsUsedB}</span>
             </div>
           </div>
         </div>
@@ -177,13 +213,16 @@ export default function Scoreboard() {
         <div className="scoreboard-winner">
           <div className="scoreboard-winner-trophy">🏆</div>
           <div className="scoreboard-winner-text">MATCH WINNER</div>
-          <div className={`scoreboard-winner-team ${
-            setsWon.A > setsWon.B ? 'team-a-color' : 'team-b-color'
-          }`}>
-            {setsWon.A > setsWon.B 
+          <div
+            className="scoreboard-winner-team"
+            style={{
+              color: setsWon.A > setsWon.B ? teamAColor : teamBColor,
+              textShadow: `0 0 40px ${setsWon.A > setsWon.B ? teamAColor : teamBColor}`
+            }}
+          >
+            {setsWon.A > setsWon.B
               ? gameData.teamAName || 'Team A'
-              : gameData.teamBName || 'Team B'
-            }
+              : gameData.teamBName || 'Team B'}
           </div>
           <div className="scoreboard-winner-score">
             Wins {Math.max(setsWon.A, setsWon.B)} - {Math.min(setsWon.A, setsWon.B)}

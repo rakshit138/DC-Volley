@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { getGameByCode } from '../services/gameService';
 import { markPrepSessionStart } from '../utils/setupSession';
+import splashLogo from '../assets/splash_screen_logo.jpeg';
 import './Home.css';
 
 export default function Home() {
@@ -50,7 +51,10 @@ export default function Home() {
   return (
     <div className="home-container">
       <div className="home-card">
-        <h1 className="home-title">🏐 VolleySync</h1>
+        <div className="home-brand">
+          <img src={splashLogo} alt="" className="home-brand-logo" />
+          <h1 className="home-title">VolleySync</h1>
+        </div>
         <p className="home-subtitle">Real-Time Volleyball Scoreboard</p>
 
         <div className="home-input-group">

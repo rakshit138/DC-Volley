@@ -1,0 +1,19 @@
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-label {
+  color: #00d9ff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.login-input-email {
+  text-align: left;
+  letter-spacing: normal;
+  text-transform: none;
+  font-size: 16px;
+  font-weight: 500;
+}

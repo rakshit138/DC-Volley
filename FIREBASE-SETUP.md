@@ -139,13 +139,48 @@ You can inspect or debug data in Firebase Console: **Build → Firestore Databas
 
 ---
 
-## Step 6: (Optional) Enable Authentication
+## Step 6: Enable Email / Password sign-in (required for the app gate)
 
-The app initializes Auth; you only need to enable it if you plan to use sign-in later.
+The app shows an **email sign-in** screen before the home (join / start game) screen. Public **scoreboard** and **lineup** URLs with `?code=...` still work without a login. Everything under `/home`, game setup, display selection, and referee panel requires a signed-in user.
 
-1. In Firebase Console: **Build → Authentication**.
-2. Click **"Get started"**.
-3. If you want anonymous sign-in: **Sign-in method** → **Anonymous** → Enable → Save.
+### 6.1 Turn on Email/Password in Firebase
+
+1. Open **[Firebase Console](https://console.firebase.google.com)** → your project.
+2. Go to **Build → Authentication**.
+3. Click **Get started** (first time only).
+4. Open the **Sign-in method** tab.
+5. Click **Email/Password**.
+6. Enable the first toggle (**Email/Password**) → **Save**.  
+   (Leave “Email link (passwordless sign-in)” off unless you want it later.)
+
+### 6.2 Create the first user (recommended)
+
+**Option A — Console (no invite code):**
+
+1. **Authentication → Users** → **Add user**.
+2. Enter email and password → **Add user**.
+3. Use that email/password on the app’s sign-in page (`/`).
+
+**Option B — Invite-based signup on `/register`:**
+
+1. In the project root `.env`, set a long random secret, for example:
+   - `VITE_REGISTRATION_INVITE_CODE=your-long-random-secret-here`
+2. Restart the dev server (`npm run dev`) or rebuild before deploy so Vite picks up the variable.
+3. Open **`/register`** only on a private device (this URL is not linked from the main app).
+4. Enter the **invite code**, email, and password → **Create account**.
+5. After that, sign in at `/` with the same email/password.
+
+Anyone who knows your deployed site URL could still try `/register`; the invite code is **obfuscation**, not cryptographic security. For stronger control, add users only in the Console and leave `VITE_REGISTRATION_INVITE_CODE` empty (self-service registration disabled).
+
+### 6.3 Authorized domains (Hosting / custom domain)
+
+1. **Authentication → Settings** → **Authorized domains**.
+2. Ensure **`localhost`** is listed (for local dev).
+3. After you deploy, add your Hosting domain (e.g. `your-project.web.app`) if it is not added automatically.
+
+### 6.4 (Optional) Tighten Firestore with signed-in users
+
+The default dev rules may allow reads/writes without auth. To restrict writes to signed-in users only, update **Firestore → Rules** when you are ready (test thoroughly so scoreboard/listeners still match your product rules).
 
 ---
 
@@ -206,7 +241,7 @@ Your app will be available at `https://YOUR_PROJECT_ID.web.app`.
 - [ ] `.env` created with all `VITE_FIREBASE_*` variables
 - [ ] Firestore rules published (games collection)
 - [ ] `npm install` and `npm run dev` run successfully
-- [ ] (Optional) Authentication enabled
+- [ ] Authentication: Email/Password enabled; first user created (Console or `/register` + invite code)
 - [ ] (Optional) Hosting initialized and deployed
 
 ---

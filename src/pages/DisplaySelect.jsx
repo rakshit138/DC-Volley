@@ -64,7 +64,7 @@ export default function DisplaySelect() {
 
         <button
           className="display-select-back"
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/home')}
         >
           ← Back to Home
         </button>
