@@ -17,6 +17,164 @@ import { sanitizeFirestoreWrite } from '../utils/firestoreSanitize';
 
 const GAMES_COLLECTION = 'games';
 
+export function defaultChallengeSystem() {
+  return {
+    challenges: { A: 2, B: 2 },
+    log: [],
+    awaitingDecision: false,
+    pendingTeam: null,
+    pendingType: null,
+    pendingScore: null,
+    lastRallyRolledBack: false
+  };
+}
+
+function buildSanctionSnapshot(gameData, sanctionSystem) {
+  const ss = sanctionSystem || gameData.sanctionSystem || {};
+  return JSON.parse(
+    JSON.stringify({
+      misconduct: ss.misconduct,
+      delay: ss.delay,
+      expelled: ss.expelled || { A: [], B: [] },
+      disqualified: ss.disqualified,
+      coachExpelled: ss.coachExpelled || { A: false, B: false },
+      coachDisqualified: ss.coachDisqualified,
+      sanctionsA: gameData.sanctionsA || 0,
+      sanctionsB: gameData.sanctionsB || 0
+    })
+  );
+}
+
+function applyPointToTeamInMemory({
+  gameData,
+  sets,
+  teams,
+  team,
+  currentSet,
+  actionHistory,
+  matchSummary,
+  includeSanctionSnapshot = true
+}) {
+  const format = Number(gameData.format) || 3;
+  const set = sets[currentSet - 1];
+  const previousScore = { A: set.score?.A || 0, B: set.score?.B || 0 };
+  const previousServing = set.serving || 'A';
+  const previousLineupA = teams.A?.lineup ? [...teams.A.lineup] : [];
+  const previousLineupB = teams.B?.lineup ? [...teams.B.lineup] : [];
+  const previousLiberoReplacementsA = gameData.liberoReplacements?.A
+    ? JSON.parse(JSON.stringify(gameData.liberoReplacements.A))
+    : [];
+  const previousLiberoReplacementsB = gameData.liberoReplacements?.B
+    ? JSON.parse(JSON.stringify(gameData.liberoReplacements.B))
+    : [];
+  const previousSummaryLength = (matchSummary || []).length;
+
+  const actionToSave = {
+    type: 'point',
+    team,
+    previousScore,
+    previousServing,
+    previousLineupA,
+    previousLineupB,
+    previousLiberoReplacementsA,
+    previousLiberoReplacementsB,
+    setNumber: currentSet,
+    previousSummaryLength
+  };
+  if (includeSanctionSnapshot) {
+    actionToSave.sanctionSnapshot = buildSanctionSnapshot(gameData, gameData.sanctionSystem);
+  }
+
+  set.score[team] = (set.score[team] || 0) + 1;
+  const updatedScore = { A: set.score.A || 0, B: set.score.B || 0 };
+
+  const serviceChanged = set.serving !== team;
+  if (serviceChanged) {
+    set.serving = team;
+    if (teams[team]?.lineup?.length > 0) {
+      const lineup = [...teams[team].lineup];
+      while (lineup.length < 6) lineup.push(null);
+      const first = lineup.shift();
+      lineup.push(first);
+      teams[team].lineup = lineup;
+    }
+  }
+
+  const scoreA = set.score.A || 0;
+  const scoreB = set.score.B || 0;
+  const isDecidingSet = (format === 5 && currentSet === 5) || (format === 3 && currentSet === 3);
+  const target = isDecidingSet ? 15 : 25;
+  const lead = 2;
+
+  let completed = false;
+  let winner = null;
+  let setsWon = { ...(gameData.setsWon || { A: 0, B: 0 }) };
+  let status = gameData.status || 'LIVE';
+  let awaitingNextSet = gameData.awaitingNextSet || false;
+  let setBreakStartedAt = gameData.setBreakStartedAt || null;
+
+  const summary = [...(matchSummary || [])];
+  summary.push({
+    type: 'POINT',
+    team,
+    setNumber: currentSet,
+    description: `Point scored by Team ${team}`,
+    score: updatedScore,
+    timestamp: new Date()
+  });
+
+  const updatedActionHistory = [...(actionHistory || []), actionToSave];
+  if (updatedActionHistory.length > 50) updatedActionHistory.shift();
+
+  if ((scoreA >= target && scoreA - scoreB >= lead) || (scoreB >= target && scoreB - scoreA >= lead)) {
+    completed = true;
+    winner = scoreA > scoreB ? 'A' : 'B';
+    set.winner = winner;
+    set.endTime = new Date();
+    setsWon[winner] = (setsWon[winner] || 0) + 1;
+    const setsToWin = Math.ceil(format / 2);
+    const isFinished = setsWon[winner] >= setsToWin;
+    status = isFinished ? 'FINISHED' : 'LIVE';
+    awaitingNextSet = !isFinished;
+    setBreakStartedAt = !isFinished ? new Date() : null;
+    summary.push({
+      type: 'SET_WON',
+      team: winner,
+      setNumber: currentSet,
+      description: `Set ${currentSet} won by Team ${winner}`,
+      score: updatedScore,
+      timestamp: new Date()
+    });
+    sets[currentSet - 1] = set;
+    return {
+      completed,
+      winner,
+      matchFinished: isFinished,
+      sets,
+      teams,
+      setsWon,
+      actionHistory: updatedActionHistory,
+      matchSummary: summary,
+      status,
+      awaitingNextSet,
+      setBreakStartedAt
+    };
+  }
+
+  sets[currentSet - 1] = set;
+  return {
+    completed: false,
+    sets,
+    teams,
+    setsWon,
+    actionHistory: updatedActionHistory,
+    matchSummary: summary,
+    status,
+    awaitingNextSet,
+    setBreakStartedAt
+  };
+}
+
 /**
  * Creates a new game document in Firestore
  * @param {string} gameCode - Unique 6-character game code
@@ -58,7 +216,11 @@ export async function createGame(gameCode, gameData) {
       disqualified: { A: [], B: [] }, // [{jersey}] - entire match
       coachExpelled: { A: false, B: false },
       coachDisqualified: { A: false, B: false }
-    }
+    },
+    challengeSystem: rest.challengeSystem || defaultChallengeSystem(),
+    coachLineupsBySet: rest.coachLineupsBySet || {},
+    coachLineupLockedA: rest.coachLineupLockedA || false,
+    coachLineupLockedB: rest.coachLineupLockedB || false
   };
 
   await setDoc(gameRef, gameDoc);
@@ -1138,7 +1300,8 @@ export async function addPoint(gameCode, team, rallyActive = false) {
   const previousLiberoReplacementsA = gameData.liberoReplacements?.A ? JSON.parse(JSON.stringify(gameData.liberoReplacements.A)) : [];
   const previousLiberoReplacementsB = gameData.liberoReplacements?.B ? JSON.parse(JSON.stringify(gameData.liberoReplacements.B)) : [];
   const previousSummaryLength = (gameData.matchSummary || []).length;
-  
+  const sanctionSnapshot = buildSanctionSnapshot(gameData, gameData.sanctionSystem);
+
   const actionToSave = {
     type: 'point',
     team: team,
@@ -1149,7 +1312,8 @@ export async function addPoint(gameCode, team, rallyActive = false) {
     previousLiberoReplacementsA: previousLiberoReplacementsA,
     previousLiberoReplacementsB: previousLiberoReplacementsB,
     setNumber: currentSet,
-    previousSummaryLength: previousSummaryLength
+    previousSummaryLength: previousSummaryLength,
+    sanctionSnapshot
   };
   
   // Increment score
@@ -1713,6 +1877,17 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
   const mergedHistory = [...prevActionHistory, nextSetAction];
   if (mergedHistory.length > 50) mergedHistory.shift();
 
+  const prevChallenge = gameData.challengeSystem || defaultChallengeSystem();
+  const challengeSystem = {
+    ...prevChallenge,
+    challenges: { A: 2, B: 2 },
+    awaitingDecision: false,
+    pendingTeam: null,
+    pendingType: null,
+    pendingScore: null,
+    lastRallyRolledBack: false
+  };
+
   // Keep setBreakStartedAt until the first "Start rally" of this new set (cleared in updateRallyState).
   await updateDoc(gameRef, {
     sets,
@@ -1720,6 +1895,9 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
     currentSet: nextSet,
     awaitingNextSet: false,
     actionHistory: mergedHistory,
+    challengeSystem,
+    coachLineupLockedA: false,
+    coachLineupLockedB: false,
     updatedAt: serverTimestamp()
   });
 }
@@ -1793,4 +1971,269 @@ export async function updateRallyState(gameCode, rallyActive) {
     ...(rallyActive ? { setBreakStartedAt: null } : {}),
     updatedAt: serverTimestamp()
   });
+}
+
+/**
+ * Request a video challenge (stores pending state in Firestore)
+ */
+export async function requestChallenge(gameCode, team, type) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  if (!gameSnap.exists()) throw new Error('Game not found');
+
+  const gameData = gameSnap.data();
+  const cs = gameData.challengeSystem || defaultChallengeSystem();
+  if (cs.awaitingDecision) throw new Error('Pending challenge not yet decided!');
+  if (!team || !type) throw new Error('Select team and challenge type');
+  if ((cs.challenges?.[team] ?? 0) <= 0) throw new Error(`Team ${team} has no challenges left`);
+
+  const currentSet = gameData.currentSet || 1;
+  const set = gameData.sets?.[currentSet - 1];
+  const pendingScore = set ? { A: set.score?.A || 0, B: set.score?.B || 0 } : null;
+
+  await updateDoc(gameRef, {
+    challengeSystem: {
+      ...cs,
+      awaitingDecision: true,
+      pendingTeam: team,
+      pendingType: type,
+      pendingScore,
+      lastRallyRolledBack: false
+    },
+    updatedAt: serverTimestamp()
+  });
+  return { ok: true };
+}
+
+/**
+ * Resolve a pending challenge (UNSUCCESSFUL or SUCCESSFUL with rally rollback)
+ */
+export async function resolveChallenge(gameCode, result) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  if (!gameSnap.exists()) throw new Error('Game not found');
+
+  const gameData = gameSnap.data();
+  const cs = gameData.challengeSystem || defaultChallengeSystem();
+  if (!cs.awaitingDecision) throw new Error('No pending challenge');
+
+  const team = cs.pendingTeam;
+  const type = cs.pendingType;
+  const currentSet = gameData.currentSet || 1;
+  const teamAName = gameData.teamAName || 'Team A';
+  const teamBName = gameData.teamBName || 'Team B';
+  const teamName = team === 'A' ? teamAName : teamBName;
+  const opponentName = team === 'A' ? teamBName : teamAName;
+
+  const entry = {
+    set: currentSet,
+    team,
+    teamName,
+    type,
+    result,
+    timestamp: new Date().toLocaleTimeString(),
+    scoreAtChallenge: cs.pendingScore || null,
+    opponentName
+  };
+
+  let matchSummary = [...(gameData.matchSummary || [])];
+  let challengeSystem = { ...cs };
+
+  if (result === 'UNSUCCESSFUL') {
+    challengeSystem.challenges = {
+      ...challengeSystem.challenges,
+      [team]: Math.max(0, (challengeSystem.challenges?.[team] ?? 0) - 1)
+    };
+    entry.action = 'CONFIRMED';
+    challengeSystem.log = [entry, ...(challengeSystem.log || [])];
+    challengeSystem.awaitingDecision = false;
+    challengeSystem.pendingTeam = null;
+    challengeSystem.pendingType = null;
+    challengeSystem.pendingScore = null;
+    challengeSystem.lastRallyRolledBack = false;
+
+    matchSummary.push({
+      type: 'CHALLENGE',
+      team,
+      setNumber: currentSet,
+      description: `🚩 ${teamName} Challenge UNSUCCESSFUL (${type}) — Decision stands, -1 challenge`,
+      score: cs.pendingScore || undefined,
+      timestamp: new Date()
+    });
+
+    await updateDoc(gameRef, {
+      challengeSystem,
+      matchSummary,
+      updatedAt: serverTimestamp()
+    });
+    return { ok: true, result: 'UNSUCCESSFUL' };
+  }
+
+  if (challengeSystem.lastRallyRolledBack) {
+    throw new Error('This rally was already rolled back!');
+  }
+
+  let sets = [...(gameData.sets || [])];
+  let teams = gameData.teams ? JSON.parse(JSON.stringify(gameData.teams)) : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
+  let actionHistory = [...(gameData.actionHistory || [])];
+  let liberoReplacements = {
+    A: gameData.liberoReplacements?.A ? JSON.parse(JSON.stringify(gameData.liberoReplacements.A)) : [],
+    B: gameData.liberoReplacements?.B ? JSON.parse(JSON.stringify(gameData.liberoReplacements.B)) : []
+  };
+  let sanctionSystem = gameData.sanctionSystem
+    ? JSON.parse(JSON.stringify(gameData.sanctionSystem))
+    : undefined;
+  let setsWon = { ...(gameData.setsWon || { A: 0, B: 0 }) };
+  let status = gameData.status || 'LIVE';
+  let awaitingNextSet = gameData.awaitingNextSet || false;
+  let setBreakStartedAt = gameData.setBreakStartedAt || null;
+
+  let lastPointIdx = -1;
+  for (let hi = actionHistory.length - 1; hi >= 0; hi--) {
+    if (actionHistory[hi].type === 'point') {
+      lastPointIdx = hi;
+      break;
+    }
+  }
+  if (lastPointIdx === -1) throw new Error('No point action found in history to roll back');
+
+  const snapshot = actionHistory[lastPointIdx];
+  const set = sets[currentSet - 1];
+  if (!set) throw new Error('Current set not found');
+
+  set.score = { ...snapshot.previousScore };
+  set.serving = snapshot.previousServing;
+  teams.A.lineup = snapshot.previousLineupA ? [...snapshot.previousLineupA] : [];
+  teams.B.lineup = snapshot.previousLineupB ? [...snapshot.previousLineupB] : [];
+  liberoReplacements.A = snapshot.previousLiberoReplacementsA
+    ? JSON.parse(JSON.stringify(snapshot.previousLiberoReplacementsA))
+    : [];
+  liberoReplacements.B = snapshot.previousLiberoReplacementsB
+    ? JSON.parse(JSON.stringify(snapshot.previousLiberoReplacementsB))
+    : [];
+
+  if (snapshot.sanctionSnapshot) {
+    sanctionSystem = JSON.parse(JSON.stringify(snapshot.sanctionSnapshot));
+  }
+
+  if (snapshot.previousSummaryLength !== undefined) {
+    matchSummary = matchSummary.slice(0, snapshot.previousSummaryLength);
+  }
+
+  if (set.winner) {
+    const winner = set.winner;
+    delete set.winner;
+    delete set.endTime;
+    if (setsWon[winner] > 0) setsWon[winner] -= 1;
+  }
+  status = 'LIVE';
+  awaitingNextSet = false;
+  setBreakStartedAt = null;
+
+  actionHistory = actionHistory.slice(0, lastPointIdx);
+  sets[currentSet - 1] = set;
+
+  const pointResult = applyPointToTeamInMemory({
+    gameData: { ...gameData, setsWon, status, awaitingNextSet, setBreakStartedAt, sanctionSystem },
+    sets,
+    teams,
+    team,
+    currentSet,
+    actionHistory,
+    matchSummary
+  });
+
+  entry.action = 'REVERTED';
+  entry.preRallyScoreA = snapshot.previousScore.A;
+  entry.preRallyScoreB = snapshot.previousScore.B;
+  entry.preRallyServing = snapshot.previousServing;
+
+  challengeSystem.log = [entry, ...(challengeSystem.log || [])];
+  challengeSystem.awaitingDecision = false;
+  challengeSystem.pendingTeam = null;
+  challengeSystem.pendingType = null;
+  challengeSystem.pendingScore = null;
+  challengeSystem.lastRallyRolledBack = true;
+
+  const challengeSummary = {
+    type: 'CHALLENGE',
+    team,
+    setNumber: currentSet,
+    description: `🚩 ${teamName} Challenge SUCCESSFUL (${type}) — rally reversed | Point & service awarded to ${teamName}`,
+    score: pointResult.matchSummary?.[pointResult.matchSummary.length - 1]?.score,
+    timestamp: new Date()
+  };
+  pointResult.matchSummary.push(challengeSummary);
+
+  const updatePayload = {
+    sets: pointResult.sets,
+    teams: pointResult.teams,
+    setsWon: pointResult.setsWon,
+    actionHistory: pointResult.actionHistory,
+    matchSummary: pointResult.matchSummary,
+    liberoReplacements,
+    challengeSystem,
+    status: pointResult.status,
+    awaitingNextSet: pointResult.awaitingNextSet,
+    updatedAt: serverTimestamp()
+  };
+  if (sanctionSystem) updatePayload.sanctionSystem = sanctionSystem;
+  if (pointResult.awaitingNextSet) {
+    updatePayload.setBreakStartedAt = serverTimestamp();
+  } else {
+    updatePayload.setBreakStartedAt = null;
+  }
+
+  await updateDoc(gameRef, updatePayload);
+  return { ok: true, result: 'SUCCESSFUL', setCompleted: pointResult.completed };
+}
+
+/**
+ * Clears a stuck pending challenge (e.g. after rollback error) so a new one can be requested.
+ */
+export async function cancelPendingChallenge(gameCode) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  if (!gameSnap.exists()) throw new Error('Game not found');
+
+  const gameData = gameSnap.data();
+  const cs = gameData.challengeSystem || defaultChallengeSystem();
+  if (!cs.awaitingDecision) return { ok: true };
+
+  await updateDoc(gameRef, {
+    challengeSystem: {
+      ...cs,
+      awaitingDecision: false,
+      pendingTeam: null,
+      pendingType: null,
+      pendingScore: null
+    },
+    updatedAt: serverTimestamp()
+  });
+  return { ok: true };
+}
+
+/**
+ * Save approved coach lineup details to Firestore (parsed data only, not the file)
+ */
+export async function saveCoachLineupApproval(gameCode, forTeam, details) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  if (!gameSnap.exists()) throw new Error('Game not found');
+
+  const gameData = gameSnap.data();
+  const setKey = String(details.setNumber || gameData.currentSet || 1);
+  const coachLineupsBySet = { ...(gameData.coachLineupsBySet || {}) };
+  coachLineupsBySet[setKey] = {
+    ...(coachLineupsBySet[setKey] || {}),
+    [forTeam]: details
+  };
+
+  const lockField = forTeam === 'A' ? 'coachLineupLockedA' : 'coachLineupLockedB';
+  await updateDoc(gameRef, {
+    coachLineupsBySet,
+    [lockField]: true,
+    updatedAt: serverTimestamp()
+  });
+  return { ok: true };
 }

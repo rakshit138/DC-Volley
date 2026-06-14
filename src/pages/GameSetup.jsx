@@ -18,6 +18,8 @@ import {
 } from '../utils/rosterStorage';
 import './GameSetup.css';
 import OfficialsModal from '../components/OfficialsModal';
+import CoachLineupInject, { isLineupLockedForTeam } from '../components/CoachLineupInject';
+import { shareRosterToCoach } from '../utils/coachLineup';
 import { getSetupCoinTossOutcome, getFirstServerForSetup } from '../utils/coinTossLogic';
 
 export default function GameSetup() {
@@ -86,6 +88,11 @@ export default function GameSetup() {
   // Click-player-then-position flow (like HTML): liberos cannot be in starting lineup
   const [selectedPlayerForLineup, setSelectedPlayerForLineup] = useState(null); // { side: 'A'|'B', jersey }
 
+  const [coachLineupLockedA, setCoachLineupLockedA] = useState(false);
+  const [coachLineupLockedB, setCoachLineupLockedB] = useState(false);
+  const [coachLineupsBySet, setCoachLineupsBySet] = useState({});
+  const [coachLineupPending, setCoachLineupPending] = useState(null);
+
   // Libero Serve Configuration (which player libero can serve for)
   const [liberoServeConfig, setLiberoServeConfig] = useState({
     A: { enabled: false, designatedJersey: null },
@@ -126,6 +133,14 @@ export default function GameSetup() {
   useEffect(() => {
     ensurePrepSessionStart();
   }, []);
+
+  useEffect(() => {
+    if (currentStep === 6) {
+      setCoachLineupLockedA(false);
+      setCoachLineupLockedB(false);
+      setCoachLineupPending(null);
+    }
+  }, [currentStep]);
 
   const handleSaveRoster = async () => {
     try {
@@ -371,6 +386,34 @@ export default function GameSetup() {
   };
 
 
+  const handleShareRosterToCoach = (teamNum) => {
+    const teamKey = teamNum === 1 ? 'team1' : 'team2';
+    const team = teamNum === 1 ? team1 : team2;
+    const roster = teamNum === 1 ? roster1 : roster2;
+    const players = roster
+      .filter((p) => p.jersey && p.name)
+      .map((p) => ({ jersey: p.jersey, name: p.name, role: p.role || 'player' }));
+    let courtSide = '';
+    if (coinToss.teamAAssignment === teamKey) courtSide = 'A';
+    else if (coinToss.teamBAssignment === teamKey) courtSide = 'B';
+    shareRosterToCoach({
+      teamKey,
+      teamName: team.name || `Team ${teamNum}`,
+      teamColor: team.color,
+      players,
+      courtSide,
+      matchInfo: {
+        competition: matchInfo.competition,
+        matchNumber: matchInfo.matchNumber,
+        venue: matchInfo.venue,
+        date: matchInfo.date,
+        time: matchInfo.time,
+        division: matchInfo.division,
+        category: matchInfo.category
+      }
+    });
+  };
+
   const handleCoinTossChange = (field, value) => {
     let newCoinToss = { ...coinToss, [field]: value };
     if (field === 'teamAAssignment') {
@@ -561,7 +604,19 @@ export default function GameSetup() {
             B: assignment.teamBLineup
           }
           // startTime: set server-side in createGame when the match goes live (after officials)
-        }]
+        }],
+        challengeSystem: {
+          challenges: { A: 2, B: 2 },
+          log: [],
+          awaitingDecision: false,
+          pendingTeam: null,
+          pendingType: null,
+          pendingScore: null,
+          lastRallyRolledBack: false
+        },
+        coachLineupsBySet: Object.keys(coachLineupsBySet).length ? coachLineupsBySet : undefined,
+        coachLineupLockedA,
+        coachLineupLockedB
       };
 
       await createGame(code, gameData);
@@ -1072,6 +1127,42 @@ export default function GameSetup() {
                 </div>
               </div>
             )}
+            <div style={{ display: 'flex', gap: 12, marginTop: 16, marginBottom: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => handleShareRosterToCoach(1)}
+                style={{
+                  background: 'linear-gradient(135deg, #ff6b6b 0%, #c0392b 100%)',
+                  color: '#fff',
+                  padding: '12px 24px',
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                  border: '2px solid #ff9999',
+                  boxShadow: '0 0 10px rgba(255,107,107,0.4)',
+                  borderRadius: 6,
+                  cursor: 'pointer'
+                }}
+              >
+                📤 Share Team 1 Roster
+              </button>
+              <button
+                type="button"
+                onClick={() => handleShareRosterToCoach(2)}
+                style={{
+                  background: 'linear-gradient(135deg, #4ecdc4 0%, #1a9e96 100%)',
+                  color: '#fff',
+                  padding: '12px 24px',
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                  border: '2px solid #80e8e2',
+                  boxShadow: '0 0 10px rgba(78,205,196,0.4)',
+                  borderRadius: 6,
+                  cursor: 'pointer'
+                }}
+              >
+                📤 Share Team 2 Roster
+              </button>
+            </div>
             <div className="setup-buttons">
               <button onClick={() => setCurrentStep(2)}>← Back</button>
               <button
@@ -1293,19 +1384,20 @@ export default function GameSetup() {
           const rosterB = (assignment.teamBRoster || []).filter(p => p.jersey && !isLibero(p)).sort((a, b) => Number(a.jersey) - Number(b.jersey));
           const lineupA = assignment.teamALineup || [];
           const lineupB = assignment.teamBLineup || [];
-          const setLineupForA = (idx, jersey) => {
-            const newLineup = [...(coinToss.teamAAssignment === 'team1' ? lineup1 : lineup2)];
-            newLineup[idx] = jersey;
+          const setLineupForA = (newLineup) => {
             if (coinToss.teamAAssignment === 'team1') setLineup1(newLineup);
             else setLineup2(newLineup);
           };
-          const setLineupForB = (idx, jersey) => {
-            const newLineup = [...(coinToss.teamBAssignment === 'team1' ? lineup1 : lineup2)];
-            newLineup[idx] = jersey;
+          const setLineupForB = (newLineup) => {
             if (coinToss.teamBAssignment === 'team1') setLineup1(newLineup);
             else setLineup2(newLineup);
           };
           const assignPosition = (side, pos) => {
+            if (isLineupLockedForTeam(side, coachLineupLockedA, coachLineupLockedB)) {
+              const tName = side === 'A' ? assignment.teamA.name : assignment.teamB.name;
+              window.alert(`🔒 LINEUP LOCKED\n\n${tName}'s lineup was submitted by the Coach and approved by the Scorer.\n\nNo manual changes are permitted.`);
+              return;
+            }
             const idx = pos - 1;
             const lineup = side === 'A' ? lineupA : lineupB;
             const sel = selectedPlayerForLineup;
@@ -1313,8 +1405,8 @@ export default function GameSetup() {
             const currentAtPos = lineup[idx];
             const currentIdx = lineup.findIndex(j => j && String(j) === String(sel.jersey));
             if (currentIdx === idx) {
-              if (side === 'A') setLineupForA(idx, null);
-              else setLineupForB(idx, null);
+              if (side === 'A') setLineupForA(lineup.map((j, i) => (i === idx ? null : j)));
+              else setLineupForB(lineup.map((j, i) => (i === idx ? null : j)));
               setSelectedPlayerForLineup(null);
               return;
             }
@@ -1322,9 +1414,19 @@ export default function GameSetup() {
               alert(`Player #${sel.jersey} is already at P${currentIdx + 1}. Click that position to remove them first, then assign to the new position.`);
               return;
             }
-            if (side === 'A') setLineupForA(idx, sel.jersey);
-            else setLineupForB(idx, sel.jersey);
+            const next = [...lineup];
+            next[idx] = sel.jersey;
+            if (side === 'A') setLineupForA(next);
+            else setLineupForB(next);
             setSelectedPlayerForLineup(null);
+          };
+          const selectPlayerForLineup = (side, jersey) => {
+            if (isLineupLockedForTeam(side, coachLineupLockedA, coachLineupLockedB)) {
+              const tName = side === 'A' ? assignment.teamA.name : assignment.teamB.name;
+              window.alert(`🔒 LINEUP LOCKED\n\n${tName}'s lineup was submitted by the Coach and approved by the Scorer.\n\nNo manual changes are permitted.`);
+              return;
+            }
+            setSelectedPlayerForLineup(prev => prev?.side === side && prev?.jersey === jersey ? null : { side, jersey });
           };
           const posOrder = [4, 3, 2, 5, 6, 1];
           return (
@@ -1337,8 +1439,9 @@ export default function GameSetup() {
                   {rosterA.map(p => (
                     <div
                       key={p.jersey}
-                      className={`roster-player ${selectedPlayerForLineup?.side === 'A' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}`}
-                      onClick={() => setSelectedPlayerForLineup(prev => prev?.side === 'A' && prev?.jersey === p.jersey ? null : { side: 'A', jersey: p.jersey })}
+                      className={`roster-player ${selectedPlayerForLineup?.side === 'A' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${coachLineupLockedA ? ' roster-player-locked' : ''}`}
+                      onClick={() => selectPlayerForLineup('A', p.jersey)}
+                      style={coachLineupLockedA ? { opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' } : undefined}
                     >
                       <strong>#{p.jersey}</strong> {p.name || ''}
                       {p.role === 'captain' ? <span className="lineup-badge-c">C</span> : null}
@@ -1354,8 +1457,9 @@ export default function GameSetup() {
                       return (
                         <div
                           key={pos}
-                          className={`court-setup-pos ${jersey ? 'filled' : ''}`}
+                          className={`court-setup-pos ${jersey ? 'filled' : ''}${coachLineupLockedA ? ' court-setup-pos-locked' : ''}`}
                           onClick={() => assignPosition('A', pos)}
+                          style={coachLineupLockedA ? { cursor: 'not-allowed', pointerEvents: 'none', outline: '2px solid #00ff0055' } : undefined}
                         >
                           <span className="pos-setup-label">{label}</span>
                           <div className="pos-setup-num">{jersey ? `#${jersey}` : '-'}</div>
@@ -1371,8 +1475,9 @@ export default function GameSetup() {
                   {rosterB.map(p => (
                     <div
                       key={p.jersey}
-                      className={`roster-player ${selectedPlayerForLineup?.side === 'B' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}`}
-                      onClick={() => setSelectedPlayerForLineup(prev => prev?.side === 'B' && prev?.jersey === p.jersey ? null : { side: 'B', jersey: p.jersey })}
+                      className={`roster-player ${selectedPlayerForLineup?.side === 'B' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${coachLineupLockedB ? ' roster-player-locked' : ''}`}
+                      onClick={() => selectPlayerForLineup('B', p.jersey)}
+                      style={coachLineupLockedB ? { opacity: 0.45, cursor: 'not-allowed', pointerEvents: 'none' } : undefined}
                     >
                       <strong>#{p.jersey}</strong> {p.name || ''}
                       {p.role === 'captain' ? <span className="lineup-badge-c">C</span> : null}
@@ -1388,8 +1493,9 @@ export default function GameSetup() {
                       return (
                         <div
                           key={pos}
-                          className={`court-setup-pos ${jersey ? 'filled' : ''}`}
+                          className={`court-setup-pos ${jersey ? 'filled' : ''}${coachLineupLockedB ? ' court-setup-pos-locked' : ''}`}
                           onClick={() => assignPosition('B', pos)}
+                          style={coachLineupLockedB ? { cursor: 'not-allowed', pointerEvents: 'none', outline: '2px solid #00ff0055' } : undefined}
                         >
                           <span className="pos-setup-label">{label}</span>
                           <div className="pos-setup-num">{jersey ? `#${jersey}` : '-'}</div>
@@ -1401,6 +1507,31 @@ export default function GameSetup() {
               </div>
             </div>
             <p className="setup-hint lineup-click-hint">Click on a player, then click on a court position to assign</p>
+
+            <CoachLineupInject
+              teamAName={assignment.teamA.name}
+              teamBName={assignment.teamB.name}
+              rosterA={assignment.teamARoster || []}
+              rosterB={assignment.teamBRoster || []}
+              lineupA={lineupA}
+              lineupB={lineupB}
+              onLineupAChange={setLineupForA}
+              onLineupBChange={setLineupForB}
+              lockedA={coachLineupLockedA}
+              lockedB={coachLineupLockedB}
+              onLockAChange={setCoachLineupLockedA}
+              onLockBChange={setCoachLineupLockedB}
+              setNumber={1}
+              pendingApproval={coachLineupPending}
+              onPendingChange={setCoachLineupPending}
+              onCoachLineupApproved={(forTeam, details) => {
+                setCoachLineupsBySet((prev) => ({
+                  ...prev,
+                  '1': { ...(prev['1'] || {}), [forTeam]: details }
+                }));
+              }}
+            />
+
             {/* Libero Serve Configuration */}
             {(() => {
               const hasLibero = (roster) => roster.some(p => 

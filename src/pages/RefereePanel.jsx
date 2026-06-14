@@ -18,7 +18,8 @@ import {
   rotateLineup,
   addPoint,
   setupNextSet,
-  updateRallyState
+  updateRallyState,
+  saveCoachLineupApproval
 } from '../services/gameService';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getDecidingSetTossSummary } from '../utils/coinTossLogic';
@@ -49,11 +50,15 @@ import AutoLiberoEntryModal from '../components/AutoLiberoEntryModal';
 import AutoLiberoExitModal from '../components/AutoLiberoExitModal';
 import MatchDataModal from '../components/MatchDataModal';
 import SummaryModal from '../components/SummaryModal';
+import ChallengeModal from '../components/ChallengeModal';
+import CoachLineupInject, { isLineupLockedForTeam } from '../components/CoachLineupInject';
+import { buildChallengeReportHtml } from '../utils/challengeExport';
 import { downloadMatchReportHtml } from '../utils/exportMatchReportHtml';
 import { exportFivbReport } from '../utils/exportFivbReport';
 import { firestoreTimeToDate } from '../utils/firestoreTime';
 import dcVolleyLogo from '../assets/dc_volley_logo.jpeg';
 import './RefereePanel.css';
+import '../components/ChallengeModal.css';
 
 const POS_LABELS = { 1: 'P1-RB', 2: 'P2-RF', 3: 'P3-MF', 4: 'P4-LF', 5: 'P5-LB', 6: 'P6-MB' };
 const GRID_ORDER = [4, 3, 2, 5, 6, 1];
@@ -223,7 +228,7 @@ function getLiberoReplacementAt(replacements, liberoJersey, courtPosition) {
   return forLibero[0]?.originalPlayer ? String(forLibero[0].originalPlayer) : null;
 }
 
-function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, currentSet }) {
+function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, currentSet, highlight }) {
   const arr = Array.isArray(lineup) ? lineup : [];
   const padded = [...arr];
   while (padded.length < 6) padded.push(null);
@@ -232,7 +237,7 @@ function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, c
   );
 
   return (
-    <div className="referee-court-grid">
+    <div className={`referee-court-grid${highlight ? ' challenge-highlight' : ''}`}>
       {GRID_ORDER.map((pos) => {
         const jersey = padded[pos - 1];
         const isServer = serving === team && pos === 1;
@@ -275,6 +280,8 @@ export default function RefereePanel() {
   const [liberoModal, setLiberoModal] = useState({ open: false, team: null });
   const [rosterModalOpen, setRosterModalOpen] = useState(false);
   const [sanctionModalOpen, setSanctionModalOpen] = useState(false);
+  const [challengeModalOpen, setChallengeModalOpen] = useState(false);
+  const [courtHighlightTeam, setCourtHighlightTeam] = useState(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [nextSetModalOpen, setNextSetModalOpen] = useState(false);
   const [decidingSetTossModalOpen, setDecidingSetTossModalOpen] = useState(false);
@@ -1369,6 +1376,7 @@ export default function RefereePanel() {
       });
     }
     
+    html += buildChallengeReportHtml(gameData);
     html += '</div></body></html>';
     return html;
   };
@@ -1648,6 +1656,7 @@ export default function RefereePanel() {
             👥 OFFICIALS
           </button>
           <button type="button" className="referee-btn-small referee-btn-sanction" onClick={() => setSanctionModalOpen(true)}>⚠️ SANCTION</button>
+          <button type="button" className="referee-btn-small referee-btn-challenge" onClick={() => setChallengeModalOpen(true)} style={{ background: 'linear-gradient(135deg,#ff9500 0%,#ff6f00 100%)', color: '#fff', fontSize: 11, border: '2px solid #ffb74d' }}>🚩 CHALLENGE</button>
           <button type="button" className="referee-btn-small referee-btn-swap" onClick={handleSwap} disabled={updating || status === 'FINISHED'} title="Swap which team is on left/right">🔄 SWAP</button>
           <button type="button" className="referee-btn-small" onClick={handleUndo} disabled={updating || status === 'FINISHED'} style={{ background: '#ff9500', color: '#fff' }}>↶ UNDO</button>
           <button type="button" className="referee-btn-small" onClick={handleFinishGame} disabled={updating || status === 'FINISHED'}>End Match</button>
@@ -1744,6 +1753,7 @@ export default function RefereePanel() {
                   liberoJerseys={liberoJerseysLeft}
                   liberoReplacements={gameData.liberoReplacements}
                   currentSet={currentSet}
+                  highlight={courtHighlightTeam === leftTeam}
                 />
               </div>
               <div className="referee-court-controls">
@@ -1812,6 +1822,7 @@ export default function RefereePanel() {
                   liberoJerseys={liberoJerseysRight}
                   liberoReplacements={gameData.liberoReplacements}
                   currentSet={currentSet}
+                  highlight={courtHighlightTeam === rightTeam}
                 />
               </div>
               <div className="referee-court-controls">
@@ -2176,6 +2187,21 @@ export default function RefereePanel() {
         onExportPDF={handleExportSummaryPDF}
       />
 
+      <ChallengeModal
+        open={challengeModalOpen}
+        gameCode={gameCode}
+        gameData={gameData}
+        onClose={() => setChallengeModalOpen(false)}
+        onHighlightCourt={(team) => {
+          setCourtHighlightTeam(team);
+          setTimeout(() => setCourtHighlightTeam(null), 2600);
+        }}
+        onResolved={() => {
+          setMessage('Challenge resolved');
+          setTimeout(() => setMessage(''), 2500);
+        }}
+      />
+
       <button type="button" className="referee-back-home" onClick={() => navigate('/display-select')}>← Back</button>
     </div>
   );
@@ -2188,6 +2214,11 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
   const [selectedPlayerForLineup, setSelectedPlayerForLineup] = useState(null); // { side: 'A'|'B', jersey }
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState('');
+  const [coachLineupLockedA, setCoachLineupLockedA] = useState(false);
+  const [coachLineupLockedB, setCoachLineupLockedB] = useState(false);
+  const [coachLineupPending, setCoachLineupPending] = useState(null);
+
+  const nextSetNumber = gameData?.currentSet ? gameData.currentSet + 1 : 1;
 
   // Fix #9: empty grid for new set — do not pre-fill from previous set lineups in Firestore.
   useEffect(() => {
@@ -2195,6 +2226,9 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
       setLineupA(Array(6).fill(null));
       setLineupB(Array(6).fill(null));
       setSelectedPlayerForLineup(null);
+      setCoachLineupLockedA(false);
+      setCoachLineupLockedB(false);
+      setCoachLineupPending(null);
     }
   }, [open, gameData?.currentSet]);
 
@@ -2246,6 +2280,11 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
   const posLabels = { 4: 'P4-LF', 3: 'P3-MF', 2: 'P2-RF', 5: 'P5-LB', 6: 'P6-MB', 1: 'P1-RB' };
 
   const assignPosition = (side, pos) => {
+    if (isLineupLockedForTeam(side, coachLineupLockedA, coachLineupLockedB)) {
+      const tName = side === 'A' ? gameData?.teamAName : gameData?.teamBName;
+      window.alert(`🔒 LINEUP LOCKED\n\n${tName}'s lineup was submitted by the Coach and approved by the Scorer.\n\nNo manual changes are permitted.`);
+      return;
+    }
     const idx = pos - 1;
     const lineup = side === 'A' ? lineupA : lineupB;
     const setLineup = side === 'A' ? setLineupA : setLineupB;
@@ -2270,6 +2309,17 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
     setSelectedPlayerForLineup(null);
   };
 
+  const selectPlayerForLineup = (side, jersey, locked) => {
+    if (locked) {
+      const tName = side === 'A' ? gameData?.teamAName : gameData?.teamBName;
+      window.alert(`🔒 LINEUP LOCKED\n\n${tName}'s lineup was submitted by the Coach and approved by the Scorer.\n\nNo manual changes are permitted.`);
+      return;
+    }
+    setSelectedPlayerForLineup((prev) =>
+      prev?.side === side && prev?.jersey === jersey ? null : { side, jersey }
+    );
+  };
+
   return (
     <div className="referee-modal-overlay referee-modal-overlay--blocking">
       <div className="referee-modal-content" style={{ maxWidth: '1000px' }}>
@@ -2288,9 +2338,7 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
                     className={`roster-player ${selectedPlayerForLineup?.side === 'A' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${disq ? ' roster-player--disqualified' : ''}${inj ? ' roster-player--injured' : ''}${locked ? ' roster-player--disabled' : ''}`}
                     onClick={() => {
                       if (locked) return;
-                      setSelectedPlayerForLineup((prev) =>
-                        prev?.side === 'A' && prev?.jersey === p.jersey ? null : { side: 'A', jersey: p.jersey }
-                      );
+                      selectPlayerForLineup('A', p.jersey, coachLineupLockedA);
                     }}
                     title={disq ? 'Disqualified — cannot enter lineup' : inj ? 'Unable to play (injury) — cannot enter lineup' : undefined}
                   >
@@ -2320,8 +2368,9 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
                   return (
                     <div
                       key={pos}
-                      className={`court-setup-pos ${jersey ? 'filled' : ''}`}
+                      className={`court-setup-pos ${jersey ? 'filled' : ''}${coachLineupLockedA ? ' court-setup-pos-locked' : ''}`}
                       onClick={() => assignPosition('A', pos)}
+                      style={coachLineupLockedA ? { cursor: 'not-allowed', pointerEvents: 'none', outline: '2px solid #00ff0055' } : undefined}
                     >
                       <span className="pos-setup-label">{posLabels[pos]}</span>
                       <div className="pos-setup-num">{jersey ? `#${jersey}` : '-'}</div>
@@ -2344,9 +2393,7 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
                     className={`roster-player ${selectedPlayerForLineup?.side === 'B' && selectedPlayerForLineup?.jersey === p.jersey ? 'selected' : ''}${disq ? ' roster-player--disqualified' : ''}${inj ? ' roster-player--injured' : ''}${locked ? ' roster-player--disabled' : ''}`}
                     onClick={() => {
                       if (locked) return;
-                      setSelectedPlayerForLineup((prev) =>
-                        prev?.side === 'B' && prev?.jersey === p.jersey ? null : { side: 'B', jersey: p.jersey }
-                      );
+                      selectPlayerForLineup('B', p.jersey, coachLineupLockedB);
                     }}
                     title={disq ? 'Disqualified — cannot enter lineup' : inj ? 'Unable to play (injury) — cannot enter lineup' : undefined}
                   >
@@ -2376,8 +2423,9 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
                   return (
                     <div
                       key={pos}
-                      className={`court-setup-pos ${jersey ? 'filled' : ''}`}
+                      className={`court-setup-pos ${jersey ? 'filled' : ''}${coachLineupLockedB ? ' court-setup-pos-locked' : ''}`}
                       onClick={() => assignPosition('B', pos)}
+                      style={coachLineupLockedB ? { cursor: 'not-allowed', pointerEvents: 'none', outline: '2px solid #00ff0055' } : undefined}
                     >
                       <span className="pos-setup-label">{posLabels[pos]}</span>
                       <div className="pos-setup-num">{jersey ? `#${jersey}` : '-'}</div>
@@ -2389,6 +2437,33 @@ function NextSetSetupModal({ open, gameCode, gameData, onComplete, onCancel }) {
           </div>
         </div>
         <p className="referee-lineup-hint">Click on a player, then click on a court position to assign</p>
+
+        <CoachLineupInject
+          teamAName={gameData?.teamAName || 'Team A'}
+          teamBName={gameData?.teamBName || 'Team B'}
+          rosterA={gameData?.teams?.A?.players || []}
+          rosterB={gameData?.teams?.B?.players || []}
+          lineupA={lineupA}
+          lineupB={lineupB}
+          onLineupAChange={setLineupA}
+          onLineupBChange={setLineupB}
+          lockedA={coachLineupLockedA}
+          lockedB={coachLineupLockedB}
+          onLockAChange={setCoachLineupLockedA}
+          onLockBChange={setCoachLineupLockedB}
+          setNumber={nextSetNumber}
+          pendingApproval={coachLineupPending}
+          onPendingChange={setCoachLineupPending}
+          onCoachLineupApproved={async (forTeam, details) => {
+            if (gameCode) {
+              try {
+                await saveCoachLineupApproval(gameCode, forTeam, details);
+              } catch (err) {
+                console.error('Failed to save coach lineup to Firebase:', err);
+              }
+            }
+          }}
+        />
 
         {error && <div className="referee-error">{error}</div>}
 

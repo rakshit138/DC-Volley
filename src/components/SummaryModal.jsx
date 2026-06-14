@@ -1,5 +1,6 @@
 import React from 'react';
 import { firestoreTimeToDate, matchSummarySetWonTime } from '../utils/firestoreTime';
+import { buildChallengeReportHtml, getChallengeStats } from '../utils/challengeExport';
 import './SummaryModal.css';
 
 function formatSetDurationMs(start, end) {
@@ -181,6 +182,30 @@ export default function SummaryModal({ open, gameData, onClose, onExportPDF }) {
             })}
           </div>
         </div>
+
+        {(gameData.challengeSystem?.log?.length ?? 0) > 0 && (
+          <div className="summary-section">
+            <h4>Challenge Report</h4>
+            {(() => {
+              const stats = getChallengeStats(gameData);
+              return (
+                <div style={{ fontSize: 13, color: '#ccc', lineHeight: 1.6, marginBottom: 10 }}>
+                  <div>
+                    <strong style={{ color: teamAColor }}>{teamAName}:</strong> {stats.usedA} used ({stats.chSuccA} ✅ / {stats.chFailA} ❌) — {stats.remainingA} remaining
+                  </div>
+                  <div>
+                    <strong style={{ color: teamBColor }}>{teamBName}:</strong> {stats.usedB} used ({stats.chSuccB} ✅ / {stats.chFailB} ❌) — {stats.remainingB} remaining
+                  </div>
+                </div>
+              );
+            })()}
+            <div
+              className="summary-challenge-log"
+              style={{ fontSize: 12, maxHeight: 200, overflowY: 'auto' }}
+              dangerouslySetInnerHTML={{ __html: buildChallengeReportHtml(gameData) }}
+            />
+          </div>
+        )}
 
         <div className="summary-section">
           <h4>Chronological Event Log</h4>

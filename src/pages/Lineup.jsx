@@ -64,6 +64,15 @@ export default function Lineup() {
   const teamAColor = gameData.teamAColor || '#ff6b6b';
   const teamBColor = gameData.teamBColor || '#4ecdc4';
 
+  const getSetWinner = (set) => {
+    if (!set) return null;
+    if (set.winner === 'A' || set.winner === 'B') return set.winner;
+    if (set.endTime && set.score && set.score.A !== set.score.B) {
+      return set.score.A > set.score.B ? 'A' : 'B';
+    }
+    return null;
+  };
+
   const isLiberoRole = (role) =>
     role === 'libero1' || role === 'libero2' || role === 'liberocaptain';
 
@@ -163,12 +172,12 @@ export default function Lineup() {
 
         <div className="stats-row">
           <div className="stat-item">
-            <span className="stat-label" style={{ color: teamColor }}>Timeouts Left</span>
-            <span className="stat-value" style={{ color: teamColor }}>{2 - timeoutsUsed} / 2</span>
+            <span className="stat-label" style={{ color: teamColor }}>Timeouts Used</span>
+            <span className="stat-value" style={{ color: teamColor }}>{timeoutsUsed} / 2</span>
           </div>
           <div className="stat-item">
-            <span className="stat-label" style={{ color: teamColor }}>Subs Left</span>
-            <span className="stat-value" style={{ color: teamColor }}>{subLimit - subsUsed} / {subLimit}</span>
+            <span className="stat-label" style={{ color: teamColor }}>Subs Used</span>
+            <span className="stat-value" style={{ color: teamColor }}>{subsUsed} / {subLimit}</span>
           </div>
         </div>
       </div>
@@ -196,12 +205,44 @@ export default function Lineup() {
           <div className="set-dots">
             {Array.from({ length: format }).map((_, i) => {
               const set = sets[i];
-              const won = set?.winner;
+              const won = getSetWinner(set);
+              const baseStyle = { borderColor: '#fff' };
+              if (won === 'A') {
+                return (
+                  <div
+                    key={i}
+                    className="set-dot"
+                    style={{
+                      ...baseStyle,
+                      background: teamAColor,
+                      borderColor: teamAColor,
+                      color: '#fff',
+                      boxShadow: `0 0 22px ${teamAColor}`
+                    }}
+                  >
+                    {i + 1}
+                  </div>
+                );
+              }
+              if (won === 'B') {
+                return (
+                  <div
+                    key={i}
+                    className="set-dot"
+                    style={{
+                      ...baseStyle,
+                      background: teamBColor,
+                      borderColor: teamBColor,
+                      color: '#fff',
+                      boxShadow: `0 0 22px ${teamBColor}`
+                    }}
+                  >
+                    {i + 1}
+                  </div>
+                );
+              }
               return (
-                <div
-                  key={i}
-                  className={`set-dot ${won === 'A' ? 'set-won-a' : ''} ${won === 'B' ? 'set-won-b' : ''}`}
-                >
+                <div key={i} className="set-dot" style={baseStyle}>
                   {i + 1}
                 </div>
               );

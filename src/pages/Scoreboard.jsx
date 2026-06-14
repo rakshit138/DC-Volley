@@ -65,9 +65,17 @@ export default function Scoreboard() {
   const timeoutsUsedB = currentSetData.timeouts?.B?.length ?? 0;
   const subsUsedA = currentSetData.substitutions?.A?.length ?? 0;
   const subsUsedB = currentSetData.substitutions?.B?.length ?? 0;
-  const subLimit = gameData.subLimit ?? 6;
   const teamAColor = gameData.teamAColor || '#ff6b6b';
   const teamBColor = gameData.teamBColor || '#4ecdc4';
+
+  const getSetWinner = (set) => {
+    if (!set) return null;
+    if (set.winner === 'A' || set.winner === 'B') return set.winner;
+    if (set.endTime && set.score && set.score.A !== set.score.B) {
+      return set.score.A > set.score.B ? 'A' : 'B';
+    }
+    return null;
+  };
 
   return (
     <div className="scoreboard-container">
@@ -118,9 +126,9 @@ export default function Scoreboard() {
           <div className="scoreboard-set-dots">
             {Array.from({ length: format }).map((_, i) => {
               const set = sets[i];
-              const isWon = set?.winner;
+              const won = getSetWinner(set);
               const base = { borderColor: '#fff' };
-              if (isWon === 'A') {
+              if (won === 'A') {
                 return (
                   <div
                     key={i}
@@ -137,7 +145,7 @@ export default function Scoreboard() {
                   </div>
                 );
               }
-              if (isWon === 'B') {
+              if (won === 'B') {
                 return (
                   <div
                     key={i}
@@ -190,9 +198,9 @@ export default function Scoreboard() {
               <span className="scoreboard-footer-label">TIMEOUTS</span>
             </div>
             <div className="scoreboard-footer-value">
-              <span style={{ color: teamAColor }}>{2 - timeoutsUsedA}</span>
+              <span style={{ color: teamAColor }}>{timeoutsUsedA}</span>
               <span className="scoreboard-footer-sep"> — </span>
-              <span style={{ color: teamBColor }}>{2 - timeoutsUsedB}</span>
+              <span style={{ color: teamBColor }}>{timeoutsUsedB}</span>
             </div>
           </div>
           <div className="scoreboard-footer-item">
@@ -200,9 +208,9 @@ export default function Scoreboard() {
               <span className="scoreboard-footer-label">SUBS</span>
             </div>
             <div className="scoreboard-footer-value">
-              <span style={{ color: teamAColor }}>{subLimit - subsUsedA}</span>
+              <span style={{ color: teamAColor }}>{subsUsedA}</span>
               <span className="scoreboard-footer-sep"> — </span>
-              <span style={{ color: teamBColor }}>{subLimit - subsUsedB}</span>
+              <span style={{ color: teamBColor }}>{subsUsedB}</span>
             </div>
           </div>
         </div>

@@ -53,7 +53,11 @@ export function saveMatch(gameData) {
         coachDisqualified: { A: false, B: false }
       },
       officials: gameData.officials || {},
-      injuredPlayers: gameData.injuredPlayers || { A: [], B: [] }
+      injuredPlayers: gameData.injuredPlayers || { A: [], B: [] },
+      challengeSystem: gameData.challengeSystem || null,
+      coachLineupsBySet: gameData.coachLineupsBySet || {},
+      coachLineupLockedA: gameData.coachLineupLockedA || false,
+      coachLineupLockedB: gameData.coachLineupLockedB || false
     }
   };
 
@@ -147,6 +151,10 @@ export function loadMatch(file) {
           },
           officials: gameData.officials || {},
           injuredPlayers: gameData.injuredPlayers || { A: [], B: [] },
+          challengeSystem: gameData.challengeSystem || null,
+          coachLineupsBySet: gameData.coachLineupsBySet || {},
+          coachLineupLockedA: gameData.coachLineupLockedA || false,
+          coachLineupLockedB: gameData.coachLineupLockedB || false,
           
           // Timestamps
           createdAt: gameData.startTime ? new Date(gameData.startTime) : new Date(),

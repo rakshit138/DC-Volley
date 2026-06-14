@@ -48,8 +48,8 @@ export default function DisplaySelect() {
             onClick={() => handleSelectRole('referee')}
           >
             <div className="display-option-icon">⚖️</div>
-            <div className="display-option-title">Referee Panel</div>
-            <div className="display-option-desc">Score Control - Full Access</div>
+            <div className="display-option-title">Scorer Panel</div>
+            <div className="display-option-desc">Scorer Control - Full Access</div>
           </button>
 
           <button

@@ -1,3 +1,4 @@
+import { buildChallengeReportHtml, getChallengeStats } from './challengeExport';
 import { firestoreTimeToDate, matchSummarySetWonTime } from './firestoreTime';
 
 /**
@@ -77,6 +78,8 @@ function normalizeGameDataForReport(doc) {
     createdAt: doc.createdAt,
     decidingSetToss: doc.decidingSetToss || null,
     coinToss: doc.coinToss || null,
+    challengeSystem: doc.challengeSystem || null,
+    coachLineupsBySet: doc.coachLineupsBySet || {},
     status: doc.status,
     updatedAt: doc.updatedAt
   };
@@ -390,6 +393,9 @@ function buildReportHTML(gameData) {
   html += '<tr><td class="team-a center" style="font-size:28px;font-weight:bold;">' + setsWonA + '</td><td class="center" style="font-size:20px;font-weight:bold;">vs</td><td class="team-b center" style="font-size:28px;font-weight:bold;">' + setsWonB + '</td></tr>\n';
   html += '<tr><td colspan="3" class="center" style="background:#fff9c4;font-size:20px;font-weight:bold;">🏆 WINNER: ' + winner + '</td></tr>\n';
   html += '<tr><td class="team-a center"><strong>Sanctions: ' + sanctionsCountA + '</strong></td><td class="center"><strong>Total Sanctions</strong></td><td class="team-b center"><strong>Sanctions: ' + sanctionsCountB + '</strong></td></tr>\n';
+  const chStats = getChallengeStats(gameData);
+  html += '<tr><td class="team-a center"><strong>Challenges Used: ' + chStats.usedA + '</strong></td><td class="center"><strong>Video Challenges</strong></td><td class="team-b center"><strong>Challenges Used: ' + chStats.usedB + '</strong></td></tr>\n';
+  html += '<tr><td class="team-a center">Successful: ' + chStats.chSuccA + '</td><td class="center">Challenge Success Rate</td><td class="team-b center">Successful: ' + chStats.chSuccB + '</td></tr>\n';
   html += '</table>\n';
 
   html += '<h2>Set-by-Set Scores</h2>\n<table>\n';
@@ -682,6 +688,8 @@ function buildReportHTML(gameData) {
   html += '<tr class="team-b"><td><strong>Coach</strong></td><td>' + coachB + (asstCoachB ? ' / Asst: ' + asstCoachB : '') + '</td><td class="sig-cell">' + sigImg('coachSignB') + '</td></tr>\n';
   html += '<tr class="team-b"><td><strong>Medical / Trainer</strong></td><td>' + (medicalB ? 'Med: ' + medicalB : '') + (trainerB ? (medicalB ? ' | ' : '') + 'Trainer: ' + trainerB : '') + '</td><td class="sig-cell"></td></tr>\n';
   html += '</table>\n';
+
+  html += buildChallengeReportHtml(gameData);
 
   const generatedAt = new Date().toLocaleString();
   const gameCode = gameData.gameCode || '';
