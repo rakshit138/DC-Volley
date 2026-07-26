@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
+import TeamLogoUpload from './TeamLogoUpload';
 import './OfficialsModal.css';
 
 function useSignatureCanvas(initialDataUrl, signatureKey, onSignatureChange, isOpen) {
@@ -151,6 +152,9 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
   const [medicalB, setMedicalB] = useState(officials.medicalB || '');
   const [trainerB, setTrainerB] = useState(officials.trainerB || '');
 
+  const [logoA, setLogoA] = useState('');
+  const [logoB, setLogoB] = useState('');
+
   const [signatureDataUrls, setSignatureDataUrls] = useState({
     captainSignA1: '', captainSignA2: '', coachSignA: '',
     captainSignB1: '', captainSignB2: '', coachSignB: '',
@@ -186,6 +190,8 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
     setAsstCoachB(gameData?.officials?.asstCoachB || '');
     setMedicalB(gameData?.officials?.medicalB || '');
     setTrainerB(gameData?.officials?.trainerB || '');
+    setLogoA(gameData?.teams?.A?.logoData || gameData?.matchInfo?.logoA || '');
+    setLogoB(gameData?.teams?.B?.logoData || gameData?.matchInfo?.logoB || '');
     const sigs = gameData?.officials?.signatures || {};
     setSignatureDataUrls({
       captainSignA1: sigs.captainSignA1 || '',
@@ -234,6 +240,8 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
       teamBName: teamBName.trim() || gameData?.teamBName,
       coachA, asstCoachA, medicalA, trainerA,
       coachB, asstCoachB, medicalB, trainerB,
+      logoA,
+      logoB,
       signatures
     });
     if (!persistOnSave) onClose();
@@ -274,6 +282,7 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
             <input type="text" placeholder="Medical officer" value={medicalA} onChange={(e) => setMedicalA(e.target.value)} />
             <input type="text" placeholder="Trainer" value={trainerA} onChange={(e) => setTrainerA(e.target.value)} />
           </div>
+          <TeamLogoUpload label="Team A Logo / Country Flag" logoData={logoA} onChange={setLogoA} compact />
           <div className="officials-signatures-row">
             <SigPad label="Captain (before)" refOrHook={captainA1} />
             <div
@@ -298,6 +307,7 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
             <input type="text" placeholder="Medical officer" value={medicalB} onChange={(e) => setMedicalB(e.target.value)} />
             <input type="text" placeholder="Trainer" value={trainerB} onChange={(e) => setTrainerB(e.target.value)} />
           </div>
+          <TeamLogoUpload label="Team B Logo / Country Flag" logoData={logoB} onChange={setLogoB} compact />
           <div className="officials-signatures-row">
             <SigPad label="Captain (before)" refOrHook={captainB1} />
             <div className={postMatchSignatures ? 'officials-post-match-captain-wrap' : undefined}>

@@ -21,6 +21,7 @@ import OfficialsModal from '../components/OfficialsModal';
 import CoachLineupInject, { isLineupLockedForTeam } from '../components/CoachLineupInject';
 import { shareRosterToCoach } from '../utils/coachLineup';
 import { getSetupCoinTossOutcome, getFirstServerForSetup } from '../utils/coinTossLogic';
+import TeamLogoUpload from '../components/TeamLogoUpload';
 
 export default function GameSetup() {
   const { setGameCode } = useGame();
@@ -54,12 +55,14 @@ export default function GameSetup() {
   const [team1, setTeam1] = useState({
     name: 'Warriors',
     color: '#ff6b6b',
-    liberoCanServe: false
+    liberoCanServe: false,
+    logoData: ''
   });
   const [team2, setTeam2] = useState({
     name: 'Eagles',
     color: '#4ecdc4',
-    liberoCanServe: false
+    liberoCanServe: false,
+    logoData: ''
   });
 
   // Coin Toss
@@ -547,6 +550,11 @@ export default function GameSetup() {
         signatures: officialsSheet?.signatures || {}
       };
 
+      const logoA =
+        coinToss.teamAAssignment === 'team1' ? team1.logoData || '' : team2.logoData || '';
+      const logoB =
+        coinToss.teamBAssignment === 'team1' ? team1.logoData || '' : team2.logoData || '';
+
       // Create game data
       const gameData = {
         teamAName: officialsSheet?.teamAName?.trim() || assignment.teamA.name,
@@ -576,12 +584,18 @@ export default function GameSetup() {
         teams: {
           A: {
             players: playersA,
-            lineup: assignment.teamALineup.map(p => p != null ? String(p) : null)
+            lineup: assignment.teamALineup.map(p => p != null ? String(p) : null),
+            logoData: logoA
           },
           B: {
             players: playersB,
-            lineup: assignment.teamBLineup.map(p => p != null ? String(p) : null)
+            lineup: assignment.teamBLineup.map(p => p != null ? String(p) : null),
+            logoData: logoB
           }
+        },
+        matchInfo: {
+          logoA: logoA || null,
+          logoB: logoB || null
         },
         liberoServeConfig: {
           A: {
@@ -814,6 +828,11 @@ export default function GameSetup() {
                     <span>Jersey color</span>
                   </div>
                 </div>
+                <TeamLogoUpload
+                  label="Team 1 Logo / Country Flag"
+                  logoData={team1.logoData}
+                  onChange={(logoData) => setTeam1({ ...team1, logoData })}
+                />
               </div>
               <div className="form-row">
                 <div className="form-group">
@@ -835,6 +854,11 @@ export default function GameSetup() {
                     <span>Jersey color</span>
                   </div>
                 </div>
+                <TeamLogoUpload
+                  label="Team 2 Logo / Country Flag"
+                  logoData={team2.logoData}
+                  onChange={(logoData) => setTeam2({ ...team2, logoData })}
+                />
               </div>
             </div>
             <div className="setup-buttons">

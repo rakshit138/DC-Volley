@@ -183,6 +183,44 @@ export default function SummaryModal({ open, gameData, onClose, onExportPDF }) {
           </div>
         </div>
 
+        {gameData.fairPlay && (gameData.fairPlay.teamA || gameData.fairPlay.teamB) && (
+          <div className="summary-section">
+            <h4>🤝 Fair Play</h4>
+            <div style={{ fontSize: 13, color: '#ccc', lineHeight: 1.8 }}>
+              <div>
+                <strong style={{ color: teamAColor }}>{teamAName}:</strong>{' '}
+                {'★'.repeat(gameData.fairPlay.teamA || 0)}{'☆'.repeat(5 - (gameData.fairPlay.teamA || 0))} ({gameData.fairPlay.teamA || 0}/5)
+              </div>
+              <div>
+                <strong style={{ color: teamBColor }}>{teamBName}:</strong>{' '}
+                {'★'.repeat(gameData.fairPlay.teamB || 0)}{'☆'.repeat(5 - (gameData.fairPlay.teamB || 0))} ({gameData.fairPlay.teamB || 0}/5)
+              </div>
+              {gameData.fairPlay.remarks && (
+                <div style={{ marginTop: 8, fontStyle: 'italic' }}>{gameData.fairPlay.remarks}</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {gameData.forfeit?.declared && (
+          <div className="summary-section" style={{ borderColor: '#d50000' }}>
+            <h4 style={{ color: '#ff3b3b' }}>🚫 Match Forfeit</h4>
+            <div style={{ fontSize: 13, color: '#ff8a8a', lineHeight: 1.8 }}>
+              <div>
+                <strong>Forfeiting team:</strong>{' '}
+                {gameData.forfeit.team === 'A' ? teamAName : teamBName}
+              </div>
+              <div>
+                <strong>Winner:</strong>{' '}
+                {gameData.forfeit.winner === 'A' ? teamAName : teamBName}
+              </div>
+              <div><strong>Reason:</strong> {gameData.forfeit.reason}</div>
+              {gameData.forfeit.remarks && <div><strong>Remarks:</strong> {gameData.forfeit.remarks}</div>}
+              {gameData.forfeit.timestamp && <div><strong>Recorded:</strong> {gameData.forfeit.timestamp}</div>}
+            </div>
+          </div>
+        )}
+
         {(gameData.challengeSystem?.log?.length ?? 0) > 0 && (
           <div className="summary-section">
             <h4>Challenge Report</h4>

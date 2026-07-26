@@ -2237,3 +2237,226 @@ export async function saveCoachLineupApproval(gameCode, forTeam, details) {
   });
   return { ok: true };
 }
+
+/**
+ * Libero ↔ Libero exchange (FIVB: second libero replaces on-court libero, same originalPlayer).
+ */
+export async function performLiberoSwap(gameCode, team) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  if (!gameSnap.exists()) throw new Error('Game not found');
+
+  const gameData = gameSnap.data();
+  const currentSet = gameData.currentSet || 1;
+  const sets = [...(gameData.sets || [])];
+  const teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
+  const t = teams[team];
+  if (!t?.players || !t?.lineup) {
+    return { ok: false, message: 'Exchange not possible.' };
+  }
+
+  const teamName = gameData[`team${team}Name`] || `Team ${team}`;
+  const liberos = t.players.filter((p) => p.role === 'libero1' || p.role === 'libero2');
+  const lineup = [...t.lineup];
+  while (lineup.length < 6) lineup.push(null);
+
+  const onCourtLib = liberos.find((p) => lineup.some((j) => String(j) === String(p.jersey)));
+  const benchLib = onCourtLib ? liberos.find((p) => String(p.jersey) !== String(onCourtLib.jersey)) : null;
+  if (!onCourtLib || !benchLib) {
+    return { ok: false, message: 'Exchange not possible.' };
+  }
+
+  const liberoReplacements = gameData.liberoReplacements
+    ? JSON.parse(JSON.stringify(gameData.liberoReplacements))
+    : { A: [], B: [] };
+  if (!liberoReplacements[team]) liberoReplacements[team] = [];
+
+  const rec = liberoReplacements[team].find((r) => String(r.libero) === String(onCourtLib.jersey));
+  if (!rec) {
+    return { ok: false, message: 'Error: active Libero replacement record not found.' };
+  }
+
+  const posIndex = lineup.findIndex((j) => String(j) === String(onCourtLib.jersey));
+  if (posIndex === -1) {
+    return { ok: false, message: 'Error: Libero not found in lineup.' };
+  }
+
+  const previousLineup = [...lineup];
+  const previousLiberoReplacements = JSON.parse(JSON.stringify(liberoReplacements[team]));
+
+  lineup[posIndex] = String(benchLib.jersey);
+  teams[team].lineup = lineup;
+  rec.libero = String(benchLib.jersey);
+
+  const set = sets[currentSet - 1];
+  const opp = team === 'A' ? 'B' : 'A';
+  const scoreText = set?.score
+    ? `${set.score[team] ?? 0}:${set.score[opp] ?? 0}`
+    : '0:0';
+
+  const inBadge = benchLib.role === 'libero1' ? 'L1' : 'L2';
+  const outBadge = onCourtLib.role === 'libero1' ? 'L1' : 'L2';
+  const description =
+    `${teamName} Libero #${benchLib.jersey} ${benchLib.name || ''} (${inBadge})` +
+    ` replaces Libero #${onCourtLib.jersey} ${onCourtLib.name || ''} (${outBadge})` +
+    ` in P${rec.position} at ${scoreText}`;
+
+  const actionHistory = gameData.actionHistory || [];
+  actionHistory.push({
+    type: 'libero_swap',
+    team,
+    previousLineup,
+    previousLiberoReplacements,
+    setNumber: currentSet
+  });
+  if (actionHistory.length > 50) actionHistory.shift();
+
+  const matchSummary = [...(gameData.matchSummary || [])];
+  matchSummary.push({
+    type: 'Libero',
+    liberoAction: 'libero_swap',
+    team,
+    setNumber: currentSet,
+    liberoJersey: String(benchLib.jersey),
+    playerOutJersey: String(onCourtLib.jersey),
+    position: rec.position,
+    description,
+    score: set?.score ? { A: set.score.A ?? 0, B: set.score.B ?? 0 } : { A: 0, B: 0 },
+    timestamp: new Date()
+  });
+
+  await updateDoc(gameRef, {
+    teams,
+    liberoReplacements,
+    actionHistory,
+    matchSummary,
+    updatedAt: serverTimestamp()
+  });
+
+  return {
+    ok: true,
+    message: `🔁 Libero exchange complete!\nOUT: LIBERO #${onCourtLib.jersey} ${onCourtLib.name || ''}\nIN: LIBERO #${benchLib.jersey} ${benchLib.name || ''}\nScore: ${scoreText}`
+  };
+}
+
+/**
+ * Save Fair Play ratings (1–5 stars per team).
+ */
+export async function saveFairPlay(gameCode, fairPlay) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  if (!gameSnap.exists()) throw new Error('Game not found');
+
+  const gameData = gameSnap.data();
+  const teamAName = gameData.teamAName || 'Team A';
+  const teamBName = gameData.teamBName || 'Team B';
+  const payload = {
+    teamA: fairPlay.teamA || 0,
+    teamB: fairPlay.teamB || 0,
+    remarks: fairPlay.remarks || ''
+  };
+
+  const matchSummary = [...(gameData.matchSummary || [])];
+  matchSummary.push({
+    type: 'FAIR PLAY',
+    team: null,
+    description: `${teamAName}: ${payload.teamA}/5 · ${teamBName}: ${payload.teamB}/5${payload.remarks ? ` · ${payload.remarks}` : ''}`,
+    timestamp: new Date()
+  });
+
+  await updateDoc(gameRef, {
+    fairPlay: payload,
+    matchSummary,
+    updatedAt: serverTimestamp()
+  });
+
+  return { ok: true };
+}
+
+/**
+ * Declare match forfeit — ends match, records winner.
+ */
+export async function declareForfeit(gameCode, { team, reason, remarks }) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  if (!gameSnap.exists()) throw new Error('Game not found');
+
+  const gameData = gameSnap.data();
+  const winner = team === 'A' ? 'B' : 'A';
+  const teamName = gameData[`team${team}Name`] || `Team ${team}`;
+  const winnerName = gameData[`team${winner}Name`] || `Team ${winner}`;
+  const timestamp = new Date().toLocaleString();
+
+  const forfeit = {
+    declared: true,
+    team,
+    winner,
+    reason,
+    remarks: remarks || '',
+    timestamp
+  };
+
+  const matchSummary = [...(gameData.matchSummary || [])];
+  matchSummary.push({
+    type: 'FORFEIT',
+    team,
+    description: `${teamName} forfeits the match · Reason: ${reason}${remarks ? ` · ${remarks}` : ''} · Winner: ${winnerName}`,
+    timestamp: new Date()
+  });
+
+  const setsWon = { ...(gameData.setsWon || { A: 0, B: 0 }) };
+  if (setsWon[winner] < 1) setsWon[winner] = Math.max(setsWon[winner], 1);
+
+  await updateDoc(gameRef, {
+    forfeit,
+    matchSummary,
+    setsWon,
+    status: 'FINISHED',
+    matchEndReason: 'forfeit',
+    finishedAt: serverTimestamp(),
+    rallyActive: false,
+    updatedAt: serverTimestamp()
+  });
+
+  return { ok: true, winner, winnerName, teamName };
+}
+
+/**
+ * Update team logo data URLs (setup or officials modal).
+ */
+export async function updateTeamLogos(gameCode, { logoA, logoB, team1Logo, team2Logo }) {
+  const gameRef = doc(db, GAMES_COLLECTION, gameCode);
+  const gameSnap = await getDoc(gameRef);
+  if (!gameSnap.exists()) throw new Error('Game not found');
+
+  const gameData = gameSnap.data();
+  const teams = gameData.teams ? JSON.parse(JSON.stringify(gameData.teams)) : { A: {}, B: {} };
+  const matchInfo = { ...(gameData.matchInfo || {}) };
+
+  if (logoA !== undefined) {
+    matchInfo.logoA = logoA || null;
+    if (!teams.A) teams.A = {};
+    teams.A.logoData = logoA || '';
+  }
+  if (logoB !== undefined) {
+    matchInfo.logoB = logoB || null;
+    if (!teams.B) teams.B = {};
+    teams.B.logoData = logoB || '';
+  }
+  if (team1Logo !== undefined) {
+    if (!teams.team1) teams.team1 = {};
+    teams.team1.logoData = team1Logo || '';
+  }
+  if (team2Logo !== undefined) {
+    if (!teams.team2) teams.team2 = {};
+    teams.team2.logoData = team2Logo || '';
+  }
+
+  await updateDoc(gameRef, {
+    teams,
+    matchInfo,
+    updatedAt: serverTimestamp()
+  });
+
+  return { ok: true };
+}

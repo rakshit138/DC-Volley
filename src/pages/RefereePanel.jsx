@@ -19,7 +19,11 @@ import {
   addPoint,
   setupNextSet,
   updateRallyState,
-  saveCoachLineupApproval
+  saveCoachLineupApproval,
+  performLiberoSwap,
+  saveFairPlay,
+  declareForfeit,
+  updateTeamLogos
 } from '../services/gameService';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getDecidingSetTossSummary } from '../utils/coinTossLogic';
@@ -55,6 +59,11 @@ import CoachLineupInject, { isLineupLockedForTeam } from '../components/CoachLin
 import { buildChallengeReportHtml } from '../utils/challengeExport';
 import { downloadMatchReportHtml } from '../utils/exportMatchReportHtml';
 import { exportFivbReport } from '../utils/exportFivbReport';
+import { exportFivbPdf } from '../utils/exportFivbPdf';
+import { exportLiberoSheetPdf } from '../utils/exportLiberoSheetPdf';
+import LiberoSwapModal from '../components/LiberoSwapModal';
+import FairPlayModal from '../components/FairPlayModal';
+import ForfeitModal from '../components/ForfeitModal';
 import { firestoreTimeToDate } from '../utils/firestoreTime';
 import dcVolleyLogo from '../assets/dc_volley_logo.jpeg';
 import './RefereePanel.css';
@@ -228,7 +237,7 @@ function getLiberoReplacementAt(replacements, liberoJersey, courtPosition) {
   return forLibero[0]?.originalPlayer ? String(forLibero[0].originalPlayer) : null;
 }
 
-function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, currentSet, highlight }) {
+function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, currentSet, highlight, logoSrc }) {
   const arr = Array.isArray(lineup) ? lineup : [];
   const padded = [...arr];
   while (padded.length < 6) padded.push(null);
@@ -253,6 +262,13 @@ function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, c
             {replacedJersey && (
               <span className="referee-libero-replaced-tag">#{replacedJersey}</span>
             )}
+            <div className="referee-pos-logo-wrap">
+              {logoSrc ? (
+                <img src={logoSrc} alt="" />
+              ) : (
+                <span className="referee-pos-logo-fallback">🏐</span>
+              )}
+            </div>
             <span className="referee-pos-label">{POS_LABELS[pos]}</span>
             <span className="referee-pos-jersey">{jersey != null ? jersey : '-'}</span>
           </div>
@@ -287,6 +303,10 @@ export default function RefereePanel() {
   const [decidingSetTossModalOpen, setDecidingSetTossModalOpen] = useState(false);
   const [matchDataModalOpen, setMatchDataModalOpen] = useState(false);
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+  const [liberoSwapModalOpen, setLiberoSwapModalOpen] = useState(false);
+  const [fairPlayModalOpen, setFairPlayModalOpen] = useState(false);
+  const [forfeitModalOpen, setForfeitModalOpen] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [rallyActive, setRallyActive] = useState(false);
   /** Prefer Firestore `rallyActive`; avoid treating `undefined` as false so UI matches after "Start rally". */
   const rallyOn = useMemo(() => {
@@ -1123,6 +1143,65 @@ export default function RefereePanel() {
     }
   };
 
+  const handleExportFivbPdf = async () => {
+    if (exportingPdf || !gameData) return;
+    setExportingPdf(true);
+    try {
+      await exportFivbPdf(gameData);
+    } catch (err) {
+      alert(`PDF export failed: ${err.message}`);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  const handleLiberoSwap = async (team) => {
+    if (updating || !gameCode) return;
+    setUpdating(true);
+    try {
+      const result = await performLiberoSwap(gameCode, team);
+      if (!result?.ok) {
+        alert(result?.message || 'Exchange not possible.');
+        return;
+      }
+      if (result.message) alert(result.message);
+      setLiberoSwapModalOpen(false);
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleSaveFairPlay = async (fairPlay) => {
+    if (updating || !gameCode) return;
+    setUpdating(true);
+    try {
+      await saveFairPlay(gameCode, fairPlay);
+      setFairPlayModalOpen(false);
+      setMessage('Fair Play rating saved');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleDeclareForfeit = async (payload) => {
+    if (updating || !gameCode) return;
+    setUpdating(true);
+    try {
+      const result = await declareForfeit(gameCode, payload);
+      setForfeitModalOpen(false);
+      alert(`🚫 FORFEIT RECORDED\n\n${result.teamName} has forfeited the match.\n${result.winnerName} is awarded the win.\n\nReason: ${payload.reason}`);
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleUndo = async () => {
     if (updating || !gameCode) return;
     setUpdating(true);
@@ -1256,7 +1335,11 @@ export default function RefereePanel() {
     setUpdating(true);
     setMessage('');
     try {
-      await updateOfficials(gameCode, data);
+      const { logoA, logoB, ...officialsData } = data;
+      await updateOfficials(gameCode, officialsData);
+      if (logoA !== undefined || logoB !== undefined) {
+        await updateTeamLogos(gameCode, { logoA, logoB });
+      }
       setMessage('Officials and signatures saved');
       setTimeout(() => setMessage(''), 2000);
     } catch (err) {
@@ -1564,6 +1647,8 @@ export default function RefereePanel() {
   const rightColor = rightTeam === 'A' ? teamAColor : teamBColor;
   const liberoJerseysLeft = leftTeam === 'A' ? liberoJerseysA : liberoJerseysB;
   const liberoJerseysRight = rightTeam === 'A' ? liberoJerseysA : liberoJerseysB;
+  const logoLeft = gameData.teams?.[leftTeam]?.logoData || gameData.matchInfo?.[`logo${leftTeam}`] || '';
+  const logoRight = gameData.teams?.[rightTeam]?.logoData || gameData.matchInfo?.[`logo${rightTeam}`] || '';
 
   const disqASet = new Set((gameData.sanctionSystem?.disqualified?.A || []).map((e) => String(e.jersey)));
   const disqBSet = new Set((gameData.sanctionSystem?.disqualified?.B || []).map((e) => String(e.jersey)));
@@ -1635,7 +1720,26 @@ export default function RefereePanel() {
           <button type="button" className="referee-btn-small" onClick={() => setMatchDataModalOpen(true)} style={{ background: '#00ff00', color: '#000' }}>💾 DATA</button>
           <button type="button" className="referee-btn-small" onClick={() => setSummaryModalOpen(true)} style={{ background: '#ffd700', color: '#000' }}>📊 SUMMARY</button>
           <button type="button" className="referee-btn-small" onClick={() => setHistoryModalOpen(true)}>📋 HISTORY</button>
-          <button type="button" className="referee-btn-small referee-btn-export" onClick={() => downloadMatchReportHtml(gameData)}>📄 Export PDF</button>
+          <button type="button" className="referee-btn-small referee-btn-export" onClick={handleExportFivbPdf} disabled={exportingPdf}>
+            {exportingPdf ? '⏳ Generating...' : '📄 Export PDF'}
+          </button>
+          <button
+            type="button"
+            className="referee-btn-small"
+            onClick={() => exportLiberoSheetPdf(gameData)}
+            style={{ background: '#9c27b0', color: '#fff' }}
+          >
+            🏐 LIBERO SHEET
+          </button>
+          <button
+            type="button"
+            className="referee-btn-small"
+            onClick={() => setLiberoSwapModalOpen(true)}
+            disabled={updating || status === 'FINISHED'}
+            style={{ background: '#7b1fa2', color: '#fff' }}
+          >
+            🔁 LIBERO SWAP
+          </button>
           <button
             type="button"
             className="referee-btn-small referee-btn-fivb"
@@ -1656,6 +1760,8 @@ export default function RefereePanel() {
             👥 OFFICIALS
           </button>
           <button type="button" className="referee-btn-small referee-btn-sanction" onClick={() => setSanctionModalOpen(true)}>⚠️ SANCTION</button>
+          <button type="button" className="referee-btn-small" onClick={() => setFairPlayModalOpen(true)} style={{ background: '#00d9ff', color: '#000' }}>🤝 FAIR PLAY</button>
+          <button type="button" className="referee-btn-small" onClick={() => setForfeitModalOpen(true)} style={{ background: '#7f0000', color: '#fff' }}>🚫 FORFEIT</button>
           <button type="button" className="referee-btn-small referee-btn-challenge" onClick={() => setChallengeModalOpen(true)} style={{ background: 'linear-gradient(135deg,#ff9500 0%,#ff6f00 100%)', color: '#fff', fontSize: 11, border: '2px solid #ffb74d' }}>🚩 CHALLENGE</button>
           <button type="button" className="referee-btn-small referee-btn-swap" onClick={handleSwap} disabled={updating || status === 'FINISHED'} title="Swap which team is on left/right">🔄 SWAP</button>
           <button type="button" className="referee-btn-small" onClick={handleUndo} disabled={updating || status === 'FINISHED'} style={{ background: '#ff9500', color: '#fff' }}>↶ UNDO</button>
@@ -1754,6 +1860,7 @@ export default function RefereePanel() {
                   liberoReplacements={gameData.liberoReplacements}
                   currentSet={currentSet}
                   highlight={courtHighlightTeam === leftTeam}
+                  logoSrc={logoLeft}
                 />
               </div>
               <div className="referee-court-controls">
@@ -1823,6 +1930,7 @@ export default function RefereePanel() {
                   liberoReplacements={gameData.liberoReplacements}
                   currentSet={currentSet}
                   highlight={courtHighlightTeam === rightTeam}
+                  logoSrc={logoRight}
                 />
               </div>
               <div className="referee-court-controls">
@@ -2185,6 +2293,30 @@ export default function RefereePanel() {
         gameData={gameData}
         onClose={() => setSummaryModalOpen(false)}
         onExportPDF={handleExportSummaryPDF}
+      />
+
+      <LiberoSwapModal
+        open={liberoSwapModalOpen}
+        gameData={gameData}
+        onClose={() => setLiberoSwapModalOpen(false)}
+        onSwap={handleLiberoSwap}
+        swapping={updating}
+      />
+
+      <FairPlayModal
+        open={fairPlayModalOpen}
+        gameData={gameData}
+        onClose={() => setFairPlayModalOpen(false)}
+        onSave={handleSaveFairPlay}
+        saving={updating}
+      />
+
+      <ForfeitModal
+        open={forfeitModalOpen}
+        gameData={gameData}
+        onClose={() => setForfeitModalOpen(false)}
+        onConfirm={handleDeclareForfeit}
+        confirming={updating}
       />
 
       <ChallengeModal
