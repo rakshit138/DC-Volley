@@ -630,7 +630,15 @@ export default function GameSetup() {
 
       await createGame(code, gameData);
       if (logoASource || logoBSource) {
-        await saveGameAssets(code, { logoA: logoASource, logoB: logoBSource });
+        try {
+          await saveGameAssets(code, { logoA: logoASource, logoB: logoBSource });
+        } catch (logoErr) {
+          console.warn('Logo save failed:', logoErr);
+          setError(
+            `Game created (${code}) but logos could not be saved: ${logoErr.message}. ` +
+              'Try deploying Firestore rules: firebase deploy --only firestore:rules'
+          );
+        }
       }
       setGameCode(code);
       navigate('/display-select');
