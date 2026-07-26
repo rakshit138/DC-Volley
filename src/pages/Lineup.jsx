@@ -1,7 +1,102 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
+import { getDisplayTeams, lineupTitleColorClass, teamDisplayName } from '../utils/displayHelpers';
 import './Lineup.css';
+
+const POS_ORDER = [3, 2, 1, 4, 5, 0];
+const POS_LABELS = ['P4-LF', 'P3-MF', 'P2-RF', 'P5-LB', 'P6-MB', 'P1-RB'];
+
+function TeamLineupPanel({ gameData, team, setData }) {
+  const teamData = gameData.teams?.[team] || {};
+  const lineup = teamData.lineup || [];
+  const players = teamData.players || [];
+  const teamName = teamDisplayName(gameData, team);
+  const titleClass = lineupTitleColorClass(team);
+  const lineupStrs = lineup.map((j) => String(j));
+  const serving = setData.serving || 'A';
+  const timeoutsUsed = setData.timeouts?.[team]?.length ?? 0;
+  const subsUsed = setData.substitutions?.[team]?.length ?? 0;
+  const liberos = players.filter((p) => p.role === 'libero1' || p.role === 'libero2');
+
+  const isLiberoRole = (role) => role === 'libero1' || role === 'libero2';
+
+  return (
+    <div className="team-lineup">
+      <div className={`lineup-title ${titleClass}`}>
+        {teamName}
+      </div>
+
+      <div className="court-visual">
+        <div className="court-grid">
+          {POS_ORDER.map((idx, i) => {
+            const jersey = lineup[idx];
+            const player = players.find((p) => String(p.jersey) === String(jersey));
+            const isServer = idx === 0 && serving === team;
+            const isLibero = player && isLiberoRole(player.role);
+            let posClass = 'court-pos';
+            if (isServer) posClass += ' server';
+            if (isLibero) posClass += ' libero-on-court';
+
+            return (
+              <div key={i} className={posClass}>
+                <div className="pos-label">{POS_LABELS[i]}</div>
+                <div className="pos-jersey">{player ? `#${player.jersey}` : '-'}</div>
+                {player?.name && <div className="pos-name">{player.name.split(' ')[0]}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rotation-order">
+        <div className="rotation-title">Rotation Order (Next →)</div>
+        <div className="rotation-list">
+          {Array.from({ length: 6 }).map((_, i) => {
+            const jersey = lineup[i];
+            const player = players.find((p) => String(p.jersey) === String(jersey));
+            const isLibero = player && isLiberoRole(player.role);
+            return (
+              <div key={i} className={`rotation-item${isLibero ? ' libero-rotation' : ''}`}>
+                <div className="rotation-pos">P{i + 1}</div>
+                <div className="rotation-jersey">#{jersey || '-'}</div>
+                {player?.name && <div className="rotation-name">{player.name.split(' ')[0]}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {liberos.length > 0 && (
+        <div className="liberos-section">
+          <div className="liberos-title">Liberos</div>
+          <div className="libero-list">
+            {liberos.map((lib) => {
+              const onCourt = lineupStrs.includes(String(lib.jersey));
+              return (
+                <div key={lib.jersey} className="libero-item">
+                  #{lib.jersey} {lib.name ? lib.name.split(' ')[0] : ''}
+                  {onCourt && <span className="on-court-indicator">● ON COURT</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="stats-row">
+        <div className="stat-item">
+          <span className="stat-label">Timeouts Left</span>
+          <span className="stat-value">{Math.max(0, 2 - timeoutsUsed)} / 2</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Subs Left</span>
+          <span className="stat-value">{Math.max(0, 6 - subsUsed)} / 6</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Lineup() {
   const { gameCode, setGameCode, gameData, loading, error } = useGame();
@@ -24,250 +119,96 @@ export default function Lineup() {
 
   if (loading) {
     return (
-      <div className="lineup-container">
-        <div className="lineup-loading">Loading game data...</div>
+      <div className="lineup-page">
+        <div className="no-data">Loading game data…</div>
       </div>
     );
   }
 
   if (error || !gameData) {
     return (
-      <div className="lineup-container">
-        <div className="lineup-error">
-          {error || 'Game not found'}
-          <button onClick={() => navigate('/home')} className="lineup-back-btn">
-            Go Home
-          </button>
-        </div>
+      <div className="lineup-page">
+        <div className="no-data">{error || 'Game not found'}</div>
       </div>
     );
   }
 
-  const currentSet = gameData.currentSet || 1;
   const sets = gameData.sets || [];
+  const currentSet = gameData.currentSet || 1;
   const currentSetData = sets[currentSet - 1];
-  const teams = gameData.teams || { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
+  const format = Number(gameData.format ?? gameData.matchInfo?.format ?? 3);
 
   if (!currentSetData) {
     return (
-      <div className="lineup-container">
-        <div className="lineup-no-data">Waiting for match to start...</div>
+      <div className="lineup-page">
+        <div className="header">
+          <div className="match-title">Lineup &amp; Rotation Display</div>
+          <div className="match-info">2nd Referee View</div>
+        </div>
+        <div className="no-data">Waiting for match to start…</div>
       </div>
     );
   }
 
-  const scoreA = currentSetData.score?.A || 0;
-  const scoreB = currentSetData.score?.B || 0;
-  const serving = currentSetData.serving || 'A';
-  const format = gameData.format || 3;
-  const subLimit = gameData.subLimit ?? 6;
-  const teamAColor = gameData.teamAColor || '#ff6b6b';
-  const teamBColor = gameData.teamBColor || '#4ecdc4';
+  const { leftTeam, rightTeam } = getDisplayTeams(gameData);
+  const scoreLeft = currentSetData.score?.[leftTeam] ?? 0;
+  const scoreRight = currentSetData.score?.[rightTeam] ?? 0;
+  const leftColorClass = leftTeam === 'A' ? 'team-a-color' : 'team-b-color';
+  const rightColorClass = rightTeam === 'A' ? 'team-a-color' : 'team-b-color';
+  const leftName = teamDisplayName(gameData, leftTeam);
+  const rightName = teamDisplayName(gameData, rightTeam);
 
-  const getSetWinner = (set) => {
-    if (!set) return null;
-    if (set.winner === 'A' || set.winner === 'B') return set.winner;
-    if (set.endTime && set.score && set.score.A !== set.score.B) {
-      return set.score.A > set.score.B ? 'A' : 'B';
-    }
-    return null;
-  };
-
-  const isLiberoRole = (role) =>
-    role === 'libero1' || role === 'libero2' || role === 'liberocaptain';
-
-  const renderCourt = (team) => {
-    const teamData = teams[team] || {};
-    const lineup = teamData.lineup || [];
-    const players = teamData.players || [];
-    const teamName = team === 'A' ? gameData.teamAName : gameData.teamBName;
-    const teamColor = team === 'A' ? teamAColor : teamBColor;
-    const lineupStrs = lineup.map((j) => String(j));
-    const timeoutsUsed = currentSetData.timeouts?.[team]?.length ?? 0;
-    const subsUsed = currentSetData.substitutions?.[team]?.length ?? 0;
-
-    // Position order for display: P4, P3, P2, P5, P6, P1 (indices 3,2,1,4,5,0)
-    const posOrder = [3, 2, 1, 4, 5, 0];
-    const labels = ['P4-LF', 'P3-MF', 'P2-RF', 'P5-LB', 'P6-MB', 'P1-RB'];
-
-    const liberos = (players || []).filter((p) => isLiberoRole(p.role));
-
-    return (
-      <div className="lineup-team-section">
-        <div className="lineup-team-header">
-          <h3 className="lineup-title" style={{ color: teamColor }}>
-            {teamName || `Team ${team}`}
-          </h3>
-        </div>
-
-        <div className="lineup-court">
-          <div className="lineup-court-grid">
-            {posOrder.map((idx, i) => {
-              const jersey = lineup[idx];
-              const player = players.find((p) => String(p.jersey) === String(jersey));
-              const isServer = idx === 0 && serving === team;
-              const isLibero = player && isLiberoRole(player.role);
-
-              return (
-                <div
-                  key={i}
-                  className={`lineup-court-pos ${isServer ? 'server' : ''} ${isLibero ? 'libero libero-on-court' : ''}`}
-                >
-                  <div className="lineup-pos-label">{labels[i]}</div>
-                  <div className="lineup-pos-jersey">
-                    {jersey ? `#${jersey}` : '-'}
-                  </div>
-                  {player && player.name && (
-                    <div className="lineup-pos-name">
-                      {player.name.split(' ')[0]}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="lineup-rotation">
-          <div className="lineup-rotation-title">Rotation Order (Next →)</div>
-          <div className="lineup-rotation-list">
-            {Array.from({ length: 6 }).map((_, i) => {
-              const jersey = lineup[i];
-              const player = players.find((p) => String(p.jersey) === String(jersey));
-              const isLibero = player && isLiberoRole(player.role);
-
-              return (
-                <div key={i} className={`lineup-rotation-item ${isLibero ? 'libero libero-rotation' : ''}`}>
-                  <div className="lineup-rotation-pos">P{i + 1}</div>
-                  <div className="lineup-rotation-jersey">
-                    {jersey ? `#${jersey}` : '-'}
-                  </div>
-                  {player && player.name && (
-                    <div className="lineup-rotation-name">
-                      {player.name.split(' ')[0]}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {liberos.length > 0 && (
-          <div className="liberos-section">
-            <div className="liberos-title">Liberos</div>
-            <div className="libero-list">
-              {liberos.map((lib) => {
-                const onCourt = lineupStrs.includes(String(lib.jersey));
-                return (
-                  <div key={lib.jersey} className="libero-item">
-                    #{lib.jersey} {lib.name ? lib.name.split(' ')[0] : ''}
-                    {onCourt && <span className="on-court-indicator">● ON COURT</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <div className="stats-row">
-          <div className="stat-item">
-            <span className="stat-label" style={{ color: teamColor }}>Timeouts Used</span>
-            <span className="stat-value" style={{ color: teamColor }}>{timeoutsUsed} / 2</span>
-          </div>
-          <div className="stat-item">
-            <span className="stat-label" style={{ color: teamColor }}>Subs Used</span>
-            <span className="stat-value" style={{ color: teamColor }}>{subsUsed} / {subLimit}</span>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const competition = gameData.competition || gameData.matchInfo?.competition || 'Lineup & Rotation Display';
+  const venue = gameData.venue || gameData.matchInfo?.venue || '';
+  const matchDate = gameData.matchDate || gameData.matchInfo?.matchDate || gameData.matchInfo?.date || '';
+  const matchInfoLine = [venue, matchDate].filter(Boolean).join(' | ') || '2nd Referee View';
 
   return (
-    <div className="lineup-container">
-      <div className="lineup-header header-match">
-        <div className="match-title">{gameData.competition || 'Lineup & Rotation Display'}</div>
-        <div className="match-info">
-          {[gameData.venue, gameData.matchDate].filter(Boolean).join(' | ') || '2nd Referee View'}
-        </div>
+    <div className="lineup-page">
+      <div className="header">
+        <div className="match-title">{competition}</div>
+        <div className="match-info">{matchInfoLine}</div>
       </div>
 
-      <div className="lineup-score-display score-display-strip">
-        <div className="lineup-score-item team-score-box">
-          <div className="lineup-score-team team-name-big" style={{ color: teamAColor }}>
-            {gameData.teamAName || 'Team A'}
-          </div>
-          <div className="lineup-score-value score-big" style={{ color: teamAColor }}>{scoreA}</div>
+      <div className="score-display">
+        <div className="team-score-box">
+          <div className={`team-name-big ${leftColorClass}`}>{leftName}</div>
+          <div className={`score-big ${leftColorClass}`}>{scoreLeft}</div>
         </div>
-        <div className="set-info-middle">
+
+        <div className="set-info">
           <div className="set-number">SET {currentSet}</div>
           <div className="set-dots">
             {Array.from({ length: format }).map((_, i) => {
               const set = sets[i];
-              const won = getSetWinner(set);
-              const baseStyle = { borderColor: '#fff' };
-              if (won === 'A') {
-                return (
-                  <div
-                    key={i}
-                    className="set-dot"
-                    style={{
-                      ...baseStyle,
-                      background: teamAColor,
-                      borderColor: teamAColor,
-                      color: '#fff',
-                      boxShadow: `0 0 22px ${teamAColor}`
-                    }}
-                  >
-                    {i + 1}
-                  </div>
-                );
-              }
-              if (won === 'B') {
-                return (
-                  <div
-                    key={i}
-                    className="set-dot"
-                    style={{
-                      ...baseStyle,
-                      background: teamBColor,
-                      borderColor: teamBColor,
-                      color: '#fff',
-                      boxShadow: `0 0 22px ${teamBColor}`
-                    }}
-                  >
-                    {i + 1}
-                  </div>
-                );
-              }
+              let dotClass = 'set-dot';
+              if (i < sets.length && set?.winner === 'A') dotClass += ' set-won-a';
+              else if (i < sets.length && set?.winner === 'B') dotClass += ' set-won-b';
               return (
-                <div key={i} className="set-dot" style={baseStyle}>
+                <div key={i} className={dotClass}>
                   {i + 1}
                 </div>
               );
             })}
           </div>
         </div>
-        <div className="lineup-score-item team-score-box">
-          <div className="lineup-score-team team-name-big" style={{ color: teamBColor }}>
-            {gameData.teamBName || 'Team B'}
-          </div>
-          <div className="lineup-score-value score-big" style={{ color: teamBColor }}>{scoreB}</div>
+
+        <div className="team-score-box">
+          <div className={`team-name-big ${rightColorClass}`}>{rightName}</div>
+          <div className={`score-big ${rightColorClass}`}>{scoreRight}</div>
         </div>
       </div>
 
-      <div className="lineups-container lineup-courts">
-        {renderCourt('A')}
-        {renderCourt('B')}
+      <div className="lineups-container">
+        <TeamLineupPanel gameData={gameData} team={leftTeam} setData={currentSetData} />
+        <TeamLineupPanel gameData={gameData} team={rightTeam} setData={currentSetData} />
       </div>
 
-      <button
-        className="lineup-back-home"
-        onClick={() => navigate('/display-select')}
-      >
-        ← Back to Display Selection
-      </button>
+      <div className="refresh-info">Auto-refreshes every 2 seconds to show live updates</div>
+
+      <div className="lineup-footer">
+        DC_Volley © 2025 | Digital Volleyball Scoresheet
+      </div>
     </div>
   );
 }
