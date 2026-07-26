@@ -12,10 +12,29 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { saveGameAssets } from './gameAssetsService';
 import { allowsP1Replacement } from '../utils/liberoServe';
 import { sanitizeFirestoreWrite } from '../utils/firestoreSanitize';
 
 const GAMES_COLLECTION = 'games';
+
+/** Remove inline logo blobs from game payload — logos live in gameAssets/{code}. */
+function stripInlineLogos(data) {
+  if (!data) return data;
+  const next = { ...data };
+  if (next.teams) {
+    next.teams = JSON.parse(JSON.stringify(next.teams));
+    ['A', 'B', 'team1', 'team2'].forEach((key) => {
+      if (next.teams[key]?.logoData) delete next.teams[key].logoData;
+    });
+  }
+  if (next.matchInfo) {
+    next.matchInfo = { ...next.matchInfo };
+    delete next.matchInfo.logoA;
+    delete next.matchInfo.logoB;
+  }
+  return next;
+}
 
 export function defaultChallengeSystem() {
   return {
@@ -183,7 +202,8 @@ function applyPointToTeamInMemory({
  */
 export async function createGame(gameCode, gameData) {
   const gameRef = doc(db, GAMES_COLLECTION, gameCode);
-  const { sets: rawSets = [], ...rest } = gameData;
+  const cleaned = stripInlineLogos(gameData);
+  const { sets: rawSets = [], ...rest } = cleaned;
   // Firestore does not allow serverTimestamp() inside array elements — use Timestamp.now() for set 1 start.
   const sets = (rawSets || []).map((s, i) => {
     if (i === 0) {
@@ -2422,41 +2442,43 @@ export async function declareForfeit(gameCode, { team, reason, remarks }) {
 }
 
 /**
- * Update team logo data URLs (setup or officials modal).
+ * Update team logos — stored in gameAssets/{code}, not in the main game doc.
  */
-export async function updateTeamLogos(gameCode, { logoA, logoB, team1Logo, team2Logo }) {
+export async function updateTeamLogos(gameCode, { logoA, logoB }) {
+  await saveGameAssets(gameCode, {
+    ...(logoA !== undefined ? { logoA } : {}),
+    ...(logoB !== undefined ? { logoB } : {})
+  });
+
+  // Remove legacy inline logos from main doc if they exist (older games)
   const gameRef = doc(db, GAMES_COLLECTION, gameCode);
   const gameSnap = await getDoc(gameRef);
   if (!gameSnap.exists()) throw new Error('Game not found');
 
   const gameData = gameSnap.data();
-  const teams = gameData.teams ? JSON.parse(JSON.stringify(gameData.teams)) : { A: {}, B: {} };
-  const matchInfo = { ...(gameData.matchInfo || {}) };
-
-  if (logoA !== undefined) {
-    matchInfo.logoA = logoA || null;
-    if (!teams.A) teams.A = {};
-    teams.A.logoData = logoA || '';
+  const teams = gameData.teams ? JSON.parse(JSON.stringify(gameData.teams)) : null;
+  let dirty = false;
+  if (teams) {
+    ['A', 'B'].forEach((key) => {
+      if (teams[key]?.logoData) {
+        delete teams[key].logoData;
+        dirty = true;
+      }
+    });
   }
-  if (logoB !== undefined) {
-    matchInfo.logoB = logoB || null;
-    if (!teams.B) teams.B = {};
-    teams.B.logoData = logoB || '';
+  const matchInfo = gameData.matchInfo ? { ...gameData.matchInfo } : null;
+  if (matchInfo && (matchInfo.logoA || matchInfo.logoB)) {
+    delete matchInfo.logoA;
+    delete matchInfo.logoB;
+    dirty = true;
   }
-  if (team1Logo !== undefined) {
-    if (!teams.team1) teams.team1 = {};
-    teams.team1.logoData = team1Logo || '';
+  if (dirty) {
+    await updateDoc(gameRef, {
+      ...(teams ? { teams } : {}),
+      ...(matchInfo ? { matchInfo } : {}),
+      updatedAt: serverTimestamp()
+    });
   }
-  if (team2Logo !== undefined) {
-    if (!teams.team2) teams.team2 = {};
-    teams.team2.logoData = team2Logo || '';
-  }
-
-  await updateDoc(gameRef, {
-    teams,
-    matchInfo,
-    updatedAt: serverTimestamp()
-  });
 
   return { ok: true };
 }

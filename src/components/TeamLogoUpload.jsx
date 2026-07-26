@@ -1,4 +1,5 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
+import { compressImageFile } from '../utils/imageUpload';
 import './FairPlayForfeitModal.css';
 
 /**
@@ -13,16 +14,21 @@ export default function TeamLogoUpload({
   disabled = false
 }) {
   const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
 
-  const handleFile = (e) => {
+  const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      onChange(ev.target?.result || '');
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    setUploading(true);
+    try {
+      const compressed = await compressImageFile(file);
+      onChange(compressed);
+    } catch (err) {
+      alert(err?.message || 'Failed to process image');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
   };
 
   const handleClear = () => onChange('');
@@ -48,10 +54,10 @@ export default function TeamLogoUpload({
           <button
             type="button"
             className="team-logo-upload-btn"
-            disabled={disabled}
+            disabled={disabled || uploading}
             onClick={() => inputRef.current?.click()}
           >
-            📁 Upload Logo/Flag
+            {uploading ? '⏳…' : '📁 Upload Logo/Flag'}
           </button>
           {logoData && (
             <button type="button" className="team-logo-clear-btn" disabled={disabled} onClick={handleClear}>

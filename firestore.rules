@@ -11,6 +11,11 @@ service cloud.firestore {
     match /games/{gameCode} {
       allow read, write: if true;
     }
+
+    // Team logos (compressed base64) — separate doc to keep games/ under 1MB
+    match /gameAssets/{gameCode} {
+      allow read, write: if true;
+    }
   }
 }
 

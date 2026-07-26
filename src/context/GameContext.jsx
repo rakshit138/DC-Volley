@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { listenToGame } from '../services/gameService';
+import { listenToGameAssets, mergeGameWithAssets } from '../services/gameAssetsService';
 
 const GameContext = createContext();
 
@@ -14,14 +15,15 @@ export function useGame() {
 export function GameProvider({ children }) {
   const [gameCode, setGameCode] = useState(null);
   const [gameData, setGameData] = useState(null);
-  const [role, setRole] = useState(null); // 'scoreboard', 'referee', 'lineup'
+  const [gameAssets, setGameAssets] = useState(null);
+  const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Set up real-time listener when gameCode changes
   useEffect(() => {
     if (!gameCode) {
       setGameData(null);
+      setGameAssets(null);
       return;
     }
 
@@ -39,10 +41,21 @@ export function GameProvider({ children }) {
     return () => unsubscribe();
   }, [gameCode]);
 
+  useEffect(() => {
+    if (!gameCode) {
+      setGameAssets(null);
+      return;
+    }
+    return listenToGameAssets(gameCode, setGameAssets);
+  }, [gameCode]);
+
+  const mergedGameData = mergeGameWithAssets(gameData, gameAssets);
+
   const value = {
     gameCode,
     setGameCode,
-    gameData,
+    gameData: mergedGameData,
+    gameAssets,
     role,
     setRole,
     loading,

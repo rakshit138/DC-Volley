@@ -3,6 +3,7 @@ import { ensurePrepSessionStart } from '../utils/setupSession';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { createGame } from '../services/gameService';
+import { saveGameAssets } from '../services/gameAssetsService';
 import { generateGameCode } from '../utils/generateCode';
 import {
   saveRosterToLocalStorage,
@@ -550,12 +551,12 @@ export default function GameSetup() {
         signatures: officialsSheet?.signatures || {}
       };
 
-      const logoA =
+      const logoASource =
         coinToss.teamAAssignment === 'team1' ? team1.logoData || '' : team2.logoData || '';
-      const logoB =
+      const logoBSource =
         coinToss.teamBAssignment === 'team1' ? team1.logoData || '' : team2.logoData || '';
 
-      // Create game data
+      // Create game data (logos saved separately — keeps doc under Firestore 1MB limit)
       const gameData = {
         teamAName: officialsSheet?.teamAName?.trim() || assignment.teamA.name,
         teamBName: officialsSheet?.teamBName?.trim() || assignment.teamB.name,
@@ -584,18 +585,12 @@ export default function GameSetup() {
         teams: {
           A: {
             players: playersA,
-            lineup: assignment.teamALineup.map(p => p != null ? String(p) : null),
-            logoData: logoA
+            lineup: assignment.teamALineup.map(p => p != null ? String(p) : null)
           },
           B: {
             players: playersB,
-            lineup: assignment.teamBLineup.map(p => p != null ? String(p) : null),
-            logoData: logoB
+            lineup: assignment.teamBLineup.map(p => p != null ? String(p) : null)
           }
-        },
-        matchInfo: {
-          logoA: logoA || null,
-          logoB: logoB || null
         },
         liberoServeConfig: {
           A: {
@@ -634,6 +629,9 @@ export default function GameSetup() {
       };
 
       await createGame(code, gameData);
+      if (logoASource || logoBSource) {
+        await saveGameAssets(code, { logoA: logoASource, logoB: logoBSource });
+      }
       setGameCode(code);
       navigate('/display-select');
     } catch (err) {
