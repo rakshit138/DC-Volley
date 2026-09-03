@@ -1747,38 +1747,8 @@ export default function RefereePanel() {
           >
             🏐 FIVB REPORT
           </button>
-          <button
-            type="button"
-            className="referee-btn-small"
-            onClick={() => {
-              const w = window.screen?.availWidth || window.innerWidth;
-              const h = window.screen?.availHeight || window.innerHeight;
-              window.open(
-                `/lineup?code=${gameCode}`,
-                '_blank',
-                `width=${w},height=${h},left=0,top=0,menubar=no,toolbar=no,location=no,status=no`
-              );
-            }}
-            style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: '#fff' }}
-          >
-            👥 Lineup
-          </button>
-          <button
-            type="button"
-            className="referee-btn-small"
-            onClick={() => {
-              const w = window.screen?.availWidth || window.innerWidth;
-              const h = window.screen?.availHeight || window.innerHeight;
-              window.open(
-                `/scoreboard?code=${gameCode}`,
-                '_blank',
-                `width=${w},height=${h},left=0,top=0,menubar=no,toolbar=no,location=no,status=no`
-              );
-            }}
-            style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: '#fff' }}
-          >
-            📺 Scoreboard
-          </button>
+          <button type="button" className="referee-btn-small" onClick={() => window.open(`/lineup?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: '#fff' }}>👥 Lineup</button>
+          <button type="button" className="referee-btn-small" onClick={() => window.open(`/scoreboard?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: '#fff' }}>📺 Scoreboard</button>
           <button
             type="button"
             className="referee-btn-small referee-btn-officials"

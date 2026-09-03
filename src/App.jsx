@@ -15,17 +15,14 @@ import Lineup from './pages/Lineup';
 import './App.css';
 
 const SPLASH_MS = 3000;
-const DISPLAY_ROUTES = ['/scoreboard', '/lineup'];
 
 function App() {
-  const skipSplash = DISPLAY_ROUTES.includes(window.location.pathname);
-  const [showSplash, setShowSplash] = useState(!skipSplash);
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    if (skipSplash) return undefined;
     const timer = setTimeout(() => setShowSplash(false), SPLASH_MS);
     return () => clearTimeout(timer);
-  }, [skipSplash]);
+  }, []);
 
   if (showSplash) {
     return <SplashScreen />;
