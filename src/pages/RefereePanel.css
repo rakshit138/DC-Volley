@@ -1281,14 +1281,6 @@
   font-weight: 800;
 }
 
-.referee-btn-fivb {
-  background: linear-gradient(135deg, #ffd700, #ff8c00) !important;
-  color: #000 !important;
-  font-weight: 900 !important;
-  border: 2px solid #fff !important;
-  font-size: 11px !important;
-}
-
 .referee-btn-sanction {
   background: #ff0000 !important;
   color: #fff !important;

@@ -59,7 +59,6 @@ import ChallengeModal from '../components/ChallengeModal';
 import CoachLineupInject, { isLineupLockedForTeam } from '../components/CoachLineupInject';
 import { buildChallengeReportHtml } from '../utils/challengeExport';
 import { downloadMatchReportHtml } from '../utils/exportMatchReportHtml';
-import { exportFivbReport } from '../utils/exportFivbReport';
 import { exportFivbPdf } from '../utils/exportFivbPdf';
 import { exportLiberoSheetPdf } from '../utils/exportLiberoSheetPdf';
 import LiberoSwapModal from '../components/LiberoSwapModal';
@@ -1741,15 +1740,8 @@ export default function RefereePanel() {
           >
             🔁 LIBERO SWAP
           </button>
-          <button
-            type="button"
-            className="referee-btn-small referee-btn-fivb"
-            onClick={() => exportFivbReport(gameData)}
-          >
-            🏐 FIVB REPORT
-          </button>
-          <button type="button" className="referee-btn-small" onClick={() => window.open(`/lineup?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: '#fff' }}>👥 Lineup</button>
-          <button type="button" className="referee-btn-small" onClick={() => window.open(`/scoreboard?code=${gameCode}`, '_blank')} style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: '#fff' }}>📺 Scoreboard</button>
+          <button type="button" className="referee-btn-small" onClick={() => window.open(`/lineup?code=${gameCode}`, '_blank', 'width=800,height=600')} style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: '#fff' }}>👥 Lineup</button>
+          <button type="button" className="referee-btn-small" onClick={() => window.open(`/scoreboard?code=${gameCode}`, '_blank', 'width=1280,height=760,menubar=no,toolbar=no')} style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: '#fff' }}>📺 Scoreboard</button>
           <button
             type="button"
             className="referee-btn-small referee-btn-officials"

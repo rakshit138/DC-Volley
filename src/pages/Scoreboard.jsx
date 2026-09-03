@@ -3,6 +3,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import './Scoreboard.css';
 
+function getSetWinner(set) {
+  if (!set) return null;
+  if (set.winner === 'A' || set.winner === 'B') return set.winner;
+  if (set.endTime && set.score && set.score.A !== set.score.B) {
+    return set.score.A > set.score.B ? 'A' : 'B';
+  }
+  return null;
+}
+
 export default function Scoreboard() {
   const { gameCode, setGameCode, gameData, loading, error } = useGame();
   const navigate = useNavigate();
@@ -11,232 +20,114 @@ export default function Scoreboard() {
 
   useEffect(() => {
     const normalized = codeFromUrl?.trim();
-    if (normalized && normalized !== gameCode) {
-      setGameCode(normalized);
-    }
+    if (normalized && normalized !== gameCode) setGameCode(normalized);
   }, [codeFromUrl, gameCode, setGameCode]);
 
   useEffect(() => {
-    if (!gameCode && !codeFromUrl) {
-      navigate('/');
-    }
+    if (!gameCode && !codeFromUrl) navigate('/');
   }, [gameCode, codeFromUrl, navigate]);
 
   if (loading) {
-    return (
-      <div className="scoreboard-container">
-        <div className="scoreboard-loading">Loading game data...</div>
-      </div>
-    );
+    return <div className="live-scoreboard-wait">Loading live match data…</div>;
   }
 
   if (error || !gameData) {
-    return (
-      <div className="scoreboard-container">
-        <div className="scoreboard-error">
-          {error || 'Game not found'}
-          <button onClick={() => navigate('/home')} className="scoreboard-back-btn">
-            Go Home
-          </button>
-        </div>
-      </div>
-    );
+    return <div className="live-scoreboard-wait">{error || 'Game not found'}</div>;
   }
 
-  const currentSet = gameData.currentSet || 1;
+  const matchInfo = gameData.matchInfo || {};
+  const currentSet = Number(gameData.currentSet) || 1;
   const sets = gameData.sets || [];
-  const currentSetData = sets[currentSet - 1];
-  const format = gameData.format || 3;
-  const status = gameData.status || 'LIVE';
-  const setsWon = gameData.setsWon || { A: 0, B: 0 };
+  const set = sets[currentSet - 1];
 
-  if (!currentSetData) {
-    return (
-      <div className="scoreboard-container">
-        <div className="scoreboard-no-data">Waiting for match to start...</div>
-      </div>
-    );
+  if (!set) {
+    return <div className="live-scoreboard-wait">Waiting for match to start…</div>;
   }
 
-  const scoreA = currentSetData.score?.A || 0;
-  const scoreB = currentSetData.score?.B || 0;
-  const serving = currentSetData.serving || 'A';
-  const timeoutsUsedA = currentSetData.timeouts?.A?.length ?? 0;
-  const timeoutsUsedB = currentSetData.timeouts?.B?.length ?? 0;
-  const subsUsedA = currentSetData.substitutions?.A?.length ?? 0;
-  const subsUsedB = currentSetData.substitutions?.B?.length ?? 0;
-  const teamAColor = gameData.teamAColor || '#ff6b6b';
-  const teamBColor = gameData.teamBColor || '#4ecdc4';
+  const swapped = !!gameData.swapped;
+  const leftTeam = swapped ? 'B' : 'A';
+  const rightTeam = swapped ? 'A' : 'B';
+  const teamName = (team) =>
+    team === 'A'
+      ? matchInfo.teamAName || gameData.teamAName || 'TEAM A'
+      : matchInfo.teamBName || gameData.teamBName || 'TEAM B';
+  const teamColor = (team) =>
+    team === 'A'
+      ? matchInfo.teamAColor || gameData.teamAColor || '#ff4d6d'
+      : matchInfo.teamBColor || gameData.teamBColor || '#2dd4bf';
+  const teamLogo = (team) => gameData.teams?.[team]?.logoData || matchInfo[`logo${team}`] || '';
+  const setsWon = (team) => sets.filter((playedSet) => getSetWinner(playedSet) === team).length;
+  const score = { A: set.score?.A ?? 0, B: set.score?.B ?? 0 };
+  const timeouts = {
+    A: set.timeouts?.A?.length ?? 0,
+    B: set.timeouts?.B?.length ?? 0
+  };
+  const substitutions = {
+    A: set.substitutions?.A?.length ?? 0,
+    B: set.substitutions?.B?.length ?? 0
+  };
+  const format = Number(matchInfo.format || gameData.format) ||
+    (matchInfo.matchFormat === 'best3' ? 3 : 5);
 
-  const getSetWinner = (set) => {
-    if (!set) return null;
-    if (set.winner === 'A' || set.winner === 'B') return set.winner;
-    if (set.endTime && set.score && set.score.A !== set.score.B) {
-      return set.score.A > set.score.B ? 'A' : 'B';
-    }
-    return null;
+  const renderTeam = (side, team) => {
+    const logo = teamLogo(team);
+    const color = teamColor(team);
+    return (
+      <div className="live-scoreboard-side" data-side={side}>
+        <div className="live-scoreboard-logo">
+          {logo ? <img src={logo} alt="" /> : <span className="live-scoreboard-logo-placeholder">🏐</span>}
+        </div>
+        <div className="live-scoreboard-team-name" style={{ color }}>{teamName(team)}</div>
+        <div className={`live-scoreboard-serve${set.serving === team ? ' on' : ''}`}>● SERVING</div>
+        <div className="live-scoreboard-score" style={{ color }}>{score[team]}</div>
+      </div>
+    );
   };
 
   return (
-    <div className="scoreboard-container">
-      <div className="scoreboard">
-        {/* Score Container */}
-        <div className="scoreboard-scores">
-          {/* Team A */}
-          <div className="scoreboard-team">
-            <div className="scoreboard-team-name team-a-color" style={{ color: teamAColor }}>
-              {gameData.teamAName || 'Team A'}
-            </div>
-            <div className="scoreboard-score-box team-a-border" style={{ borderColor: teamAColor }}>
-              {serving === 'A' && (
-                <div className="scoreboard-serving">🏐</div>
-              )}
-              <div className="scoreboard-score team-a-color" style={{ color: teamAColor }}>{scoreA}</div>
-            </div>
-          </div>
+    <div className="live-scoreboard-root">
+      <div className="live-scoreboard-competition">
+        {matchInfo.competition || gameData.competition || 'VOLLEYBALL MATCH'}
+      </div>
+      <div className="live-scoreboard-set-line">SET {currentSet}</div>
 
-          {/* Team B */}
-          <div className="scoreboard-team">
-            <div className="scoreboard-team-name team-b-color" style={{ color: teamBColor }}>
-              {gameData.teamBName || 'Team B'}
-            </div>
-            <div className="scoreboard-score-box team-b-border" style={{ borderColor: teamBColor }}>
-              {serving === 'B' && (
-                <div className="scoreboard-serving">🏐</div>
-              )}
-              <div className="scoreboard-score team-b-color" style={{ color: teamBColor }}>{scoreB}</div>
-            </div>
-          </div>
-        </div>
+      <div className="live-scoreboard-main">
+        {renderTeam('left', leftTeam)}
 
-        {/* Set Indicator */}
-        <div className="scoreboard-set-indicator">
-          <div
-            className="scoreboard-set-number"
-            style={{
-              background: `linear-gradient(90deg, ${teamAColor}, ${teamBColor})`,
-              WebkitBackgroundClip: 'text',
-              backgroundClip: 'text',
-              color: 'transparent',
-              WebkitTextFillColor: 'transparent'
-            }}
-          >
-            SET {currentSet}
+        <div className="live-scoreboard-middle">
+          <div className="live-scoreboard-sets-box">
+            <span className="live-scoreboard-sets-number">{setsWon(leftTeam)}</span>
+            <span className="live-scoreboard-sets-label">SETS</span>
+            <span className="live-scoreboard-sets-number">{setsWon(rightTeam)}</span>
           </div>
-          <div className="scoreboard-set-dots">
-            {Array.from({ length: format }).map((_, i) => {
-              const set = sets[i];
-              const won = getSetWinner(set);
-              const base = { borderColor: '#fff' };
-              if (won === 'A') {
-                return (
-                  <div
-                    key={i}
-                    className="scoreboard-set-dot"
-                    style={{
-                      ...base,
-                      background: teamAColor,
-                      borderColor: teamAColor,
-                      color: '#fff',
-                      boxShadow: `0 0 22px ${teamAColor}`
-                    }}
-                  >
-                    {i + 1}
-                  </div>
-                );
-              }
-              if (won === 'B') {
-                return (
-                  <div
-                    key={i}
-                    className="scoreboard-set-dot"
-                    style={{
-                      ...base,
-                      background: teamBColor,
-                      borderColor: teamBColor,
-                      color: '#fff',
-                      boxShadow: `0 0 22px ${teamBColor}`
-                    }}
-                  >
-                    {i + 1}
-                  </div>
-                );
-              }
+          <div className="live-scoreboard-dots">
+            {Array.from({ length: format }).map((_, index) => {
+              const winner = getSetWinner(sets[index]);
+              const color = winner ? teamColor(winner) : undefined;
+              const current = index === currentSet - 1 && gameData.status !== 'FINISHED';
               return (
-                <div key={i} className="scoreboard-set-dot" style={base}>
-                  {i + 1}
-                </div>
+                <div
+                  key={index}
+                  className="live-scoreboard-dot"
+                  style={winner
+                    ? { background: color, borderColor: color }
+                    : current
+                      ? { borderColor: '#ffd166' }
+                      : undefined}
+                />
               );
             })}
           </div>
-          <div className="scoreboard-set-legend">
-            <div className="scoreboard-legend-item">
-              <div className="scoreboard-legend-dot" style={{ background: teamAColor, boxShadow: `0 0 12px ${teamAColor}` }} />
-              <span style={{ color: teamAColor }}>{gameData.teamAName || 'Team A'}</span>
-            </div>
-            <div className="scoreboard-legend-item">
-              <div className="scoreboard-legend-dot" style={{ background: teamBColor, boxShadow: `0 0 12px ${teamBColor}` }} />
-              <span style={{ color: teamBColor }}>{gameData.teamBName || 'Team B'}</span>
-            </div>
-          </div>
         </div>
 
-        {/* Footer Info */}
-        <div className="scoreboard-footer">
-          <div className="scoreboard-footer-item">
-            <div className="scoreboard-footer-label-row">
-              <span className="scoreboard-footer-label">SETS</span>
-            </div>
-            <div className="scoreboard-footer-value">
-              <span style={{ color: teamAColor }}>{setsWon.A}</span>
-              <span className="scoreboard-footer-sep"> — </span>
-              <span style={{ color: teamBColor }}>{setsWon.B}</span>
-            </div>
-          </div>
-          <div className="scoreboard-footer-item">
-            <div className="scoreboard-footer-label-row">
-              <span className="scoreboard-footer-label">TIMEOUTS</span>
-            </div>
-            <div className="scoreboard-footer-value">
-              <span style={{ color: teamAColor }}>{timeoutsUsedA}</span>
-              <span className="scoreboard-footer-sep"> — </span>
-              <span style={{ color: teamBColor }}>{timeoutsUsedB}</span>
-            </div>
-          </div>
-          <div className="scoreboard-footer-item">
-            <div className="scoreboard-footer-label-row">
-              <span className="scoreboard-footer-label">SUBS</span>
-            </div>
-            <div className="scoreboard-footer-value">
-              <span style={{ color: teamAColor }}>{subsUsedA}</span>
-              <span className="scoreboard-footer-sep"> — </span>
-              <span style={{ color: teamBColor }}>{subsUsedB}</span>
-            </div>
-          </div>
-        </div>
+        {renderTeam('right', rightTeam)}
       </div>
 
-      {/* Winner Announcement */}
-      {status === 'FINISHED' && (
-        <div className="scoreboard-winner">
-          <div className="scoreboard-winner-trophy">🏆</div>
-          <div className="scoreboard-winner-text">MATCH WINNER</div>
-          <div
-            className="scoreboard-winner-team"
-            style={{
-              color: setsWon.A > setsWon.B ? teamAColor : teamBColor,
-              textShadow: `0 0 40px ${setsWon.A > setsWon.B ? teamAColor : teamBColor}`
-            }}
-          >
-            {setsWon.A > setsWon.B
-              ? gameData.teamAName || 'Team A'
-              : gameData.teamBName || 'Team B'}
-          </div>
-          <div className="scoreboard-winner-score">
-            Wins {Math.max(setsWon.A, setsWon.B)} - {Math.min(setsWon.A, setsWon.B)}
-          </div>
-        </div>
-      )}
+      <div className="live-scoreboard-footer">
+        <span>TO <b>{timeouts[leftTeam]}</b> • SUB <b>{substitutions[leftTeam]}</b></span>
+        <span>{matchInfo.venue || gameData.venue || ''}</span>
+        <span>TO <b>{timeouts[rightTeam]}</b> • SUB <b>{substitutions[rightTeam]}</b></span>
+      </div>
     </div>
   );
 }
