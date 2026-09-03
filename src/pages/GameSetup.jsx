@@ -22,6 +22,7 @@ import OfficialsModal from '../components/OfficialsModal';
 import CoachLineupInject, { isLineupLockedForTeam } from '../components/CoachLineupInject';
 import { shareRosterToCoach } from '../utils/coachLineup';
 import { getSetupCoinTossOutcome, getFirstServerForSetup } from '../utils/coinTossLogic';
+import { SUBSTITUTION_LIMIT } from '../utils/matchRules';
 import TeamLogoUpload from '../components/TeamLogoUpload';
 
 export default function GameSetup() {
@@ -41,7 +42,7 @@ export default function GameSetup() {
     matchNumber: 'M-001',
     venue: 'National Stadium',
     format: '3', // Best of 3
-    subLimit: '6'
+    subLimit: String(SUBSTITUTION_LIMIT)
   });
 
   // Match Officials
@@ -563,7 +564,7 @@ export default function GameSetup() {
         teamAColor: assignment.teamA.color,
         teamBColor: assignment.teamB.color,
         format: parseInt(matchInfo.format),
-        subLimit: parseInt(matchInfo.subLimit),
+        subLimit: SUBSTITUTION_LIMIT,
         competition: matchInfo.competition,
         matchNumber: matchInfo.matchNumber,
         venue: matchInfo.venue,
@@ -606,6 +607,7 @@ export default function GameSetup() {
           setNumber: 1,
           score: { A: 0, B: 0 },
           serving: firstServer,
+          firstServer,
           timeouts: { A: [], B: [] },
           substitutions: { A: [], B: [] },
           startingLineup: {
@@ -792,13 +794,12 @@ export default function GameSetup() {
                 </div>
                 <div className="form-group">
                   <label>Substitution Limit / Set</label>
-                  <select
-                    value={matchInfo.subLimit}
-                    onChange={(e) => setMatchInfo({ ...matchInfo, subLimit: e.target.value })}
-                  >
-                    <option value="6">6 (FIVB Standard)</option>
-                    <option value="8">8 (Optional)</option>
-                  </select>
+                  <input
+                    type="number"
+                    value={SUBSTITUTION_LIMIT}
+                    readOnly
+                    aria-label="Substitution limit per set"
+                  />
                 </div>
               </div>
             </div>

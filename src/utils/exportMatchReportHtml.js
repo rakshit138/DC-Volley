@@ -1,5 +1,6 @@
 import { buildChallengeReportHtml, getChallengeStats } from './challengeExport';
 import { firestoreTimeToDate, matchSummarySetWonTime } from './firestoreTime';
+import { SUBSTITUTION_LIMIT } from './matchRules';
 
 /**
  * Generate FIVB Match Report as HTML — same structure and style as match_report_generator.html.
@@ -42,7 +43,7 @@ function normalizeGameDataForReport(doc) {
     category: doc.category || 'N/A',
     pool: doc.pool || 'N/A',
     format: doc.format != null ? doc.format : 'N/A',
-    subLimit: doc.subLimit != null ? doc.subLimit : 6,
+    subLimit: SUBSTITUTION_LIMIT,
     teamAName: doc.teamAName || 'Team A',
     teamBName: doc.teamBName || 'Team B',
     ref1: officials.ref1 || '',
@@ -117,10 +118,7 @@ function buildReportHTML(gameData) {
   const winner =
     setsWonA > setsWonB ? gameData.matchInfo.teamAName : gameData.matchInfo.teamBName;
 
-  const subLimit =
-    gameData.matchInfo.subLimit ||
-    gameData.matchInfo.subLimitPerSet ||
-    6;
+  const subLimit = SUBSTITUTION_LIMIT;
 
   let sanctionsCountA = 0;
   let sanctionsCountB = 0;

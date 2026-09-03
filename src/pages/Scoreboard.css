@@ -87,6 +87,13 @@
   font-weight: bold;
   font-family: 'Arial Black', sans-serif;
   line-height: 1;
+  animation: scoreboard-point-blink 1s ease-in-out infinite;
+  will-change: opacity;
+}
+
+@keyframes scoreboard-point-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 .scoreboard-serving {

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
+import { SUBSTITUTION_LIMIT } from '../utils/matchRules';
 import './Lineup.css';
 
 export default function Lineup() {
@@ -60,7 +61,7 @@ export default function Lineup() {
   const scoreB = currentSetData.score?.B || 0;
   const serving = currentSetData.serving || 'A';
   const format = gameData.format || 3;
-  const subLimit = gameData.subLimit ?? 6;
+  const subLimit = SUBSTITUTION_LIMIT;
   const teamAColor = gameData.teamAColor || '#ff6b6b';
   const teamBColor = gameData.teamBColor || '#4ecdc4';
 

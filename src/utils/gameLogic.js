@@ -2,6 +2,7 @@
  * Game Logic Utilities
  * Contains all volleyball game rules and logic
  */
+import { SUBSTITUTION_LIMIT } from './matchRules';
 
 /**
  * Determines if a set should auto-complete based on score
@@ -78,14 +79,13 @@ export function canLiberoReplace(position, servingTeam, team, liberoServeEnabled
 /**
  * Validates substitution rules
  * @param {number} currentSubs - Current substitutions count
- * @param {number} subLimit - Substitution limit per set
  * @returns {Object} { valid: boolean, message?: string }
  */
-export function validateSubstitution(currentSubs, subLimit) {
-  if (currentSubs >= subLimit) {
+export function validateSubstitution(currentSubs) {
+  if (currentSubs >= SUBSTITUTION_LIMIT) {
     return {
       valid: false,
-      message: `Maximum ${subLimit} substitutions per set reached`
+      message: `Maximum ${SUBSTITUTION_LIMIT} substitutions per set reached`
     };
   }
   return { valid: true };

@@ -305,16 +305,8 @@
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
 
-.referee-set-dot.set-won-a {
-  background: linear-gradient(135deg, #ff6b9d 0%, #ff5370 100%);
-  border-color: #ff6b9d;
-  box-shadow: 0 0 12px rgba(255,107,157,0.6);
-}
-
-.referee-set-dot.set-won-b {
-  background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
-  border-color: #4ecdc4;
-  box-shadow: 0 0 12px rgba(78,205,196,0.6);
+.referee-set-dot.set-won {
+  color: #fff;
 }
 
 .referee-courts {
