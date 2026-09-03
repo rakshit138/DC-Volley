@@ -45,7 +45,6 @@ import {
   validateSingleLiberoOnCourt
 } from '../utils/gameLogic';
 import { validateServeStart } from '../utils/liberoServe';
-import { SUBSTITUTION_LIMIT } from '../utils/matchRules';
 import TimeoutModal from '../components/TimeoutModal';
 import SubModal from '../components/SubModal';
 import SanctionModal from '../components/SanctionModal';
@@ -1311,7 +1310,7 @@ export default function RefereePanel() {
         msg += '⚠️ IMPORTANT:\n';
         msg +=
           '• This substitution does NOT count toward the ' +
-          SUBSTITUTION_LIMIT +
+          (Number(gameData?.subLimit) || 6) +
           '-substitution limit\n';
         msg += '• Player #' + (outPlayer?.jersey ?? playerOut) + ' is LOCKED and cannot return to play in this match\n';
         msg += '• Tagged with "E" in match records';
@@ -1603,7 +1602,7 @@ export default function RefereePanel() {
   const swapped = !!gameData.swapped;
   const leftTeam = swapped ? 'B' : 'A';
   const rightTeam = swapped ? 'A' : 'B';
-  const subLimit = SUBSTITUTION_LIMIT;
+  const subLimit = Number(gameData.subLimit) || 6;
   const toA = (currentSetData.timeouts?.A || []).length;
   const toB = (currentSetData.timeouts?.B || []).length;
   const subA = (currentSetData.substitutions?.A || []).length;
@@ -1846,16 +1845,9 @@ export default function RefereePanel() {
                   const set = sets[i];
                   const isWon = set?.winner;
                   let dotClass = 'referee-set-dot';
-                  const winnerColor = isWon === 'A' ? teamAColor : isWon === 'B' ? teamBColor : null;
-                  if (winnerColor) dotClass += ' set-won';
-                  const dotStyle = winnerColor
-                    ? {
-                        background: winnerColor,
-                        borderColor: winnerColor,
-                        boxShadow: `0 0 12px ${winnerColor}`
-                      }
-                    : undefined;
-                  return <div key={i} className={dotClass} style={dotStyle}>{i + 1}</div>;
+                  if (isWon === 'A') dotClass += ' set-won-a';
+                  else if (isWon === 'B') dotClass += ' set-won-b';
+                  return <div key={i} className={dotClass}>{i + 1}</div>;
                 })}
               </div>
             </div>

@@ -15,7 +15,6 @@ import { db } from '../firebase/config';
 import { saveGameAssets } from './gameAssetsService';
 import { allowsP1Replacement } from '../utils/liberoServe';
 import { sanitizeFirestoreWrite } from '../utils/firestoreSanitize';
-import { SUBSTITUTION_LIMIT } from '../utils/matchRules';
 
 const GAMES_COLLECTION = 'games';
 
@@ -216,7 +215,6 @@ export async function createGame(gameCode, gameData) {
 
   const gameDoc = {
     ...rest,
-    subLimit: SUBSTITUTION_LIMIT,
     gameCode,
     sets,
     createdAt: serverTimestamp(),
@@ -517,7 +515,7 @@ export async function recordSubstitution(gameCode, team, playerOut, playerIn) {
 
   const gameData = gameSnap.data();
   const currentSet = gameData.currentSet || 1;
-  const subLimit = SUBSTITUTION_LIMIT;
+  const subLimit = Number(gameData.subLimit) || 6;
   const sets = [...(gameData.sets || [])];
   const teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
 
@@ -1868,7 +1866,6 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
     setNumber: nextSet,
     score: { A: 0, B: 0 },
     serving: firstServer,
-    firstServer,
     timeouts: { A: [], B: [] },
     substitutions: { A: [], B: [] },
     exceptionalSubstitutions: { A: [], B: [] },

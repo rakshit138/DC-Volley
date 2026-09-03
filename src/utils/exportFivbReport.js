@@ -3,7 +3,6 @@
  * Opens a new window; user prints to PDF. Expects live game document shape from Firestore/React.
  */
 import { firestoreTimeToDate } from './firestoreTime';
-import { SUBSTITUTION_LIMIT } from './matchRules';
 
 function val(v) {
   return v === null || v === undefined ? '' : String(v);
@@ -17,7 +16,7 @@ function tsToMs(ts) {
 function buildMatchInfo(G) {
   const o = G.officials || {};
   if (G.matchInfo && typeof G.matchInfo === 'object') {
-    return { ...G.matchInfo, subLimit: SUBSTITUTION_LIMIT };
+    return { ...G.matchInfo };
   }
   return {
     teamAName: G.teamAName,
@@ -30,7 +29,7 @@ function buildMatchInfo(G) {
     division: G.division,
     category: G.category || 'Senior',
     format: G.format,
-    subLimit: SUBSTITUTION_LIMIT,
+    subLimit: G.subLimit,
     ref1: o.ref1 || G.ref1,
     ref2: o.ref2 || G.ref2,
     scorer: o.scorer || G.scorer,
@@ -218,7 +217,7 @@ export function exportFivbReport(gameData) {
     ['Division', mi.division],
     ['Category', mi.category || 'Senior'],
     ['Format', 'Best of ' + (mi.format || '?')],
-    ['Sub limit/set', mi.subLimit || SUBSTITUTION_LIMIT]
+    ['Sub limit/set', mi.subLimit || 6]
   ];
   infoFields.forEach((f) => {
     o('<div class="info-cell"><div class="lbl">' + f[0] + '</div><div class="val">' + val(f[1] || '—') + '</div></div>');
@@ -504,13 +503,13 @@ export function exportFivbReport(gameData) {
         ': ' +
         subA.length +
         '/' +
-        (mi.subLimit || SUBSTITUTION_LIMIT) +
+        (mi.subLimit || 6) +
         ' &nbsp;|&nbsp; ' +
         tB +
         ': ' +
         subB.length +
         '/' +
-        (mi.subLimit || SUBSTITUTION_LIMIT) +
+        (mi.subLimit || 6) +
         '</div>'
     );
     const allSubs = [];

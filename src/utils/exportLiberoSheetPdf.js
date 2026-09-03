@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { normalizeExportGameData } from './normalizeExportGameData.js';
+import { normalizeExportGameData } from './normalizeExportGameData';
 
 const SECTIONS = [['A', 'B'], ['B', 'A'], ['A', 'B'], ['B', 'A'], ['A', 'B']];
 
@@ -9,7 +9,7 @@ function parseLiberoDesc(d) {
   const l = d.match(/Libero\s+#(\d+)/i) || d.match(/#(\d+)[^#]*replaces/i);
   if (l) o.lib = l[1];
   const r = d.match(/replaces\s+#(\d+)/i);
-  if (r) o.rep = r[1];
+  if (r && !d.match(/replaces\s+Libero/i)) o.rep = r[1];
   const s = d.match(/at\s+(\d+)\s*[:\-]\s*(\d+)/i);
   if (s) {
     o.s1 = s[1];
@@ -18,8 +18,8 @@ function parseLiberoDesc(d) {
   return o;
 }
 
-function liberoEventToDesc(ev, teamName, players) {
-  if (String(ev.type || '').toUpperCase() === 'LIBERO' && ev.description) return ev.description;
+function liberoEventToDesc(ev, teamName) {
+  if (ev.description) return ev.description;
   const lib = ev.liberoJersey || ev.playerInJersey;
   const rep = ev.playerOutJersey;
   const score = ev.score || {};
@@ -27,12 +27,7 @@ function liberoEventToDesc(ev, teamName, players) {
   const opp = team === 'A' ? 'B' : 'A';
   const scoreText = `${score[team] ?? 0}:${score[opp] ?? 0}`;
   const pos = ev.position != null ? ` in P${ev.position}` : '';
-  const liberoPlayer = (players || []).find((player) => String(player.jersey) === String(lib));
-  const replacedPlayer = (players || []).find((player) => String(player.jersey) === String(rep));
-  const badge = liberoPlayer?.role === 'libero1' ? 'L1' : liberoPlayer?.role === 'libero2' ? 'L2' : 'L';
-  const liberoName = liberoPlayer?.name ? ` ${liberoPlayer.name}` : '';
-  const replacedName = replacedPlayer?.name ? ` ${replacedPlayer.name}` : '';
-  return `${teamName} Libero #${lib}${liberoName} (${badge}) replaces #${rep}${replacedName}${pos} at ${scoreText}`;
+  return `${teamName} Libero #${lib} replaces #${rep}${pos} at ${scoreText}`;
 }
 
 function collectLiberoEvents(gameData) {
@@ -47,11 +42,10 @@ function collectLiberoEvents(gameData) {
     .map((ev) => {
       const team = ev.team || 'A';
       const teamName = team === 'A' ? teamAName : teamBName;
-      const players = gameData.teams?.[team]?.players || [];
       return {
         ...ev,
         type: 'Libero',
-        description: liberoEventToDesc(ev, teamName, players)
+        description: liberoEventToDesc(ev, teamName)
       };
     });
 }

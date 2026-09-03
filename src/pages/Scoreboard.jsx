@@ -9,7 +9,6 @@ import {
   teamDisplayColor,
   teamDisplayName
 } from '../utils/displayHelpers';
-import { SUBSTITUTION_LIMIT } from '../utils/matchRules';
 import './Scoreboard.css';
 
 const ROMAN = ['i', 'ii', 'iii', 'iv', 'v'];
@@ -165,7 +164,7 @@ export default function Scoreboard() {
     const luRight = gameData.teams?.[rightTeam]?.lineup || [];
 
     const srv = set.serving || 'A';
-    const subMax = SUBSTITUTION_LIMIT;
+    const subMax = Number(gameData.subLimit ?? gameData.matchInfo?.subLimitPerSet ?? 6);
 
     const usedToLeft = set.timeouts?.[leftTeam]?.length ?? 0;
     const usedToRight = set.timeouts?.[rightTeam]?.length ?? 0;
@@ -274,19 +273,13 @@ export default function Scoreboard() {
                 </div>
               </div>
               <div className="sb-sw-row">
-                <div
-                  className="sb-sw-box"
-                  style={{ backgroundColor: view.cLeft, borderColor: view.cLeft, boxShadow: `0 0 14px ${view.cLeft}` }}
-                >
-                  <span className="sb-sw-num">
+                <div className="sb-sw-box">
+                  <span className="sb-sw-num" style={{ color: view.cLeft }}>
                     {view.swLeft}
                   </span>
                 </div>
-                <div
-                  className="sb-sw-box"
-                  style={{ backgroundColor: view.cRight, borderColor: view.cRight, boxShadow: `0 0 14px ${view.cRight}` }}
-                >
-                  <span className="sb-sw-num">
+                <div className="sb-sw-box">
+                  <span className="sb-sw-num" style={{ color: view.cRight }}>
                     {view.swRight}
                   </span>
                 </div>
