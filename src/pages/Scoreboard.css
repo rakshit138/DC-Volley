@@ -134,6 +134,13 @@ body,
   line-height: 1;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 40px currentColor !important;
+  animation: scoreboard-point-blink 1s ease-in-out infinite;
+  will-change: opacity;
+}
+
+@keyframes scoreboard-point-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 .sb-sw-row {
@@ -143,7 +150,6 @@ body,
 
 .sb-sw-box {
   min-width: clamp(34px, 4.5vw, 68px);
-  background: rgba(4, 12, 36, 0.88);
   border: 2px solid rgba(255, 255, 255, 0.11);
   border-radius: 7px;
   display: flex;
@@ -156,6 +162,8 @@ body,
   font-size: clamp(22px, 3.8vw, 50px);
   font-weight: 900;
   line-height: 1;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
 }
 
 .sb-sh-wrap {

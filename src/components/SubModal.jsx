@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import './SubModal.css';
+import { SUBSTITUTION_LIMIT } from '../utils/matchRules';
 
 const isLiberoRole = (r) => r === 'libero1' || r === 'libero2' || r === 'liberocaptain';
 
@@ -10,7 +11,6 @@ export default function SubModal({
   teams,
   currentSet,
   sets,
-  subLimit,
   injuredPlayers,
   liberoReplacements,
   sanctionSystem,
@@ -88,7 +88,7 @@ export default function SubModal({
 
   const setData = sets?.[currentSet - 1];
   const subsUsed = setData?.substitutions?.[team]?.length ?? 0;
-  const limit = subLimit || 6;
+  const limit = SUBSTITUTION_LIMIT;
   const canSub = subsUsed < limit;
   const canConfirmRegular = canSub || bypassSubCap;
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { firestoreTimeToDate, matchSummarySetWonTime } from '../utils/firestoreTime';
+import { SUBSTITUTION_LIMIT } from '../utils/matchRules';
 import './MatchDataModal.css';
 
 export default function MatchDataModal({ open, gameData, onClose }) {
@@ -17,7 +18,7 @@ export default function MatchDataModal({ open, gameData, onClose }) {
     category: gameData.category || 'N/A',
     pool: gameData.pool || 'N/A',
     format: gameData.format || '3',
-    subLimit: gameData.subLimit || '6',
+    subLimit: SUBSTITUTION_LIMIT,
     teamAName: gameData.teamAName || 'Team A',
     teamBName: gameData.teamBName || 'Team B'
   };

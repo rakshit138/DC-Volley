@@ -1,3 +1,5 @@
+import { SUBSTITUTION_LIMIT } from './matchRules';
+
 /**
  * Save match data to JSON file
  * @param {Object} gameData - Complete game data from Firestore
@@ -25,7 +27,7 @@ export function saveMatch(gameData) {
         matchNumber: gameData.matchNumber || '',
         venue: gameData.venue || '',
         format: gameData.format || '3',
-        subLimit: gameData.subLimit || '6',
+        subLimit: SUBSTITUTION_LIMIT,
         teamAName: gameData.teamAName || 'Team A',
         teamBName: gameData.teamBName || 'Team B',
         teamAColor: gameData.teamAColor || '#ff6b6b',
@@ -126,7 +128,7 @@ export function loadMatch(file) {
           matchNumber: gameData.matchInfo.matchNumber,
           venue: gameData.matchInfo.venue,
           format: gameData.matchInfo.format,
-          subLimit: gameData.matchInfo.subLimit,
+          subLimit: SUBSTITUTION_LIMIT,
           teamAName: gameData.matchInfo.teamAName,
           teamBName: gameData.matchInfo.teamBName,
           teamAColor: gameData.matchInfo.teamAColor,
