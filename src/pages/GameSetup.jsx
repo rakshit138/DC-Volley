@@ -537,10 +537,10 @@ export default function GameSetup() {
       }
 
       const mergedOfficials = {
-        ref1: officials.ref1,
-        ref2: officials.ref2,
-        scorer: officials.scorer,
-        assistScorer: officials.assistScorer,
+        ref1: officialsSheet?.ref1 || officials.ref1,
+        ref2: officialsSheet?.ref2 || officials.ref2,
+        scorer: officialsSheet?.scorer || officials.scorer,
+        assistScorer: officialsSheet?.assistScorer || officials.assistScorer,
         coachA: officialsSheet?.coachA ?? '',
         asstCoachA: officialsSheet?.asstCoachA ?? '',
         medicalA: officialsSheet?.medicalA ?? '',
@@ -552,10 +552,12 @@ export default function GameSetup() {
         signatures: officialsSheet?.signatures || {}
       };
 
-      const logoASource =
+      const assignedLogoA =
         coinToss.teamAAssignment === 'team1' ? team1.logoData || '' : team2.logoData || '';
-      const logoBSource =
+      const assignedLogoB =
         coinToss.teamBAssignment === 'team1' ? team1.logoData || '' : team2.logoData || '';
+      const logoASource = officialsSheet?.logoA || assignedLogoA;
+      const logoBSource = officialsSheet?.logoB || assignedLogoB;
 
       // Create game data (logos saved separately — keeps doc under Firestore 1MB limit)
       const gameData = {
@@ -576,6 +578,28 @@ export default function GameSetup() {
         matchDate: matchInfo.date,
         matchTime: matchInfo.time,
         officials: mergedOfficials,
+        matchInfo: {
+          date: matchInfo.date,
+          time: matchInfo.time,
+          city: matchInfo.city,
+          countryCode: matchInfo.countryCode,
+          division: matchInfo.division,
+          category: matchInfo.category,
+          pool: matchInfo.pool,
+          competition: matchInfo.competition,
+          matchNumber: matchInfo.matchNumber,
+          venue: matchInfo.venue,
+          format: matchInfo.format,
+          subLimitPerSet: SUBSTITUTION_LIMIT,
+          teamAName: officialsSheet?.teamAName?.trim() || assignment.teamA.name,
+          teamBName: officialsSheet?.teamBName?.trim() || assignment.teamB.name,
+          teamAColor: assignment.teamA.color,
+          teamBColor: assignment.teamB.color,
+          ref1: mergedOfficials.ref1,
+          ref2: mergedOfficials.ref2,
+          scorer: mergedOfficials.scorer,
+          assistScorer: mergedOfficials.assistScorer
+        },
         coinToss: {
           winner: coinToss.winner,
           choice: coinToss.choice,
@@ -1340,50 +1364,8 @@ export default function GameSetup() {
           <div className="setup-step setup-step-officials">
             <h2>Officials & signatures</h2>
             <p className="setup-hint">
-              Enter match referee and scorer names, complete team staff and signatures below, click <strong>Save</strong> on the sheet, then continue to lineup selection.
+              Enter 1st referee, 2nd referee, scorer, and assistant scorer names on the sheet below, along with team staff and signatures. Click <strong>Save</strong>, then continue to lineup selection.
             </p>
-            <div className="setup-form">
-              <div className="form-row">
-                <div className="form-group">
-                  <label>1st Referee</label>
-                  <input
-                    type="text"
-                    value={officials.ref1}
-                    onChange={(e) => setOfficials({ ...officials, ref1: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>2nd Referee</label>
-                  <input
-                    type="text"
-                    value={officials.ref2}
-                    onChange={(e) => setOfficials({ ...officials, ref2: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Scorer</label>
-                  <input
-                    type="text"
-                    value={officials.scorer}
-                    onChange={(e) => setOfficials({ ...officials, scorer: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Assistant Scorer</label>
-                  <input
-                    type="text"
-                    value={officials.assistScorer}
-                    onChange={(e) => setOfficials({ ...officials, assistScorer: e.target.value })}
-                    placeholder="Name"
-                  />
-                </div>
-              </div>
-            </div>
             <OfficialsModal
               embedded
               open
@@ -1391,12 +1373,25 @@ export default function GameSetup() {
               gameData={{
                 teamAName: officialsSheet?.teamAName || assignment.teamA.name,
                 teamBName: officialsSheet?.teamBName || assignment.teamB.name,
+                teams: {
+                  A: { logoData: officialsSheet?.logoA || assignment.teamA.logoData || '' },
+                  B: { logoData: officialsSheet?.logoB || assignment.teamB.logoData || '' }
+                },
                 officials: {
                   ...officials,
                   ...(officialsSheet || {})
                 }
               }}
-              onSave={(data) => setOfficialsSheet(data)}
+              onSave={(data) => {
+                setOfficialsSheet(data);
+                setOfficials((prev) => ({
+                  ...prev,
+                  ref1: data.ref1 ?? prev.ref1,
+                  ref2: data.ref2 ?? prev.ref2,
+                  scorer: data.scorer ?? prev.scorer,
+                  assistScorer: data.assistScorer ?? prev.assistScorer
+                }));
+              }}
               onClose={() => {}}
             />
             <div className="setup-buttons">

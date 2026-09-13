@@ -240,19 +240,57 @@ export default function MatchDataModal({ open, gameData, onClose }) {
           <div className="match-data-grid">
             <div className="match-data-item">
               <span className="match-data-label">1st Referee:</span>
-              <span className="match-data-value">{officials.ref1 || 'N/A'}</span>
+              <span className="match-data-value">{officials.ref1 || gameData.matchInfo?.ref1 || 'N/A'}</span>
             </div>
             <div className="match-data-item">
               <span className="match-data-label">2nd Referee:</span>
-              <span className="match-data-value">{officials.ref2 || 'N/A'}</span>
+              <span className="match-data-value">{officials.ref2 || gameData.matchInfo?.ref2 || 'N/A'}</span>
             </div>
             <div className="match-data-item">
               <span className="match-data-label">Scorer:</span>
-              <span className="match-data-value">{officials.scorer || 'N/A'}</span>
+              <span className="match-data-value">{officials.scorer || gameData.matchInfo?.scorer || 'N/A'}</span>
             </div>
             <div className="match-data-item">
               <span className="match-data-label">Assistant Scorer:</span>
-              <span className="match-data-value">{officials.assistScorer || 'N/A'}</span>
+              <span className="match-data-value">{officials.assistScorer || gameData.matchInfo?.assistScorer || 'N/A'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="match-data-section">
+          <h4>Team Officials</h4>
+          <div className="match-data-grid">
+            <div className="match-data-item">
+              <span className="match-data-label">{matchInfo.teamAName} Coach:</span>
+              <span className="match-data-value">{officials.coachA || 'N/A'}</span>
+            </div>
+            <div className="match-data-item">
+              <span className="match-data-label">{matchInfo.teamAName} Asst. Coach:</span>
+              <span className="match-data-value">{officials.asstCoachA || 'N/A'}</span>
+            </div>
+            <div className="match-data-item">
+              <span className="match-data-label">{matchInfo.teamAName} Medical:</span>
+              <span className="match-data-value">{officials.medicalA || 'N/A'}</span>
+            </div>
+            <div className="match-data-item">
+              <span className="match-data-label">{matchInfo.teamAName} Trainer:</span>
+              <span className="match-data-value">{officials.trainerA || 'N/A'}</span>
+            </div>
+            <div className="match-data-item">
+              <span className="match-data-label">{matchInfo.teamBName} Coach:</span>
+              <span className="match-data-value">{officials.coachB || 'N/A'}</span>
+            </div>
+            <div className="match-data-item">
+              <span className="match-data-label">{matchInfo.teamBName} Asst. Coach:</span>
+              <span className="match-data-value">{officials.asstCoachB || 'N/A'}</span>
+            </div>
+            <div className="match-data-item">
+              <span className="match-data-label">{matchInfo.teamBName} Medical:</span>
+              <span className="match-data-value">{officials.medicalB || 'N/A'}</span>
+            </div>
+            <div className="match-data-item">
+              <span className="match-data-label">{matchInfo.teamBName} Trainer:</span>
+              <span className="match-data-value">{officials.trainerB || 'N/A'}</span>
             </div>
           </div>
         </div>

@@ -703,8 +703,26 @@ export async function updateOfficials(gameCode, officials) {
     officialsSavedAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
-  if (oTeamA != null) updatePayload.teamAName = oTeamA;
-  if (oTeamB != null) updatePayload.teamBName = oTeamB;
+
+  const matchInfo = gameData.matchInfo ? { ...gameData.matchInfo } : {};
+  let matchInfoChanged = false;
+  ['ref1', 'ref2', 'scorer', 'assistScorer'].forEach((key) => {
+    if (rest[key] != null) {
+      matchInfo[key] = rest[key];
+      matchInfoChanged = true;
+    }
+  });
+  if (oTeamA != null) {
+    updatePayload.teamAName = oTeamA;
+    matchInfo.teamAName = oTeamA;
+    matchInfoChanged = true;
+  }
+  if (oTeamB != null) {
+    updatePayload.teamBName = oTeamB;
+    matchInfo.teamBName = oTeamB;
+    matchInfoChanged = true;
+  }
+  if (matchInfoChanged) updatePayload.matchInfo = matchInfo;
 
   await updateDoc(gameRef, updatePayload);
 }

@@ -239,6 +239,16 @@
   font-size: 13px;
 }
 
+.officials-ref-name-input {
+  width: 100%;
+  background: #16213e;
+  border: 1px solid #533483;
+  color: #fff;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+}
+
 .officials-ref-sig-wrap {
   flex: 2;
   border: 2px dashed #533483;

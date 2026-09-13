@@ -4,8 +4,7 @@ import { useGame } from '../context/GameContext';
 import { SUBSTITUTION_LIMIT } from '../utils/matchRules';
 import './Lineup.css';
 
-const POSITION_ORDER = [3, 2, 1, 4, 5, 0];
-const POSITION_LABELS = ['P4-LF', 'P3-MF', 'P2-RF', 'P5-LB', 'P6-MB', 'P1-RB'];
+const POSITION_LABELS = ['P1-RB', 'P2-RF', 'P3-MF', 'P4-LF', 'P5-LB', 'P6-MB'];
 
 function getSetWinner(set) {
   if (!set) return null;
@@ -18,6 +17,25 @@ function getSetWinner(set) {
 
 function isLiberoRole(role) {
   return role === 'libero1' || role === 'libero2' || role === 'liberocaptain';
+}
+
+function getLiberoReplacementAt(replacements, liberoJersey, courtPosition) {
+  if (!replacements?.length || liberoJersey == null) return null;
+  const lib = String(liberoJersey);
+  const forLibero = replacements.filter((r) => String(r.libero) === lib);
+  if (forLibero.length === 0) return null;
+
+  const exact = forLibero.find((r) => Number(r.position) === courtPosition);
+  if (exact?.originalPlayer) return String(exact.originalPlayer);
+
+  if (forLibero.length === 1 && forLibero[0].originalPlayer) {
+    return String(forLibero[0].originalPlayer);
+  }
+
+  const legacyIndex = forLibero.find((r) => Number(r.position) === courtPosition - 1);
+  if (legacyIndex?.originalPlayer) return String(legacyIndex.originalPlayer);
+
+  return forLibero[0]?.originalPlayer ? String(forLibero[0].originalPlayer) : null;
 }
 
 export default function Lineup() {
@@ -54,27 +72,58 @@ export default function Lineup() {
     team === 'A'
       ? matchInfo.teamAColor || gameData?.teamAColor || '#ff6b6b'
       : matchInfo.teamBColor || gameData?.teamBColor || '#4ecdc4';
+  const teamLogo = (team) =>
+    gameData?.teams?.[team]?.logoData || matchInfo[`logo${team}`] || '';
 
   const playerForJersey = (team, jersey) =>
     (gameData?.teams?.[team]?.players || []).find((player) => String(player.jersey) === String(jersey));
 
-  const renderCourt = (team) => {
+  const renderCourt = (team, isLeft) => {
     const lineup = gameData?.teams?.[team]?.lineup || [];
+    const logoSrc = teamLogo(team);
+    const fallbackLetter = (teamName(team) || team)[0];
+    const fallbackColor = team === 'A' ? '#e94560' : '#00d9ff';
+    const replacements = (gameData?.liberoReplacements?.[team] || []).filter(
+      (r) => !r.set || r.set === currentSet
+    );
+
     return (
-      <div className="lineup-display-court-visual">
+      <div className={`lineup-display-court-visual ${isLeft ? 'court-left' : 'court-right'}`}>
         <div className="lineup-display-court-grid">
-          {POSITION_ORDER.map((lineupIndex, index) => {
-            const jersey = lineup[lineupIndex];
+          {POSITION_LABELS.map((label, idx) => {
+            const jersey = lineup[idx];
             const player = playerForJersey(team, jersey);
-            const isServer = lineupIndex === 0 && set?.serving === team;
-            const isLibero = player && isLiberoRole(player.role);
+            const isServer = idx === 0 && set?.serving === team;
+            let isLibero = player && isLiberoRole(player.role);
+            const origJersey = jersey != null
+              ? getLiberoReplacementAt(replacements, jersey, idx + 1)
+              : null;
+            if (origJersey && !isLibero) isLibero = true;
             return (
               <div
-                key={POSITION_LABELS[index]}
+                key={label}
+                data-pos={idx + 1}
                 className={`lineup-display-court-pos${isServer ? ' server' : ''}${isLibero ? ' libero-on-court' : ''}`}
               >
-                <div className="lineup-display-pos-label">{POSITION_LABELS[index]}</div>
+                <div className="lineup-display-pos-label">{label}</div>
+                {player ? (
+                  <div className="lineup-display-pos-logo-wrap">
+                    {logoSrc ? (
+                      <img src={logoSrc} alt="" />
+                    ) : (
+                      <span
+                        className="lineup-display-pos-logo-fallback"
+                        style={{ color: fallbackColor }}
+                      >
+                        {fallbackLetter}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
                 <div className="lineup-display-pos-jersey">{player ? `#${player.jersey}` : '-'}</div>
+                {origJersey != null && (
+                  <div className="lineup-display-pos-orig">⇄ #{origJersey}</div>
+                )}
                 {player?.name && <div className="lineup-display-pos-name">{player.name.split(' ')[0]}</div>}
               </div>
             );
@@ -134,6 +183,7 @@ export default function Lineup() {
   const renderStats = (team) => {
     const timeoutsUsed = set?.timeouts?.[team]?.length ?? 0;
     const substitutionsUsed = set?.substitutions?.[team]?.length ?? 0;
+    const subLimit = Number(gameData?.subLimit || matchInfo.subLimitPerSet || SUBSTITUTION_LIMIT) || SUBSTITUTION_LIMIT;
     return (
       <div className="lineup-display-stats-row">
         <div className="lineup-display-stat-item">
@@ -143,77 +193,99 @@ export default function Lineup() {
         <div className="lineup-display-stat-item">
           <span className="lineup-display-stat-label">Subs Left</span>
           <span className="lineup-display-stat-value">
-            {Math.max(0, SUBSTITUTION_LIMIT - substitutionsUsed)} / {SUBSTITUTION_LIMIT}
+            {Math.max(0, subLimit - substitutionsUsed)} / {subLimit}
           </span>
         </div>
       </div>
     );
   };
 
-  const renderTeam = (team) => (
-    <div className="lineup-display-team-lineup">
-      <div className="lineup-display-lineup-title" style={{ color: teamColor(team) }}>{teamName(team)}</div>
-      {renderCourt(team)}
-      {renderRotation(team)}
-      {renderLiberos(team)}
-      {renderStats(team)}
-    </div>
-  );
+  const renderTeam = (team, isLeft) => {
+    const logoSrc = teamLogo(team);
+    const titleColor = team === 'A' ? '#ff6b6b' : '#4ecdc4';
+    return (
+      <div className="lineup-display-team-lineup">
+        <div className="lineup-display-lineup-title" style={{ color: titleColor }}>
+          {logoSrc ? (
+            <span className="lineup-display-lineup-title-logo">
+              <img src={logoSrc} alt="" />
+            </span>
+          ) : null}
+          <span>{teamName(team)}</span>
+        </div>
+        {renderCourt(team, isLeft)}
+        {renderRotation(team)}
+        {renderLiberos(team)}
+        {renderStats(team)}
+      </div>
+    );
+  };
 
   const format = Number(matchInfo.format || gameData?.format) || 3;
+  const targetPoints = (format === 5 && currentSet === 5) || (format === 3 && currentSet === 3) ? 15 : 25;
+  const leftSetsWon = sets.filter((s) => getSetWinner(s) === leftTeam).length;
+  const rightSetsWon = sets.filter((s) => getSetWinner(s) === rightTeam).length;
   const contentMessage = placeholder || (!set ? 'Waiting for match to start...' : '');
 
   return (
     <div className="lineup-display-root">
-      <div className="lineup-display-header">
-        <div className="lineup-display-match-title">
-          {gameData ? matchInfo.competition || gameData.competition || 'Match' : 'Lineup & Rotation Display'}
-        </div>
-        <div className="lineup-display-match-info">
-          {gameData
-            ? `${matchInfo.venue || gameData.venue || ''}${matchInfo.venue || gameData.venue ? ' | ' : ''}${matchInfo.matchDate || gameData.matchDate || ''}`
-            : '2nd Referee View'}
-        </div>
-      </div>
-
       {contentMessage ? (
         <div className="lineup-display-no-data">{contentMessage}</div>
       ) : (
         <div className="lineup-display-content">
           <div className="lineup-display-score">
-            <div className="lineup-display-team-score-box">
-              <div className="lineup-display-team-name" style={{ color: teamColor(leftTeam) }}>{teamName(leftTeam)}</div>
-              <div className="lineup-display-score-big" style={{ color: teamColor(leftTeam) }}>{set.score?.[leftTeam] ?? 0}</div>
-            </div>
-
-            <div className="lineup-display-set-info">
-              <div className="lineup-display-set-number">SET {currentSet}</div>
-              <div className="lineup-display-set-dots">
-                {Array.from({ length: format }).map((_, index) => {
-                  const winner = getSetWinner(sets[index]);
-                  const color = winner ? teamColor(winner) : undefined;
-                  return (
-                    <div
-                      key={index}
-                      className="lineup-display-set-dot"
-                      style={winner ? { background: color, borderColor: color } : undefined}
-                    >
-                      {index + 1}
-                    </div>
-                  );
-                })}
+            <div className="lineup-display-team-score">
+              <div className="lineup-display-banner-name team-a">
+                {teamLogo(leftTeam) ? (
+                  <div className="lineup-display-banner-logo">
+                    <img src={teamLogo(leftTeam)} alt="" />
+                  </div>
+                ) : null}
+                <span className="lineup-display-banner-text">{teamName(leftTeam)}</span>
               </div>
+              <div className="lineup-display-score-box">{set.score?.[leftTeam] ?? 0}</div>
+              <div className="lineup-display-sets-won">Sets: <span>{leftSetsWon}</span></div>
             </div>
 
-            <div className="lineup-display-team-score-box">
-              <div className="lineup-display-team-name" style={{ color: teamColor(rightTeam) }}>{teamName(rightTeam)}</div>
-              <div className="lineup-display-score-big" style={{ color: teamColor(rightTeam) }}>{set.score?.[rightTeam] ?? 0}</div>
+            <div className="lineup-display-set-center">
+              <div>
+                <div className="lineup-display-set-title">SET {currentSet}</div>
+                <div className="lineup-display-set-dots">
+                  {Array.from({ length: format }).map((_, index) => {
+                    const winner = getSetWinner(sets[index]);
+                    const color = winner ? teamColor(winner) : undefined;
+                    return (
+                      <div
+                        key={index}
+                        className="lineup-display-set-dot"
+                        style={winner ? { background: color, borderColor: color } : undefined}
+                      >
+                        {index + 1}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="lineup-display-set-type">(First to {targetPoints}, win by 2)</div>
+            </div>
+
+            <div className="lineup-display-team-score lineup-display-team-score-right">
+              <div className="lineup-display-banner-name team-b">
+                {teamLogo(rightTeam) ? (
+                  <div className="lineup-display-banner-logo">
+                    <img src={teamLogo(rightTeam)} alt="" />
+                  </div>
+                ) : null}
+                <span className="lineup-display-banner-text">{teamName(rightTeam)}</span>
+              </div>
+              <div className="lineup-display-score-box">{set.score?.[rightTeam] ?? 0}</div>
+              <div className="lineup-display-sets-won">Sets: <span>{rightSetsWon}</span></div>
             </div>
           </div>
 
           <div className="lineup-display-lineups">
-            {renderTeam(leftTeam)}
-            {renderTeam(rightTeam)}
+            {renderTeam(leftTeam, true)}
+            {renderTeam(rightTeam, false)}
           </div>
         </div>
       )}

@@ -151,6 +151,12 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
   const [asstCoachB, setAsstCoachB] = useState(officials.asstCoachB || '');
   const [medicalB, setMedicalB] = useState(officials.medicalB || '');
   const [trainerB, setTrainerB] = useState(officials.trainerB || '');
+  const [ref1, setRef1] = useState(officials.ref1 || gameData?.matchInfo?.ref1 || '');
+  const [ref2, setRef2] = useState(officials.ref2 || gameData?.matchInfo?.ref2 || '');
+  const [scorer, setScorer] = useState(officials.scorer || gameData?.matchInfo?.scorer || '');
+  const [assistScorer, setAssistScorer] = useState(
+    officials.assistScorer || gameData?.matchInfo?.assistScorer || ''
+  );
 
   const [logoA, setLogoA] = useState('');
   const [logoB, setLogoB] = useState('');
@@ -190,6 +196,10 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
     setAsstCoachB(gameData?.officials?.asstCoachB || '');
     setMedicalB(gameData?.officials?.medicalB || '');
     setTrainerB(gameData?.officials?.trainerB || '');
+    setRef1(gameData?.officials?.ref1 || gameData?.matchInfo?.ref1 || '');
+    setRef2(gameData?.officials?.ref2 || gameData?.matchInfo?.ref2 || '');
+    setScorer(gameData?.officials?.scorer || gameData?.matchInfo?.scorer || '');
+    setAssistScorer(gameData?.officials?.assistScorer || gameData?.matchInfo?.assistScorer || '');
     setLogoA(gameData?.teams?.A?.logoData || gameData?.matchInfo?.logoA || '');
     setLogoB(gameData?.teams?.B?.logoData || gameData?.matchInfo?.logoB || '');
     const sigs = gameData?.officials?.signatures || {};
@@ -240,6 +250,7 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
       teamBName: teamBName.trim() || gameData?.teamBName,
       coachA, asstCoachA, medicalA, trainerA,
       coachB, asstCoachB, medicalB, trainerB,
+      ref1, ref2, scorer, assistScorer,
       logoA,
       logoB,
       signatures
@@ -249,10 +260,10 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
 
   if (!open && !embedded) return null;
 
-  const ref1Name = gameData?.officials?.ref1 ?? gameData?.matchInfo?.ref1 ?? '';
-  const ref2Name = gameData?.officials?.ref2 ?? gameData?.matchInfo?.ref2 ?? '';
-  const scorerName = gameData?.officials?.scorer ?? gameData?.matchInfo?.scorer ?? '';
-  const assistScorerName = gameData?.officials?.assistScorer ?? gameData?.matchInfo?.assistScorer ?? '';
+  const ref1Name = ref1;
+  const ref2Name = ref2;
+  const scorerName = scorer;
+  const assistScorerName = assistScorer;
 
   const inner = (
       <div className="officials-modal-content" onClick={(e) => e.stopPropagation()}>
@@ -323,7 +334,13 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
             <div className="officials-ref-row">
               <div className="officials-ref-label-name">
                 <div className="officials-ref-label">1st Referee</div>
-                <div className="officials-ref-name" id="ref1Display">{ref1Name || '-'}</div>
+                <input
+                  type="text"
+                  className="officials-ref-name-input"
+                  placeholder="Name"
+                  value={ref1Name}
+                  onChange={(e) => setRef1(e.target.value)}
+                />
               </div>
               <div className="officials-ref-sig-wrap">
                 <canvas ref={firstRef[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
@@ -333,7 +350,13 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
             <div className="officials-ref-row">
               <div className="officials-ref-label-name">
                 <div className="officials-ref-label">2nd Referee</div>
-                <div className="officials-ref-name" id="ref2Display">{ref2Name || '-'}</div>
+                <input
+                  type="text"
+                  className="officials-ref-name-input"
+                  placeholder="Name"
+                  value={ref2Name}
+                  onChange={(e) => setRef2(e.target.value)}
+                />
               </div>
               <div className="officials-ref-sig-wrap">
                 <canvas ref={secondRef[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
@@ -343,7 +366,13 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
             <div className="officials-ref-row">
               <div className="officials-ref-label-name">
                 <div className="officials-ref-label">Scorer</div>
-                <div className="officials-ref-name" id="scorerDisplay">{scorerName || '-'}</div>
+                <input
+                  type="text"
+                  className="officials-ref-name-input"
+                  placeholder="Name"
+                  value={scorerName}
+                  onChange={(e) => setScorer(e.target.value)}
+                />
               </div>
               <div className="officials-ref-sig-wrap">
                 <canvas ref={scorerSig[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
@@ -353,7 +382,13 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
             <div className="officials-ref-row">
               <div className="officials-ref-label-name">
                 <div className="officials-ref-label">Asst. Scorer</div>
-                <div className="officials-ref-name" id="assistScorerDisplay">{assistScorerName || '-'}</div>
+                <input
+                  type="text"
+                  className="officials-ref-name-input"
+                  placeholder="Name"
+                  value={assistScorerName}
+                  onChange={(e) => setAssistScorer(e.target.value)}
+                />
               </div>
               <div className="officials-ref-sig-wrap">
                 <canvas ref={assistScorerSig[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
