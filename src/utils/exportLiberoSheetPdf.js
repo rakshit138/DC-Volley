@@ -1,8 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { normalizeExportGameData } from './normalizeExportGameData.js';
 
-const SECTIONS = [['A', 'B'], ['B', 'A'], ['A', 'B'], ['B', 'A'], ['A', 'B']];
-
 function parseLiberoDesc(d) {
   d = d || '';
   const o = { lib: '', rep: '', s1: '', s2: '' };
@@ -18,46 +16,37 @@ function parseLiberoDesc(d) {
   return o;
 }
 
-function liberoEventToDesc(ev, teamName, players) {
-  if (String(ev.type || '').toUpperCase() === 'LIBERO' && ev.description) return ev.description;
+function isLiberoSheetEvent(ev) {
+  if (!ev) return false;
+  const t = String(ev.type || '');
+  const action = String(ev.liberoAction || '').toLowerCase();
+  if (t === 'LIBERO_EXIT' || action === 'exit') return false;
+  return t === 'Libero' || t.toUpperCase() === 'LIBERO' || t.toUpperCase() === 'LIBERO_REPLACEMENT';
+}
+
+function liberoEventDescription(ev, gameData) {
+  if (ev.description && /Libero\s+#\d+/i.test(ev.description) && /at\s+\d+\s*[:\-]\s*\d+/i.test(ev.description)) {
+    return ev.description;
+  }
+  const team = ev.team || 'A';
+  const teamName = gameData.matchInfo?.[`team${team}Name`] || gameData[`team${team}Name`] || `Team ${team}`;
+  const players = gameData.teams?.[team]?.players || [];
   const lib = ev.liberoJersey || ev.playerInJersey;
   const rep = ev.playerOutJersey;
+  const liberoPlayer = players.find((p) => String(p.jersey) === String(lib)) || {};
+  const replacedPlayer = players.find((p) => String(p.jersey) === String(rep)) || {};
+  const badge = liberoPlayer.role === 'libero1' ? 'L1' : liberoPlayer.role === 'libero2' ? 'L2' : 'L';
   const score = ev.score || {};
-  const team = ev.team || 'A';
   const opp = team === 'A' ? 'B' : 'A';
   const scoreText = `${score[team] ?? 0}:${score[opp] ?? 0}`;
   const pos = ev.position != null ? ` in P${ev.position}` : '';
-  const liberoPlayer = (players || []).find((player) => String(player.jersey) === String(lib));
-  const replacedPlayer = (players || []).find((player) => String(player.jersey) === String(rep));
-  const badge = liberoPlayer?.role === 'libero1' ? 'L1' : liberoPlayer?.role === 'libero2' ? 'L2' : 'L';
-  const liberoName = liberoPlayer?.name ? ` ${liberoPlayer.name}` : '';
-  const replacedName = replacedPlayer?.name ? ` ${replacedPlayer.name}` : '';
-  return `${teamName} Libero #${lib}${liberoName} (${badge}) replaces #${rep}${replacedName}${pos} at ${scoreText}`;
-}
-
-function collectLiberoEvents(gameData) {
-  const teamAName = gameData.matchInfo?.teamAName || gameData.teamAName || 'Team A';
-  const teamBName = gameData.matchInfo?.teamBName || gameData.teamBName || 'Team B';
-  return (gameData.matchSummary || [])
-    .filter((e) => {
-      if (!e) return false;
-      const t = String(e.type || '').toUpperCase();
-      return t === 'LIBERO' || t === 'LIBERO_REPLACEMENT';
-    })
-    .map((ev) => {
-      const team = ev.team || 'A';
-      const teamName = team === 'A' ? teamAName : teamBName;
-      const players = gameData.teams?.[team]?.players || [];
-      return {
-        ...ev,
-        type: 'Libero',
-        description: liberoEventToDesc(ev, teamName, players)
-      };
-    });
+  const swap = /replaces Libero/i.test(ev.description || '');
+  if (swap) return ev.description;
+  return `${teamName} Libero #${lib} ${liberoPlayer.name || ''} (${badge}) replaces #${rep} ${replacedPlayer.name || ''}${pos} at ${scoreText}`;
 }
 
 /**
- * FIVB R-6 International Libero Control Sheet — direct PDF export (HTML parity).
+ * FIVB R-6 International Libero Control Sheet — HTML exportLiberoSheetPDF parity.
  */
 export function exportLiberoSheetPdf(gameData) {
   const data = normalizeExportGameData(gameData);
@@ -83,20 +72,36 @@ export function exportLiberoSheetPdf(gameData) {
     assist: mi.assistScorer || data.officials?.assistScorer || ''
   };
 
-  const sheet = Array.from({ length: 5 }, () => [[], []]);
-  collectLiberoEvents(data).forEach((ev) => {
-    const sIdx = (ev.setNumber || 1) - 1;
-    if (sIdx < 0 || sIdx > 4) return;
+  const fmtLib = parseInt(mi.format, 10) || 5;
+  const deciderActualIdx = (fmtLib === 3 ? 3 : 5) - 1;
+  const deciderSlot = 4;
+  const decFirst = data.decidingSetToss?.firstServer || 'A';
+  const decOther = decFirst === 'A' ? 'B' : 'A';
+  const SECTIONS = [['A', 'B'], ['B', 'A'], ['A', 'B'], ['B', 'A'], [decFirst, decOther, decFirst, decOther]];
+  const sheet = [[[], []], [[], []], [[], []], [[], []], [[], [], [], []]];
+
+  (data.matchSummary || []).filter(isLiberoSheetEvent).forEach((ev) => {
+    const actualIdx = (ev.setNumber || 1) - 1;
+    if (actualIdx < 0 || actualIdx > 4) return;
+    const sIdx = actualIdx === deciderActualIdx ? deciderSlot : actualIdx;
     const team = ev.team || 'A';
-    const secIdx = SECTIONS[sIdx][0] === team ? 0 : 1;
-    sheet[sIdx][secIdx].push(parseLiberoDesc(ev.description || ''));
+    const parsed = parseLiberoDesc(liberoEventDescription(ev, data));
+    let secIdx;
+    if (sIdx === deciderSlot) {
+      const afterChange = Math.max(parseInt(parsed.s1, 10) || 0, parseInt(parsed.s2, 10) || 0) >= 8;
+      const isFirstTeam = team === decFirst;
+      secIdx = afterChange ? (isFirstTeam ? 2 : 3) : (isFirstTeam ? 0 : 1);
+    } else {
+      secIdx = SECTIONS[sIdx][0] === team ? 0 : 1;
+    }
+    sheet[sIdx][secIdx].push(parsed);
   });
 
   function liberoNos(team) {
     const t = data.teams?.[team];
     if (!t?.players) return '';
     return t.players
-      .filter((p) => p.role === 'libero1' || p.role === 'libero2')
+      .filter((p) => p.role === 'libero1' || p.role === 'libero2' || p.role === 'liberocaptain')
       .map((p) => p.jersey)
       .join(',');
   }
@@ -202,10 +207,6 @@ export function exportLiberoSheetPdf(gameData) {
   const top = M + 27;
   const gridW = W - 2 * M;
   const setW = gridW / 5;
-  const secW = setW / 2;
-  const libW = secW * 0.2;
-  const repW = secW * 0.2;
-  const scoW = secW * 0.6;
   const setHeadH = 7;
   const secHeadH = 7;
   const colHeadH = 5.2;
@@ -221,14 +222,24 @@ export function exportLiberoSheetPdf(gameData) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.text(`SET ${s + 1}`, sx + setW / 2, top + setHeadH - 1.8, { align: 'center' });
-    for (let sec = 0; sec < 2; sec++) {
+    const numSecs = s === deciderSlot ? 4 : 2;
+    const secW = setW / numSecs;
+    const libW = secW * 0.2;
+    const repW = secW * 0.2;
+    const scoW = secW * 0.6;
+    for (let sec = 0; sec < numSecs; sec++) {
       const secx = sx + sec * secW;
       doc.rect(secx, top + setHeadH, secW, secHeadH);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
+      doc.setFontSize(numSecs === 4 ? 7 : 9.5);
       const letter = SECTIONS[s][sec];
       const nos = letter === 'A' ? libNoA : libNoB;
-      doc.text(`No: ${nos || '____'}`, secx + 2, top + setHeadH + secHeadH - 2.2);
+      const noLabel = numSecs === 4 ? (nos || '____') : `No: ${nos || '____'}`;
+      doc.text(noLabel, secx + 1.5, top + setHeadH + (numSecs === 4 ? secHeadH - 4.2 : secHeadH - 2.2));
+      if (numSecs === 4) {
+        doc.setFontSize(6);
+        doc.text(sec < 2 ? 'Before change' : 'After change', secx + 1.5, top + setHeadH + secHeadH - 1);
+      }
       const ccx = secx + secW - 5.5;
       doc.circle(ccx, top + setHeadH + secHeadH / 2, 2.8);
       doc.setFont('helvetica', 'bold');
@@ -253,22 +264,28 @@ export function exportLiberoSheetPdf(gameData) {
   for (let r = 0; r < rows; r++) {
     const ry = bodyTop + r * rowH;
     for (let s = 0; s < 5; s++) {
-      for (let sec = 0; sec < 2; sec++) {
-        const secx2 = M + s * setW + sec * secW;
+      const numSecs2 = s === deciderSlot ? 4 : 2;
+      const secW2 = setW / numSecs2;
+      const libW2 = secW2 * 0.2;
+      const repW2 = secW2 * 0.2;
+      const scoW2 = secW2 * 0.6;
+      doc.setFontSize(numSecs2 === 4 ? 8 : 10);
+      for (let sec = 0; sec < numSecs2; sec++) {
+        const secx2 = M + s * setW + sec * secW2;
         let cx2 = secx2;
-        [libW, repW, scoW].forEach((w) => {
+        [libW2, repW2, scoW2].forEach((w) => {
           doc.rect(cx2, ry, w, rowH);
           cx2 += w;
         });
         const row = sheet[s][sec][r];
         const yv = ry + rowH - 1.8;
         if (row) {
-          if (row.lib) doc.text(String(row.lib), secx2 + libW / 2, yv, { align: 'center' });
-          if (row.rep) doc.text(String(row.rep), secx2 + libW + repW / 2, yv, { align: 'center' });
+          if (row.lib) doc.text(String(row.lib), secx2 + libW2 / 2, yv, { align: 'center' });
+          if (row.rep) doc.text(String(row.rep), secx2 + libW2 + repW2 / 2, yv, { align: 'center' });
           const sc = row.s1 !== '' || row.s2 !== '' ? `${row.s1} : ${row.s2}` : ':';
-          doc.text(sc, secx2 + libW + repW + scoW / 2, yv, { align: 'center' });
+          doc.text(sc, secx2 + libW2 + repW2 + scoW2 / 2, yv, { align: 'center' });
         } else {
-          doc.text(':', secx2 + libW + repW + scoW / 2, yv, { align: 'center' });
+          doc.text(':', secx2 + libW2 + repW2 + scoW2 / 2, yv, { align: 'center' });
         }
       }
     }
@@ -311,14 +328,14 @@ export function exportLiberoSheetPdf(gameData) {
     try {
       doc.addImage(sig, 'PNG', M + gridW / 2 + 26, sy - 8, 70, 9);
     } catch {
-      /* ignore bad signature image */
+      /* ignore */
     }
   }
   doc.line(M + gridW / 2 + 24, sy + 1, M + gridW - 3, sy + 1);
 
   doc.setFontSize(7);
   doc.setTextColor(130);
-  doc.text('FIVB Official forms R-6 layout · Generated by VolleySync', W - M, H - 3, { align: 'right' });
+  doc.text('FIVB Official forms R-6 layout · Generated by DC_Volley', W - M, H - 3, { align: 'right' });
   doc.setTextColor(0);
 
   const dt = F.date || new Date().toISOString().slice(0, 10);

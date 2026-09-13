@@ -1,107 +1,600 @@
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import { normalizeExportGameData } from './normalizeExportGameData.js';
+
+function teamNameOf(data, team) {
+  if (!team || team === '-') return '-';
+  return data.matchInfo?.[`team${team}Name`] || data[`team${team}Name`] || `Team ${team}`;
+}
+
+function countCompletedSubstitutions(data, team, setIndex) {
+  const set = data.sets?.[setIndex];
+  if (!set?.substitutions?.[team]) return 0;
+  return set.substitutions[team].length;
+}
+
+function eventTime(event) {
+  return event?.time || '-';
+}
 
 /**
- * Generate and download a match report PDF from game data (match info, sets, timeouts, substitutions, officials).
- * @param {Object} gameData - Full game document from Firestore
- * @param {string} filename - Optional filename (default includes team names)
+ * Match Summary Report PDF — HTML exportSummaryPDF parity.
  */
-export function exportMatchReportPdf(gameData, filename) {
+export function exportSummaryPdf(gameData) {
+  const data = normalizeExportGameData(gameData);
   const doc = new jsPDF();
-  const teamAName = gameData.teamAName || 'Team A';
-  const teamBName = gameData.teamBName || 'Team B';
-  const name = filename || `VolleySync_Match_Report_${teamAName}_vs_${teamBName}.pdf`;
+  const mi = data.matchInfo || {};
+  const teamAName = mi.teamAName || data.teamAName || 'Team A';
+  const teamBName = mi.teamBName || data.teamBName || 'Team B';
 
-  let y = 20;
+  let yPos = 20;
+  doc.setFontSize(18);
+  doc.setFont(undefined, 'bold');
+  doc.text('MATCH SUMMARY REPORT', 105, yPos, { align: 'center' });
+  yPos += 10;
 
   doc.setFontSize(10);
-  doc.setTextColor(42, 82, 152);
-  doc.text('VolleySync', 105, y, { align: 'center' });
-  y += 7;
-  doc.setTextColor(0, 0, 0);
-  doc.setFontSize(18);
-  doc.text('FIVB Match Report', 105, y, { align: 'center' });
-  y += 12;
+  doc.setFont(undefined, 'normal');
+  doc.text(`${mi.competition || ''} | ${mi.venue || ''}`, 105, yPos, { align: 'center' });
+  yPos += 5;
+  doc.text(`${teamAName} vs ${teamBName}`, 105, yPos, { align: 'center' });
+  yPos += 10;
 
-  doc.setFontSize(11);
-  doc.text(`${gameData.competition || 'Competition'} | ${gameData.venue || 'Venue'} | ${gameData.matchDate || ''} ${gameData.matchTime || ''}`, 105, y, { align: 'center' });
-  y += 10;
-
-  doc.setFontSize(14);
-  doc.text(`${teamAName}  vs  ${teamBName}`, 105, y, { align: 'center' });
-  y += 12;
-
-  const sets = gameData.sets || [];
-  const setsWon = gameData.setsWon || { A: 0, B: 0 };
   doc.setFontSize(12);
-  doc.text(`Result: ${setsWon.A} - ${setsWon.B} sets`, 105, y, { align: 'center' });
-  y += 15;
+  doc.setFont(undefined, 'bold');
+  doc.text('Match Statistics', 20, yPos);
+  yPos += 10;
 
-  const setRows = sets.map((s, i) => {
-    const scoreA = s.score?.A ?? 0;
-    const scoreB = s.score?.B ?? 0;
-    const winner = s.winner || '-';
-    const toA = (s.timeouts?.A || []).length;
-    const toB = (s.timeouts?.B || []).length;
-    const subA = (s.substitutions?.A || []).length;
-    const subB = (s.substitutions?.B || []).length;
-    return [`Set ${i + 1}`, `${scoreA}-${scoreB}`, winner, `${toA}/2`, `${toB}/2`, subA, subB];
+  let totalTimeoutsA = 0;
+  let totalTimeoutsB = 0;
+  let totalSubsA = 0;
+  let totalSubsB = 0;
+  (data.sets || []).forEach((set, idx) => {
+    totalTimeoutsA += set.timeouts?.A ? set.timeouts.A.length : 0;
+    totalTimeoutsB += set.timeouts?.B ? set.timeouts.B.length : 0;
+    totalSubsA += countCompletedSubstitutions(data, 'A', idx);
+    totalSubsB += countCompletedSubstitutions(data, 'B', idx);
   });
 
   doc.autoTable({
-    startY: y,
-    head: [['Set', 'Score (A-B)', 'Winner', 'TO A', 'TO B', 'Sub A', 'Sub B']],
-    body: setRows.length ? setRows : [['-', '-', '-', '-', '-', '-', '-']],
-    theme: 'grid'
+    head: [['Category', teamAName, teamBName]],
+    body: [
+      ['Total Timeouts', totalTimeoutsA, totalTimeoutsB],
+      ['Total Substitutions', totalSubsA, totalSubsB]
+    ],
+    startY: yPos,
+    theme: 'grid',
+    headStyles: { fillColor: [0, 217, 255] },
+    margin: { left: 20, right: 20 }
   });
-  y = doc.lastAutoTable.finalY + 12;
 
-  if (gameData.officials) {
-    doc.setFontSize(12);
-    doc.text('Officials', 14, y);
-    y += 8;
-    doc.setFontSize(10);
-    const off = gameData.officials;
-    doc.text(`1st Referee: ${off.ref1 || '-'}`, 14, y);
-    y += 6;
-    doc.text(`2nd Referee: ${off.ref2 || '-'}`, 14, y);
-    y += 6;
-    doc.text(`Scorer: ${off.scorer || '-'}`, 14, y);
-    y += 6;
-    doc.text(`Asst. Scorer: ${off.assistScorer || '-'}`, 14, y);
-    y += 8;
-    doc.text(`Team A - Coach: ${off.coachA || '-'}`, 14, y);
-    y += 6;
-    doc.text(`Team B - Coach: ${off.coachB || '-'}`, 14, y);
-    y += 12;
+  if (data.matchSummary?.length > 0) {
+    doc.addPage();
+    yPos = 20;
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Complete Event Log', 20, yPos);
+    yPos += 10;
+    const eventData = data.matchSummary.map((event) => [
+      eventTime(event),
+      `Set ${event.setNumber || '-'}`,
+      event.type || '-',
+      event.team ? teamNameOf(data, event.team) : '-',
+      event.description || '-'
+    ]);
+    doc.autoTable({
+      head: [['Time', 'Set', 'Type', 'Team', 'Details']],
+      body: eventData,
+      startY: yPos,
+      theme: 'grid',
+      headStyles: { fillColor: [255, 215, 0] },
+      styles: { fontSize: 8 },
+      margin: { left: 10, right: 10 }
+    });
   }
 
-  const sigs = gameData.officials?.signatures || {};
-  const sigIds = ['captainSignA1', 'coachSignA', 'captainSignB1', 'coachSignB', 'firstRefSign', 'scorerSign'];
-  const sigLabels = ['Captain A', 'Coach A', 'Captain B', 'Coach B', '1st Referee', 'Scorer'];
-  if (Object.keys(sigs).length > 0) {
-    doc.setFontSize(12);
-    doc.text('Signatures', 14, y);
-    y += 8;
-    sigIds.forEach((id, i) => {
-      if (sigs[id] && y < 270) {
-        try {
-          doc.addImage(sigs[id], 'PNG', 14, y, 40, 8);
-          doc.setFontSize(9);
-          doc.text(sigLabels[i] || id, 56, y + 5);
-          y += 14;
-        } catch (_) {
-          doc.text(`${sigLabels[i] || id}: [saved]`, 14, y + 5);
-          y += 10;
-        }
+  const sanctions = (data.matchSummary || []).filter(
+    (event) => event.type && (String(event.type).toUpperCase() === 'SANCTION' || event.type === 'Sanction')
+  );
+  if (sanctions.length > 0) {
+    doc.addPage();
+    yPos = 20;
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(255, 0, 0);
+    doc.text('⚠️ SANCTIONS SUMMARY', 20, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 10;
+    const sanctionData = sanctions.map((s) => {
+      let scoreText = '-';
+      if (s.score && s.team) {
+        const otherTeam = s.team === 'A' ? 'B' : 'A';
+        scoreText = `${s.score[s.team]}:${s.score[otherTeam]}`;
       }
+      return [
+        eventTime(s),
+        `Set ${s.setNumber || data.currentSet}`,
+        scoreText,
+        s.team ? teamNameOf(data, s.team) : '-',
+        s.description || '-'
+      ];
+    });
+    doc.autoTable({
+      head: [['Time', 'Set', 'Score', 'Team', 'Sanction Details']],
+      body: sanctionData,
+      startY: yPos,
+      theme: 'grid',
+      headStyles: { fillColor: [255, 0, 0] },
+      margin: { left: 20, right: 20 }
     });
   }
 
   doc.setFontSize(8);
-  doc.setTextColor(136, 136, 136);
-  doc.text('VolleySync © 2025 | Digital Volleyball Scoresheet', 105, 287, { align: 'center' });
-  doc.setTextColor(0, 0, 0);
+  doc.setTextColor(128, 128, 128);
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+    doc.text('Generated by DC_Volley Scoresheet System © 2026', 105, 285, { align: 'center' });
+  }
 
-  doc.save(name);
+  const filename = `Match_Summary_${teamAName}_vs_${teamBName}_${new Date().toISOString().split('T')[0]}.pdf`;
+  doc.save(filename);
+  alert('✅ Match Summary exported successfully!');
+}
+
+/** Alias used by older call sites. */
+export function exportMatchReportPdf(gameData) {
+  exportSummaryPdf(gameData);
+}
+
+/**
+ * Match History Report PDF — HTML exportHistoryPDF parity.
+ */
+export function exportHistoryPdf(gameData) {
+  const data = normalizeExportGameData(gameData);
+  const doc = new jsPDF();
+  const mi = data.matchInfo || {};
+  let yPos = 20;
+
+  doc.setFontSize(18);
+  doc.setFont(undefined, 'bold');
+  doc.text('MATCH HISTORY REPORT', 105, yPos, { align: 'center' });
+  yPos += 10;
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  doc.text(`${mi.competition || ''} | ${mi.venue || ''}`, 105, yPos, { align: 'center' });
+  yPos += 5;
+  doc.text(`${mi.teamAName || ''} vs ${mi.teamBName || ''}`, 105, yPos, { align: 'center' });
+  yPos += 10;
+
+  if (data.coinToss?.winner) {
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text('Coin Toss', 20, yPos);
+    yPos += 7;
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    const tossChoice = data.coinToss.choice === 'serve' ? 'Serve First' : 'Receive First';
+    doc.text(`Winner: ${teamNameOf(data, data.coinToss.winner)}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Choice: ${tossChoice}`, 20, yPos);
+    yPos += 5;
+    doc.text(`First Server: ${teamNameOf(data, data.coinToss.firstServer)}`, 20, yPos);
+    yPos += 10;
+  }
+
+  (data.sets || []).forEach((set, setIdx) => {
+    if (yPos > 250) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text(`SET ${setIdx + 1}${set.winner ? ` - Won by ${teamNameOf(data, set.winner)}` : ''}`, 20, yPos);
+    yPos += 7;
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Score: ${mi.teamAName} ${set.score?.A ?? 0} - ${set.score?.B ?? 0} ${mi.teamBName}`, 20, yPos);
+    yPos += 5;
+    doc.text(`First Server: ${teamNameOf(data, set.firstServer || set.serving)}`, 20, yPos);
+    yPos += 8;
+
+    const timeoutData = [];
+    const maxTimeouts = Math.max((set.timeouts?.A || []).length, (set.timeouts?.B || []).length);
+    for (let i = 0; i < maxTimeouts; i++) {
+      const toA = set.timeouts?.A?.[i];
+      const toB = set.timeouts?.B?.[i];
+      timeoutData.push([
+        toA ? `at ${toA.score?.A}-${toA.score?.B}` : '-',
+        toB ? `at ${toB.score?.A}-${toB.score?.B}` : '-'
+      ]);
+    }
+    doc.autoTable({
+      head: [[`Team A Timeouts (${(set.timeouts?.A || []).length}/2)`, `Team B Timeouts (${(set.timeouts?.B || []).length}/2)`]],
+      body: timeoutData.length > 0 ? timeoutData : [['-', '-']],
+      startY: yPos,
+      theme: 'grid',
+      headStyles: { fillColor: [255, 149, 0] },
+      margin: { left: 20, right: 20 }
+    });
+    yPos = doc.lastAutoTable.finalY + 5;
+
+    const subData = [];
+    const maxSubs = Math.max((set.substitutions?.A || []).length, (set.substitutions?.B || []).length);
+    for (let i = 0; i < maxSubs; i++) {
+      const subA = set.substitutions?.A?.[i];
+      const subB = set.substitutions?.B?.[i];
+      subData.push([
+        subA ? `#${subA.playerOut}→#${subA.playerIn} at ${subA.score?.A}-${subA.score?.B}` : '-',
+        subB ? `#${subB.playerOut}→#${subB.playerIn} at ${subB.score?.A}-${subB.score?.B}` : '-'
+      ]);
+    }
+    const subCountA = countCompletedSubstitutions(data, 'A', setIdx);
+    const subCountB = countCompletedSubstitutions(data, 'B', setIdx);
+    doc.autoTable({
+      head: [[`Team A Subs (${subCountA}/${data.subLimitPerSet || data.subLimit || 8})`, `Team B Subs (${subCountB}/${data.subLimitPerSet || data.subLimit || 8})`]],
+      body: subData.length > 0 ? subData : [['-', '-']],
+      startY: yPos,
+      theme: 'grid',
+      headStyles: { fillColor: [0, 122, 255] },
+      margin: { left: 20, right: 20 }
+    });
+    yPos = doc.lastAutoTable.finalY + 10;
+  });
+
+  if (data.decidingSetToss) {
+    if (yPos > 250) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(255, 0, 0);
+    doc.text(`Deciding Set Toss (Set ${data.decidingSetToss.setNumber})`, 20, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 7;
+    doc.setFont(undefined, 'normal');
+    const tossChoice = data.decidingSetToss.choice === 'serve' ? 'Serve First' : 'Receive First';
+    doc.text(`Winner: ${teamNameOf(data, data.decidingSetToss.winner)}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Choice: ${tossChoice}`, 20, yPos);
+    yPos += 5;
+    doc.text(`First Server: ${teamNameOf(data, data.decidingSetToss.firstServer)}`, 20, yPos);
+  }
+
+  const sanctions = (data.matchSummary || []).filter(
+    (event) => event.type && (String(event.type).toUpperCase() === 'SANCTION' || event.type === 'Sanction')
+  );
+  if (sanctions.length > 0) {
+    if (yPos > 250) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(255, 0, 0);
+    doc.text('⚠️ SANCTIONS', 20, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 10;
+    doc.autoTable({
+      head: [['Time', 'Set', 'Score', 'Team', 'Sanction Details']],
+      body: sanctions.map((s) => {
+        let scoreText = '-';
+        if (s.score && s.team) {
+          const otherTeam = s.team === 'A' ? 'B' : 'A';
+          scoreText = `${s.score[s.team]}:${s.score[otherTeam]}`;
+        }
+        return [eventTime(s), `Set ${s.setNumber || data.currentSet}`, scoreText, s.team ? teamNameOf(data, s.team) : '-', s.description || '-'];
+      }),
+      startY: yPos,
+      theme: 'grid',
+      headStyles: { fillColor: [255, 0, 0] },
+      margin: { left: 20, right: 20 }
+    });
+  }
+
+  doc.setFontSize(8);
+  doc.setTextColor(128, 128, 128);
+  doc.text('Generated by DC_Volley Scoresheet System', 105, 285, { align: 'center' });
+  doc.text('© 2026 All Rights Reserved', 105, 290, { align: 'center' });
+  doc.save(`Match_History_${mi.teamAName}_vs_${mi.teamBName}_${new Date().toISOString().split('T')[0]}.pdf`);
+  alert('✅ Match History exported successfully!');
+}
+
+/**
+ * Complete match log PDF — HTML downloadMatchDataPDF parity.
+ */
+export function exportMatchLogPdf(gameData) {
+  const data = normalizeExportGameData(gameData);
+  const doc = new jsPDF();
+  const mi = data.matchInfo || {};
+  let yPos = 20;
+
+  doc.setFontSize(18);
+  doc.setFont(undefined, 'bold');
+  doc.text('COMPLETE MATCH LOG & SCORESHEET', 105, yPos, { align: 'center' });
+  yPos += 10;
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text('Match Information', 20, yPos);
+  yPos += 7;
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  doc.text(`Competition: ${mi.competition || 'N/A'}`, 20, yPos);
+  yPos += 5;
+  doc.text(`Venue: ${mi.venue || 'N/A'}`, 20, yPos);
+  yPos += 5;
+  doc.text(`Date: ${mi.date || 'N/A'} | Time: ${mi.time || 'N/A'}`, 20, yPos);
+  yPos += 5;
+  doc.text(`Format: Best of ${mi.format || ''}`, 20, yPos);
+  yPos += 10;
+
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text('Teams', 20, yPos);
+  yPos += 7;
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  doc.text(`${mi.teamAName} vs ${mi.teamBName}`, 20, yPos);
+  yPos += 10;
+
+  if (data.coinToss?.winner) {
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text('Coin Toss', 20, yPos);
+    yPos += 7;
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    const tossChoice = data.coinToss.choice === 'serve' ? 'Serve First' : 'Receive First';
+    doc.text(`Toss Winner: ${teamNameOf(data, data.coinToss.winner)}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Choice: ${tossChoice}`, 20, yPos);
+    yPos += 5;
+    doc.text(`First Server: ${teamNameOf(data, data.coinToss.firstServer)}`, 20, yPos);
+    yPos += 10;
+  }
+
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text('Match Officials', 20, yPos);
+  yPos += 7;
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  doc.text(`1st Referee: ${mi.ref1 || 'N/A'}`, 20, yPos);
+  yPos += 5;
+  doc.text(`2nd Referee: ${mi.ref2 || 'N/A'}`, 20, yPos);
+  yPos += 5;
+  doc.text(`Scorer: ${mi.scorer || 'N/A'}`, 20, yPos);
+  yPos += 5;
+  if (mi.assistScorer) {
+    doc.text(`Assistant Scorer: ${mi.assistScorer}`, 20, yPos);
+    yPos += 5;
+  }
+  const off = data.officials || {};
+  if (off.coachA || off.coachB || off.asstCoachA || off.asstCoach2A) {
+    yPos += 3;
+    doc.text(`Team A Coach: ${off.coachA || 'N/A'} | Asst: ${off.asstCoachA || 'N/A'} | Asst 2: ${off.asstCoach2A || 'N/A'}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Team B Coach: ${off.coachB || 'N/A'} | Asst: ${off.asstCoachB || 'N/A'} | Asst 2: ${off.asstCoach2B || 'N/A'}`, 20, yPos);
+    yPos += 5;
+    doc.text(`Medical A/B: ${off.medicalA || 'N/A'} / ${off.medicalB || 'N/A'}  Trainer A/B: ${off.trainerA || 'N/A'} / ${off.trainerB || 'N/A'}`, 20, yPos);
+    yPos += 5;
+  }
+  yPos += 5;
+
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text('Final Score', 20, yPos);
+  yPos += 7;
+  const setsWonA = (data.sets || []).filter((s) => s.winner === 'A').length;
+  const setsWonB = (data.sets || []).filter((s) => s.winner === 'B').length;
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  doc.text(`${mi.teamAName}: ${setsWonA} sets`, 20, yPos);
+  yPos += 5;
+  doc.text(`${mi.teamBName}: ${setsWonB} sets`, 20, yPos);
+  yPos += 10;
+
+  doc.autoTable({
+    head: [['Set', mi.teamAName, mi.teamBName, 'Winner']],
+    body: (data.sets || []).map((set, idx) => [
+      `Set ${idx + 1}`,
+      set.score?.A,
+      set.score?.B,
+      set.winner === 'A' ? mi.teamAName : set.winner === 'B' ? mi.teamBName : '-'
+    ]),
+    startY: yPos,
+    theme: 'grid',
+    headStyles: { fillColor: [233, 69, 96] },
+    margin: { left: 20, right: 20 }
+  });
+  yPos = doc.lastAutoTable.finalY + 10;
+
+  const pointsBreakdownA = [];
+  const pointsBreakdownB = [];
+  let totalPointsA = 0;
+  let totalPointsB = 0;
+  (data.sets || []).forEach((set) => {
+    const scoreA = set.score?.A || 0;
+    const scoreB = set.score?.B || 0;
+    totalPointsA += scoreA;
+    totalPointsB += scoreB;
+    pointsBreakdownA.push(scoreA);
+    pointsBreakdownB.push(scoreB);
+  });
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text('Total Points Across All Sets', 20, yPos);
+  yPos += 7;
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  doc.text(`${mi.teamAName}: ${pointsBreakdownA.join(' + ')} = ${totalPointsA}`, 20, yPos);
+  yPos += 5;
+  doc.text(`${mi.teamBName}: ${pointsBreakdownB.join(' + ')} = ${totalPointsB}`, 20, yPos);
+
+  doc.addPage();
+  yPos = 20;
+  doc.setFontSize(14);
+  doc.setFont(undefined, 'bold');
+  doc.text('MATCH STATISTICS', 20, yPos);
+  yPos += 10;
+  doc.autoTable({
+    head: [[
+      'Set',
+      `${mi.teamAName} Timeouts`,
+      `${mi.teamBName} Timeouts`,
+      `${mi.teamAName} Subs`,
+      `${mi.teamBName} Subs`
+    ]],
+    body: (data.sets || []).map((set, idx) => [
+      `Set ${idx + 1}`,
+      `${set.timeouts?.A ? set.timeouts.A.length : 0} / 2`,
+      `${set.timeouts?.B ? set.timeouts.B.length : 0} / 2`,
+      `${set.substitutions?.A ? set.substitutions.A.length : 0} / ${data.subLimit || 8}`,
+      `${set.substitutions?.B ? set.substitutions.B.length : 0} / ${data.subLimit || 8}`
+    ]),
+    startY: yPos,
+    theme: 'grid',
+    headStyles: { fillColor: [0, 217, 255] },
+    margin: { left: 20, right: 20 }
+  });
+  yPos = doc.lastAutoTable.finalY + 15;
+
+  const sanctions = (data.matchSummary || []).filter(
+    (event) => event.type && (String(event.type).toUpperCase() === 'SANCTION' || event.type === 'Sanction')
+  );
+  if (sanctions.length > 0) {
+    if (yPos > 250) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(255, 0, 0);
+    doc.text('⚠️ SANCTIONS', 20, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 10;
+    doc.autoTable({
+      head: [['Time', 'Set', 'Score', 'Team', 'Sanction']],
+      body: sanctions.map((s) => {
+        let scoreText = '-';
+        if (s.score && s.team) {
+          const otherTeam = s.team === 'A' ? 'B' : 'A';
+          scoreText = `${s.score[s.team]}:${s.score[otherTeam]}`;
+        }
+        return [eventTime(s), `Set ${s.setNumber || data.currentSet}`, scoreText, s.team ? teamNameOf(data, s.team) : '-', s.description || '-'];
+      }),
+      startY: yPos,
+      theme: 'grid',
+      headStyles: { fillColor: [255, 69, 96] },
+      margin: { left: 20, right: 20 }
+    });
+  }
+
+  doc.addPage();
+  yPos = 20;
+  doc.setFontSize(14);
+  doc.setFont(undefined, 'bold');
+  doc.text('COMPLETE MATCH LOG', 20, yPos);
+  yPos += 10;
+  if (data.matchSummary?.length > 0) {
+    doc.autoTable({
+      head: [['Time', 'Set', 'Event', 'Team', 'Details']],
+      body: data.matchSummary.map((event) => [
+        eventTime(event),
+        `Set ${event.setNumber || data.currentSet}`,
+        event.type || '-',
+        event.team ? teamNameOf(data, event.team) : '-',
+        event.description || '-'
+      ]),
+      startY: yPos,
+      theme: 'striped',
+      headStyles: { fillColor: [83, 52, 131] },
+      margin: { left: 20, right: 20 },
+      styles: { fontSize: 8, cellPadding: 2 }
+    });
+  } else {
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text('No match events recorded.', 20, yPos);
+  }
+
+  if (data.fairPlay || data.forfeit) {
+    doc.addPage();
+    yPos = 20;
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(0, 217, 255);
+    doc.text('FAIR PLAY & FORFEIT REPORT', 105, yPos, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    yPos += 14;
+    const fp = data.fairPlay || {};
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Fair Play Award', 20, yPos);
+    yPos += 8;
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'normal');
+    if (fp.teamA || fp.teamB) {
+      doc.autoTable({
+        head: [['Team', 'Fair Play Rating (1-5)']],
+        body: [[mi.teamAName, fp.teamA || '-'], [mi.teamBName, fp.teamB || '-']],
+        startY: yPos,
+        theme: 'grid',
+        headStyles: { fillColor: [0, 217, 255] },
+        margin: { left: 20, right: 20 }
+      });
+      yPos = doc.lastAutoTable.finalY + 8;
+    } else {
+      doc.text('No fair play rating recorded.', 20, yPos);
+      yPos += 10;
+    }
+    if (fp.remarks) {
+      doc.setFont(undefined, 'bold');
+      doc.text('Remarks:', 20, yPos);
+      yPos += 6;
+      doc.setFont(undefined, 'normal');
+      const fpLines = doc.splitTextToSize(fp.remarks, 170);
+      doc.text(fpLines, 20, yPos);
+      yPos += fpLines.length * 5 + 8;
+    }
+    const ff = data.forfeit || {};
+    if (yPos > 250) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(220, 0, 0);
+    doc.text('Forfeit Declaration', 20, yPos);
+    doc.setTextColor(0, 0, 0);
+    yPos += 8;
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'normal');
+    if (ff.declared) {
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(200, 0, 0);
+      doc.text('FORFEIT DECLARED', 20, yPos);
+      doc.setTextColor(0, 0, 0);
+      yPos += 7;
+      doc.setFont(undefined, 'normal');
+      doc.text(`Forfeiting Team: ${ff.team === 'A' ? mi.teamAName : ff.team === 'B' ? mi.teamBName : '-'}`, 20, yPos);
+      yPos += 6;
+      doc.text(`Reason: ${ff.reason || 'N/A'}`, 20, yPos);
+      yPos += 6;
+      doc.text(`Declared at: ${ff.timestamp || 'N/A'}`, 20, yPos);
+    } else {
+      doc.text('No forfeit declared. Match completed normally.', 20, yPos);
+    }
+  }
+
+  const pageCount = doc.internal.getNumberOfPages();
+  doc.setPage(pageCount);
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(100, 100, 100);
+  doc.text('Generated by DC_Volley © 2025 - Digital Volleyball Scoresheet', 105, 285, { align: 'center' });
+  doc.save(`Match_Log_${mi.teamAName}_vs_${mi.teamBName}_${new Date().toISOString().split('T')[0]}.pdf`);
+  alert('✅ Complete match log PDF downloaded successfully!');
 }

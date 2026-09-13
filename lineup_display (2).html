@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<parameter name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lineup & Rotation Display - 2nd Referee</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background: #0f3460;
+  color: #fff;
+  padding: 15px;
+  overflow-y: auto;
+}
+
+.header {
+  background: #16213e;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  border: 2px solid #533483;
+  text-align: center;
+}
+
+.match-title {
+  font-size: 18px;
+  color: #e94560;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.match-info {
+  font-size: 12px;
+  color: #ccc;
+}
+
+/* ── e-scoresheet style top score strip — copied byte-exact from main DC_Volley UI ── */
+.score-section {
+  background: linear-gradient(180deg,rgba(13,25,49,0.96) 0%,rgba(9,17,34,0.96) 100%);
+  padding: 14px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid #533483;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.45);
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.team-score {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+
+.score-section .team-score:last-of-type {
+  flex-direction: row-reverse;
+}
+
+.team-score > div:last-child {
+  font-size: 13px !important;
+  color: #888 !important;
+  white-space: nowrap;
+}
+
+.score-section .team-score:last-of-type > div:last-child {
+  order: 0;
+}
+
+.team-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 26px;
+  font-weight: 900;
+  margin-bottom: 0;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  padding: 16px 18px;
+  border-radius: 12px;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.45);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.22);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.team-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-name-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.22);
+  border: 2px solid rgba(255,255,255,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.team-name-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.team-name.team-a {
+  background: linear-gradient(135deg,#ff2b55 0%,#d10f3f 100%);
+  box-shadow: 0 6px 20px rgba(255,43,85,0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+}
+
+.team-name.team-b {
+  background: linear-gradient(135deg,#00e5c0 0%,#009e85 100%);
+  box-shadow: 0 6px 20px rgba(0,229,192,0.4), inset 0 1px 0 rgba(255,255,255,0.25);
+}
+
+.score-display {
+  font-size: 56px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background: #eef4ff;
+  color: #0a1428;
+  text-shadow: none;
+  border-radius: 14px;
+  padding: 9px 22px;
+  min-width: 104px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4), inset 0 -2px 0 rgba(0,0,0,0.12);
+}
+
+.set-center {
+  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  background: linear-gradient(160deg,rgba(102,126,234,0.26),rgba(118,75,162,0.26));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14);
+  border: 1px solid rgba(140,160,255,0.35);
+  border-radius: 12px;
+  flex: 0 0 auto;
+}
+
+.set-title {
+  font-size: 18px;
+  margin-bottom: 0;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.set-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.set-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  background: rgba(8,14,28,0.75);
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.5);
+}
+
+#setTypeDisp {
+  font-size: 11px !important;
+  color: #8fa3cc;
+  margin-top: 0 !important;
+  letter-spacing: .3px;
+  white-space: nowrap;
+}
+
+
+.lineups-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.team-lineup {
+  background: #16213e;
+  padding: 10px;
+  border-radius: 8px;
+  border: 2px solid #533483;
+}
+
+.lineup-title {
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+/* ═══ Court visual — matches the main scoresheet's broadcast court style ═══ */
+.court-visual {
+  position: relative;
+  background: linear-gradient(165deg,#ef9a52 0%,#e0813d 46%,#cd6f2f 100%);
+  border: 3px solid #fdfdfd;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  box-shadow: inset 0 0 40px rgba(60,20,0,0.35), 0 10px 24px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+
+/* front-zone tint (net-side of the court — direction depends on left/right box) */
+.court-visual::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.court-visual.court-left::before {
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.14) 100%);
+}
+.court-visual.court-right::before {
+  background: linear-gradient(270deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.14) 100%);
+}
+
+/* attack (3m) line separating front column (net-side) from back column */
+.court-visual::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 2.5px;
+  left: calc(50% - 1.25px);
+  background: rgba(255,255,255,0.85);
+  box-shadow: 0 0 6px rgba(0,0,0,0.25);
+  z-index: 1;
+}
+
+.court-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 8px;
+  position: relative;
+  z-index: 2;
+}
+
+/* left-side team: front row (P4,P3,P2) faces right, toward the other team */
+.court-left .court-grid { grid-template-areas: "p5 p4" "p6 p3" "p1 p2"; }
+/* right-side team: front row (P4,P3,P2) faces left, toward the other team — front to front */
+.court-right .court-grid { grid-template-areas: "p2 p1" "p3 p6" "p4 p5"; }
+
+.court-grid .court-pos[data-pos="1"] { grid-area: p1; }
+.court-grid .court-pos[data-pos="2"] { grid-area: p2; }
+.court-grid .court-pos[data-pos="3"] { grid-area: p3; }
+.court-grid .court-pos[data-pos="4"] { grid-area: p4; }
+.court-grid .court-pos[data-pos="5"] { grid-area: p5; }
+.court-grid .court-pos[data-pos="6"] { grid-area: p6; }
+
+/* server ball badge mirrors to the outer edge on the left-side box */
+.court-left .server::before { right: auto; left: -14px; }
+
+.court-pos {
+  background: linear-gradient(160deg,rgba(255,240,220,0.28) 0%,rgba(255,214,170,0.14) 100%);
+  border: 2px solid rgba(255,255,255,0.9);
+  border-radius: 9px;
+  padding: 6px 8px;
+  text-align: center;
+  min-height: 55px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  position: relative;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.25);
+  transition: transform .18s, background .18s, box-shadow .18s;
+}
+
+.pos-label {
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(10,16,30,0.62);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-bottom: 0;
+  white-space: nowrap;
+  letter-spacing: .8px;
+}
+
+.pos-logo-wrap {
+  width: 20px;
+  height: 20px;
+  margin: 0 auto;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.75);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+
+.pos-logo-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.pos-logo-wrap .pos-logo-fallback {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.pos-jersey {
+  font-size: 22px;
+  color: #fff;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.55);
+}
+
+.pos-name {
+  font-size: 8px;
+  color: #fff8ee;
+  margin-top: 2px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+.pos-orig {
+  display: inline-block;
+  background: #000;
+  color: #ffe08a;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .4px;
+  margin-top: 3px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+}
+
+.libero-on-court {
+  background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%) !important;
+  border-color: #9c27b0 !important;
+  box-shadow: 0 0 24px rgba(156,39,176,0.8), 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.libero-on-court .pos-jersey {
+  color: #fff;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.4);
+}
+
+.libero-on-court .pos-label {
+  background: rgba(255,255,255,0.4);
+}
+
+.libero-on-court .pos-logo-wrap {
+  border-color: rgba(255,255,255,0.7);
+  background: rgba(255,255,255,0.2);
+}
+
+.libero-on-court .pos-name {
+  color: #fff !important;
+}
+
+.server {
+  background: linear-gradient(135deg, #ffeb3b 0%, #ffd600 100%);
+  box-shadow: 0 0 24px rgba(255,235,59,0.8), 0 4px 12px rgba(0,0,0,0.3);
+  border-width: 4px;
+  border-color: #ffc107;
+}
+
+.server .pos-jersey,
+.server .pos-name {
+  color: #000;
+  text-shadow: none;
+}
+
+.server::before {
+  content: '🏐';
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  background: linear-gradient(135deg, #ffeb3b 0%, #00d9ff 100%);
+  color: #000;
+  padding: 6px 10px;
+  border-radius: 50%;
+  font-size: 16px;
+  border: 2px solid #fff;
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.rotation-order {
+  background: #0f3460;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.rotation-title {
+  font-size: 10px;
+  color: #00d9ff;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.rotation-list {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.rotation-item {
+  background: #16213e;
+  padding: 5px;
+  border-radius: 4px;
+  text-align: center;
+  border: 1px solid #533483;
+}
+
+.rotation-item.libero-rotation {
+  background: #9c27b0;
+  border-color: #9c27b0;
+}
+
+.rotation-pos {
+  font-size: 8px;
+  color: #e94560;
+  font-weight: bold;
+  margin-bottom: 2px;
+}
+
+.rotation-jersey {
+  font-size: 13px;
+  color: #fff;
+  font-weight: bold;
+}
+
+.rotation-name {
+  font-size: 7px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.libero-rotation .rotation-name {
+  color: #fff;
+}
+
+.liberos-section {
+  margin-top: 8px;
+  padding: 6px;
+  background: #9c27b0;
+  border-radius: 6px;
+}
+
+.liberos-title {
+  font-size: 10px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  color: #fff;
+}
+
+.libero-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.libero-item {
+  background: rgba(255,255,255,0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.on-court-indicator {
+  color: #00ff00;
+  font-size: 10px;
+  margin-left: 5px;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #533483;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 8px;
+  color: #888;
+  display: block;
+}
+
+.stat-value {
+  font-size: 13px;
+  color: #00d9ff;
+  font-weight: bold;
+  display: block;
+  margin-top: 3px;
+}
+
+.no-data {
+  text-align: center;
+  padding: 60px 20px;
+  font-size: 18px;
+  color: #888;
+}
+
+.refresh-info {
+  text-align: center;
+  font-size: 12px;
+  color: #888;
+  margin-top: 20px;
+}
+</style>
+</head>
+<body>
+
+<div id="content"></div>
+
+<div class="refresh-info">Auto-refreshes every 2 seconds to show live updates</div>
+
+<div style="text-align:center;padding:15px;color:#666;font-size:11px;background:#0f3460;border-top:2px solid #16213e;margin-top:20px">
+  DC_Volley © 2025 | Digital Volleyball Scoresheet
+</div>
+
+<script>
+var gameData = null;
+
+function loadGameData() {
+  try {
+    var data = localStorage.getItem('volleyballGameData');
+    if (data) {
+      gameData = JSON.parse(data);
+      renderDisplay();
+    } else {
+      document.getElementById('content').innerHTML = 
+        '<div class="no-data">No match data available. Please start a match in the main scoresheet.</div>';
+    }
+  } catch (e) {
+    console.error('Error loading game data:', e);
+    document.getElementById('content').innerHTML = 
+      '<div class="no-data">Error loading match data.</div>';
+  }
+}
+
+function renderDisplay() {
+  if (!gameData || !gameData.sets || gameData.sets.length === 0) {
+    document.getElementById('content').innerHTML = 
+      '<div class="no-data">Waiting for match to start...</div>';
+    return;
+  }
+  
+  var set = gameData.sets[gameData.currentSet - 1];
+  if (!set) return;
+  
+  var html = '';
+  
+  // Check if sides are swapped
+  var isSwapped = gameData.swapped || false;
+  
+  // Determine display order (left team, right team)
+  var leftTeam = isSwapped ? 'B' : 'A';
+  var rightTeam = isSwapped ? 'A' : 'B';
+  
+  // Score Display — copied byte-exact from main DC_Volley UI's score-section
+  html += '<div class="score-section">';
+  
+  // Left team score
+  var leftSets = gameData.sets.filter(function(s) { return s.winner === leftTeam; }).length;
+  var leftLogo = (gameData.teams[leftTeam] && gameData.teams[leftTeam].logoData) || '';
+  html += '<div class="team-score">';
+  html += '<div class="team-name team-a">' +
+    (leftLogo ? '<div class="team-name-logo"><img src="' + leftLogo + '" alt="logo"></div>' : '') +
+    '<span class="team-name-text">' + gameData.matchInfo['team' + leftTeam + 'Name'] + '</span></div>';
+  html += '<div class="score-display team-a">' + set.score[leftTeam] + '</div>';
+  html += '<div style="color:#888;font-size:11px">Sets: <span>' + leftSets + '</span></div>';
+  html += '</div>';
+  
+  // Set info in middle
+  var totalSets = parseInt(gameData.matchInfo.format);
+  var targetPoints = 25;
+  if (totalSets === 5 && gameData.currentSet === 5) {
+    targetPoints = 15;
+  } else if (totalSets === 3 && gameData.currentSet === 3) {
+    targetPoints = 15;
+  }
+  
+  html += '<div class="set-center">';
+  html += '<div><div class="set-title">SET ' + gameData.currentSet + '</div><div class="set-dots">';
+  
+  for (var i = 0; i < totalSets; i++) {
+    var dotStyle = '';
+    var s = gameData.sets[i];
+    if (s && s.winner) {
+      var winnerColor = gameData.matchInfo['team' + s.winner + 'Color'];
+      dotStyle = ' style="background:' + winnerColor + ';border-color:' + winnerColor + ';"';
+    }
+    html += '<div class="set-dot"' + dotStyle + '>' + (i + 1) + '</div>';
+  }
+  
+  html += '</div><div id="setTypeDisp">(First to ' + targetPoints + ', win by 2)</div></div>';
+  html += '</div>';
+  
+  // Right team score
+  var rightSets = gameData.sets.filter(function(s) { return s.winner === rightTeam; }).length;
+  var rightLogo = (gameData.teams[rightTeam] && gameData.teams[rightTeam].logoData) || '';
+  html += '<div class="team-score">';
+  html += '<div class="team-name team-b">' +
+    (rightLogo ? '<div class="team-name-logo"><img src="' + rightLogo + '" alt="logo"></div>' : '') +
+    '<span class="team-name-text">' + gameData.matchInfo['team' + rightTeam + 'Name'] + '</span></div>';
+  html += '<div class="score-display team-b">' + set.score[rightTeam] + '</div>';
+  html += '<div style="color:#888;font-size:11px">Sets: <span>' + rightSets + '</span></div>';
+  html += '</div>';
+  
+  html += '</div>';
+  
+  // Lineups
+  html += '<div class="lineups-container">';
+  
+  // Left team lineup
+  html += '<div class="team-lineup">';
+  var _logoL = (gameData.teams[leftTeam] && gameData.teams[leftTeam].logoData) || '';
+  html += '<div class="lineup-title" style="color: ' + (leftTeam === 'A' ? '#ff6b6b' : '#4ecdc4') + ';display:flex;align-items:center;justify-content:center;gap:8px">' +
+    (_logoL ? '<span style="width:36px;height:36px;border-radius:6px;overflow:hidden;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.3);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><img src="' + _logoL + '" alt="logo" style="width:100%;height:100%;object-fit:contain"></span>' : '') +
+    '<span>' + gameData.matchInfo['team' + leftTeam + 'Name'] + '</span></div>';
+  html += renderCourt(leftTeam, set, true);
+  html += renderRotationOrder(leftTeam);
+  html += renderLiberos(leftTeam);
+  html += renderStats(leftTeam, set);
+  html += '</div>';
+  
+  // Right team lineup
+  html += '<div class="team-lineup">';
+  var _logoR = (gameData.teams[rightTeam] && gameData.teams[rightTeam].logoData) || '';
+  html += '<div class="lineup-title" style="color: ' + (rightTeam === 'A' ? '#ff6b6b' : '#4ecdc4') + ';display:flex;align-items:center;justify-content:center;gap:8px">' +
+    (_logoR ? '<span style="width:36px;height:36px;border-radius:6px;overflow:hidden;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.3);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><img src="' + _logoR + '" alt="logo" style="width:100%;height:100%;object-fit:contain"></span>' : '') +
+    '<span>' + gameData.matchInfo['team' + rightTeam + 'Name'] + '</span></div>';
+  html += renderCourt(rightTeam, set, false);
+  html += renderRotationOrder(rightTeam);
+  html += renderLiberos(rightTeam);
+  html += renderStats(rightTeam, set);
+  html += '</div>';
+  
+  html += '</div>';
+  
+  document.getElementById('content').innerHTML = html;
+}
+
+function renderCourt(team, set, isLeft) {
+  var html = '<div class="court-visual ' + (isLeft ? 'court-left' : 'court-right') + '"><div class="court-grid">';
+  
+  var lineup = gameData.teams[team].lineup;
+  var liberoReps = (gameData.liberoReplacements && gameData.liberoReplacements[team]) || [];
+  
+  // idx = index into lineup array (0=P1 .. 5=P6); labelForIdx keeps the exact same label text as before
+  var labelForIdx = ['P1-RB', 'P2-RF', 'P3-MF', 'P4-LF', 'P5-LB', 'P6-MB'];
+  
+  for (var idx = 0; idx < 6; idx++) {
+    var pos = idx + 1; // grid position number 1-6, used for grid-area placement (front-to-front)
+    var jersey = lineup[idx];
+    
+    var player = null;
+    if (jersey && gameData.teams[team].players) {
+      player = gameData.teams[team].players.find(function(p) { 
+        return p.jersey === jersey; 
+      });
+    }
+    
+    var posClass = 'court-pos';
+    
+    // Check if server (P1 = index 0 in lineup)
+    if (idx === 0 && set.serving === team) {
+      posClass += ' server';
+    }
+    
+    // Check if libero
+    var isLibero = false;
+    if (player && (player.role === 'libero1' || player.role === 'libero2')) {
+      posClass += ' libero-on-court';
+      isLibero = true;
+    }
+    
+    // Libero carries the original player's jersey number
+    var origJersey = null;
+    if (jersey != null) {
+      var rep = liberoReps.find(function(r) { return r.libero === jersey; });
+      if (rep) {
+        origJersey = rep.originalPlayer;
+        if (!isLibero) {
+          posClass += ' libero-on-court';
+          isLibero = true;
+        }
+      }
+    }
+    
+    html += '<div class="' + posClass + '" data-pos="' + pos + '">';
+    html += '<div class="pos-label">' + labelForIdx[idx] + '</div>';
+    if (player) {
+      var logoSrc = (gameData.teams[team] && gameData.teams[team].logoData) || '';
+      if (logoSrc) {
+        html += '<div class="pos-logo-wrap"><img src="' + logoSrc + '" alt="logo"></div>';
+      } else {
+        var _letter = (team === 'A' ? (gameData.matchInfo.teamAName || 'A') : (gameData.matchInfo.teamBName || 'B'))[0];
+        var _bg = team === 'A' ? '#e94560' : '#00d9ff';
+        html += '<div class="pos-logo-wrap"><span class="pos-logo-fallback" style="font-size:16px;font-weight:900;color:' + _bg + ';text-shadow:0 1px 3px rgba(0,0,0,0.3)">' + _letter + '</span></div>';
+      }
+    }
+    html += '<div class="pos-jersey">';
+    if (player) {
+      html += '#' + player.jersey;
+    } else {
+      html += '-';
+    }
+    html += '</div>';
+    if (origJersey != null) {
+      html += '<div class="pos-orig">⇄ #' + origJersey + '</div>';
+    }
+    if (player && player.name) {
+      html += '<div class="pos-name">' + player.name.split(' ')[0] + '</div>';
+    }
+    html += '</div>';
+  }
+  
+  html += '</div></div>';
+  return html;
+}
+
+function renderRotationOrder(team) {
+  var html = '<div class="rotation-order">';
+  html += '<div class="rotation-title">Rotation Order (Next →)</div>';
+  html += '<div class="rotation-list">';
+  
+  var lineup = gameData.teams[team].lineup;
+  
+  for (var i = 0; i < 6; i++) {
+    var jersey = lineup[i];
+    var player = null;
+    var isLibero = false;
+    
+    if (jersey && gameData.teams[team].players) {
+      player = gameData.teams[team].players.find(function(p) { 
+        return p.jersey === jersey; 
+      });
+      if (player && (player.role === 'libero1' || player.role === 'libero2')) {
+        isLibero = true;
+      }
+    }
+    
+    var itemClass = 'rotation-item';
+    if (isLibero) {
+      itemClass += ' libero-rotation';
+    }
+    
+    html += '<div class="' + itemClass + '">';
+    html += '<div class="rotation-pos">P' + (i + 1) + '</div>';
+    html += '<div class="rotation-jersey">#' + (jersey || '-') + '</div>';
+    if (player && player.name) {
+      html += '<div class="rotation-name">' + player.name.split(' ')[0] + '</div>';
+    }
+    html += '</div>';
+  }
+  
+  html += '</div></div>';
+  return html;
+}
+
+function renderLiberos(team) {
+  if (!gameData.teams[team].players) return '';
+  
+  var liberos = gameData.teams[team].players.filter(function(p) {
+    return p.role === 'libero1' || p.role === 'libero2';
+  });
+  
+  if (liberos.length === 0) return '';
+  
+  var html = '<div class="liberos-section">';
+  html += '<div class="liberos-title">Liberos</div>';
+  html += '<div class="libero-list">';
+  
+  liberos.forEach(function(libero) {
+    var isOnCourt = gameData.teams[team].lineup.includes(libero.jersey);
+    
+    html += '<div class="libero-item">';
+    html += '#' + libero.jersey + ' ' + libero.name.split(' ')[0];
+    if (isOnCourt) {
+      html += '<span class="on-court-indicator">● ON COURT</span>';
+    }
+    html += '</div>';
+  });
+  
+  html += '</div></div>';
+  return html;
+}
+
+function renderStats(team, set) {
+  var timeoutsUsed = set.timeouts[team] ? set.timeouts[team].length : 0;
+  var subsUsed = set.substitutions[team] ? set.substitutions[team].length : 0;
+  var subLimit = gameData.subLimitPerSet || 6;
+  
+  var html = '<div class="stats-row">';
+  html += '<div class="stat-item">';
+  html += '<span class="stat-label">Timeouts Left</span>';
+  html += '<span class="stat-value">' + (2 - timeoutsUsed) + ' / 2</span>';
+  html += '</div>';
+  html += '<div class="stat-item">';
+  html += '<span class="stat-label">Subs Left</span>';
+  html += '<span class="stat-value">' + (subLimit - subsUsed) + ' / ' + subLimit + '</span>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+// Initial load
+loadGameData();
+
+// Auto-refresh every 2 seconds
+setInterval(loadGameData, 2000);
+</script>
+
+</body>
+</html>
