@@ -574,6 +574,39 @@
   text-transform: uppercase;
 }
 
+/* A libero exchange needs an extra line. Keep the position label visible by
+   omitting only the redundant team abbreviation on that one card. */
+.referee-court-pos:has(.referee-libero-replaced-tag) .referee-pos-player {
+  display: none;
+}
+
+/* The referee toolbar can make the court substantially shorter than in
+   full-screen mode. Switch to a compact card treatment before content clips. */
+@container (max-height: 430px) {
+  .referee-court-pos {
+    padding: 3px;
+    gap: 1px;
+  }
+
+  .referee-pos-player {
+    display: none;
+  }
+
+  .referee-pos-label {
+    font-size: 9px;
+  }
+
+  .referee-pos-jersey {
+    font-size: clamp(14px, 2.3cqh, 20px);
+    gap: 1px;
+  }
+
+  .referee-libero-replaced-tag {
+    font-size: 8px;
+    padding: 1px 2px;
+  }
+}
+
 .referee-pos-logo-wrap {
   display: none;
 }
