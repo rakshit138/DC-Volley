@@ -246,7 +246,7 @@ function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, c
   );
 
   return (
-    <div className={`referee-court-grid${highlight ? ' challenge-highlight' : ''}`}>
+    <div className={`referee-court-grid referee-court-grid--${team}${highlight ? ' challenge-highlight' : ''}`}>
       {GRID_ORDER.map((pos) => {
         const jersey = padded[pos - 1];
         const isServer = serving === team && pos === 1;

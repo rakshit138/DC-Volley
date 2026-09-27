@@ -41,6 +41,10 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
     page.drawEllipse({ x:cx*K, y:(PH-cy)*K, xScale:r*K, yScale:r*K,
       borderWidth:(w||0.45)*K*0.35, borderColor: col || rgb(0.7,0,0) });
   }
+  function WHITEOUT(xmm, ymm_top, wmm, hmm) { // covers a printed area (mm from top) with white
+    const yTopPt = (PH - ymm_top) * K, yBotPt = (PH - (ymm_top + hmm)) * K;
+    page.drawRectangle({ x: xmm*K, y: yBotPt, width: wmm*K, height: (yTopPt - yBotPt), color: rgb(1,1,1) });
+  }
   function XM(cx,cy,s) { // X mark centered at cx,cy
     s = s || 1.4;
     LN(cx-s, cy-s, cx+s, cy+s, 0.5);
@@ -374,15 +378,22 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
     slashes(214.82, scR, !!sd.winner);
   }
 
+  // Best-of-3 matches use the special deciding-set panel below for set 3,
+  // because it records the 8-point court change and team-letter reassignment.
+  const fmt = parseInt(mi.format) || 5;
+  const deciderIdx = fmt === 3 ? 2 : 4;
+
   panel(0, 'A', 0, 0);
   panel(1, 'B', DXP, 0);
-  panel(2, 'A', 0, DYR);
-  panel(3, 'B', DXP, DYR);
+  if (fmt !== 3) {
+    panel(2, 'A', 0, DYR);
+    panel(3, 'B', DXP, DYR);
+  }
 
   // ══════════════════════════════════════════════════════════════════
-  // SET 5
+  // SET 5 (also used as the deciding-set panel for best-of-3 matches)
   // ══════════════════════════════════════════════════════════════════
-  const sd5 = sets[4] || null;
+  const sd5 = sets[deciderIdx] || null;
   if (sd5) {
     const srv5 = sd5.firstServer || sd5.serving || 'A';
     const lu5A = sd5.lineupA || [], lu5B = sd5.lineupB || [];
@@ -418,7 +429,7 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
 
     // ── SET5 point slashes ─────────────────────────────────────────
     // team A pre-change: single col 1-8; team B: 3x10 grid mid; team A post-change: 3x10 far right
-    const log5 = pointLog(sd5, 4);
+    const log5 = pointLog(sd5, deciderIdx);
     // find change moment (leading team reaches 8) and A's points at change
     let cA=0, cB=0, changeIdx=-1, ptsAtChange=null;
     for (let i=0;i<log5.length;i++) {
@@ -675,10 +686,16 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
   const th = Math.floor(mDur/60), tm = mDur%60;
   T(String(th), 307.5, 281.2, 8.5, true, 'R'); T(String(tm), 316.2, 281.2, 8.5, true, 'R');
   // winner
-  const winner = tWA>=3 ? tA : (tWB>=3 ? tB : '');
+  const setsNeededToWin = fmt === 3 ? 2 : 3;
+  // The template prints the best-of-5 threshold (3). Correct it for best-of-3.
+  if (fmt === 3) {
+    WHITEOUT(306.5, 282.3, 4.6, 7.1);
+    T('2', 309.1, 288.4, 13, true, 'C');
+  }
+  const winner = tWA>=setsNeededToWin ? tA : (tWB>=setsNeededToWin ? tB : '');
   if (winner) {
     // winner code spaced in the printed 3-cell box (276.8-293.7); loser sets after printed "3 :"
-    spacedCode(tWA>=3?abA:abB, [279.6,285.2,290.8], 287.9, 9);
+    spacedCode(tWA>=setsNeededToWin?abA:abB, [279.6,285.2,290.8], 287.9, 9);
     T(String(Math.min(tWA,tWB)), 316.5, 288.4, 10, true);
   }
 
