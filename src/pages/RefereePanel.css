@@ -232,7 +232,7 @@
 
 .referee-score-section {
   background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-  padding: 5px 9px;
+  padding: 4px 7px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -247,9 +247,9 @@
 }
 
 .referee-team-name {
-  font-size: 24px;
-  font-weight: bold;
-  margin-bottom: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 5px;
   text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
 }
 
@@ -257,8 +257,8 @@
 .referee-team-name.team-b { color: #4ecdc4; }
 
 .referee-score-display-val {
-  font-size: 70px;
-  font-weight: bold;
+  font-size: 53px;
+  font-weight: 700;
   line-height: 1;
   font-family: Arial, sans-serif;
   text-shadow: 3px 3px 6px rgba(0,0,0,0.4);
@@ -266,12 +266,12 @@
 
 .referee-sets-small {
   color: #888;
-  font-size: 11px;
+  font-size: 9px;
 }
 
 .referee-set-center {
   text-align: center;
-  padding: 8px;
+  padding: 6px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #fff;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
@@ -279,8 +279,8 @@
 }
 
 .referee-set-title {
-  font-size: 17px;
-  margin-bottom: 10px;
+  font-size: 13px;
+  margin-bottom: 6px;
   font-weight: 600;
   text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
 }
@@ -292,15 +292,15 @@
 }
 
 .referee-set-dot {
-  width: 36px;
-  height: 36px;
+  width: 27px;
+  height: 27px;
   border-radius: 50%;
   border: 3px solid #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
-  font-weight: bold;
+  font-size: 12px;
+  font-weight: 600;
   background: #1a1a2e;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
@@ -452,14 +452,14 @@
   background: #8b929c;
   border: 2px solid #cfe0ee;
   border-radius: 14px;
-  padding: 8px 6px;
+  padding: 4px;
   text-align: center;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 2px;
   position: relative;
   width: 88%;
   height: 88%;
@@ -524,16 +524,23 @@
   background: #ffe08a;
   color: #000;
   border-radius: 4px;
-  padding: 2px 5px;
-  font-size: 14px;
-  font-weight: 800;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 3px;
+  font-size: clamp(8px, 1.5cqh, 11px);
+  font-weight: 700;
   line-height: 1.1;
   white-space: nowrap;
 }
 
 .referee-pos-label {
-  font-size: 15px;
-  font-weight: 800;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: clamp(9px, 1.9cqh, 12px);
+  font-weight: 600;
   color: #fff;
   background: none;
   padding: 0;
@@ -544,19 +551,24 @@
 }
 
 .referee-pos-jersey {
-  font-size: clamp(19px, 3.2cqh, 32px);
+  max-width: 100%;
+  min-width: 0;
+  font-size: clamp(15px, 2.6cqh, 24px);
   color: #fff;
-  font-weight: 900;
+  font-weight: 700;
   line-height: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .referee-pos-player {
-  font-size: 14px;
-  font-weight: 800;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: clamp(9px, 1.8cqh, 12px);
+  font-weight: 600;
   color: #fff;
   letter-spacing: 1px;
   text-transform: uppercase;
