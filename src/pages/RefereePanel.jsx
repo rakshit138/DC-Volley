@@ -245,7 +245,7 @@ function getLiberoReplacementAt(replacements, liberoJersey, courtPosition) {
   return forLibero[0]?.originalPlayer ? String(forLibero[0].originalPlayer) : null;
 }
 
-function CourtGrid({ team, teamName, lineup, serving, liberoJerseys, liberoReplacements, currentSet, highlight }) {
+function CourtGrid({ team, side, teamName, lineup, serving, liberoJerseys, liberoReplacements, currentSet, highlight }) {
   const arr = Array.isArray(lineup) ? lineup : [];
   const padded = [...arr];
   while (padded.length < 6) padded.push(null);
@@ -254,7 +254,7 @@ function CourtGrid({ team, teamName, lineup, serving, liberoJerseys, liberoRepla
   );
 
   return (
-    <div className={`referee-court-grid referee-court-grid--${team}${highlight ? ' challenge-highlight' : ''}`}>
+    <div className={`referee-court-grid referee-court-grid--${side}${highlight ? ' challenge-highlight' : ''}`}>
       {GRID_ORDER.map((pos) => {
         const jersey = padded[pos - 1];
         const isServer = serving === team && pos === 1;
@@ -1859,6 +1859,7 @@ export default function RefereePanel() {
               <div className="referee-court-visual">
                 <CourtGrid
                   team={leftTeam}
+                  side="A"
                   teamName={leftTeamName}
                   lineup={lineupLeft}
                   serving={serving}
@@ -1932,6 +1933,7 @@ export default function RefereePanel() {
               <div className="referee-court-visual">
                 <CourtGrid
                   team={rightTeam}
+                  side="B"
                   teamName={rightTeamName}
                   lineup={lineupRight}
                   serving={serving}

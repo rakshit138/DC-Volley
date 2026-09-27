@@ -412,6 +412,8 @@
 .referee-court-visual {
   grid-row: 2;
   position: relative;
+  width: 75%;
+  justify-self: center;
   background: #e8944a;
   border: 3px solid #fdfdfd;
   padding: 10px;
@@ -424,8 +426,10 @@
   overflow: hidden;
 }
 
-.referee-court-container:first-of-type .referee-court-visual { border-right: none; border-radius: 8px 0 0 8px; }
-.referee-court-container:last-of-type .referee-court-visual { border-left: none; border-radius: 0 8px 8px 0; }
+.referee-court-container:first-of-type .referee-court-visual,
+.referee-court-container:last-of-type .referee-court-visual {
+  border-radius: 8px;
+}
 
 .referee-court-grid {
   display: grid;
@@ -441,12 +445,13 @@
 
 .referee-court-grid--A { grid-template-areas: "p5 p4" "p6 p3" "p1 p2"; }
 .referee-court-grid--B { grid-template-areas: "p2 p1" "p3 p6" "p4 p5"; }
-.referee-court-pos:nth-child(1) { grid-area: p1; }
-.referee-court-pos:nth-child(2) { grid-area: p2; }
-.referee-court-pos:nth-child(3) { grid-area: p3; }
-.referee-court-pos:nth-child(4) { grid-area: p4; }
-.referee-court-pos:nth-child(5) { grid-area: p5; }
-.referee-court-pos:nth-child(6) { grid-area: p6; }
+/* CourtGrid follows the reference DOM order: P4, P3, P2, P5, P6, P1. */
+.referee-court-pos:nth-child(1) { grid-area: p4; }
+.referee-court-pos:nth-child(2) { grid-area: p3; }
+.referee-court-pos:nth-child(3) { grid-area: p2; }
+.referee-court-pos:nth-child(4) { grid-area: p5; }
+.referee-court-pos:nth-child(5) { grid-area: p6; }
+.referee-court-pos:nth-child(6) { grid-area: p1; }
 
 .referee-court-pos {
   background: #8b929c;
