@@ -77,6 +77,14 @@ function getPlayer(team, teams, jersey) {
   return players.find((p) => String(p.jersey) === String(jersey));
 }
 
+function teamAbbreviation(name) {
+  const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  return words.length === 1
+    ? words[0].slice(0, 3).toUpperCase()
+    : words.map((word) => word[0]).join('').slice(0, 3).toUpperCase();
+}
+
 function LineupList({ team, teamName, lineup, players, serving, currentSetData, currentSet, sanctionSystem, injuredPlayers }) {
   // Show ALL players sorted by jersey number (like original HTML)
   const sortedPlayers = [...(players || [])].sort((a, b) => {
@@ -237,7 +245,7 @@ function getLiberoReplacementAt(replacements, liberoJersey, courtPosition) {
   return forLibero[0]?.originalPlayer ? String(forLibero[0].originalPlayer) : null;
 }
 
-function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, currentSet, highlight, logoSrc }) {
+function CourtGrid({ team, teamName, lineup, serving, liberoJerseys, liberoReplacements, currentSet, highlight }) {
   const arr = Array.isArray(lineup) ? lineup : [];
   const padded = [...arr];
   while (padded.length < 6) padded.push(null);
@@ -259,18 +267,12 @@ function CourtGrid({ team, lineup, serving, liberoJerseys, liberoReplacements, c
             key={pos}
             className={`referee-court-pos ${isServer ? 'server' : ''} ${isLibero ? 'libero-on-court' : ''}`}
           >
-            {replacedJersey && (
-              <span className="referee-libero-replaced-tag">#{replacedJersey}</span>
-            )}
-            <div className="referee-pos-logo-wrap">
-              {logoSrc ? (
-                <img src={logoSrc} alt="" />
-              ) : (
-                <span className="referee-pos-logo-fallback">🏐</span>
-              )}
-            </div>
             <span className="referee-pos-label">{POS_LABELS[pos]}</span>
-            <span className="referee-pos-jersey">{jersey != null ? jersey : '-'}</span>
+            <span className="referee-pos-player">{jersey != null ? teamAbbreviation(teamName) : '-'}</span>
+            <span className="referee-pos-jersey">
+              {jersey != null ? `#${jersey}` : '-'}
+              {replacedJersey && <span className="referee-libero-replaced-tag">L ⇄ #{replacedJersey}</span>}
+            </span>
           </div>
         );
       })}
@@ -1831,7 +1833,10 @@ export default function RefereePanel() {
           <div className="referee-courts">
             <div className="referee-court-container">
               <div className="referee-court-header">
-                <div className="referee-court-name">{leftTeamName}</div>
+                <div className="referee-court-title-row">
+                  {logoLeft && <img className="referee-court-logo" src={logoLeft} alt="" />}
+                  <div className="referee-court-name">{leftTeamName}</div>
+                </div>
                 <div className="referee-stats-row">
                   <div className="referee-stat">
                     <span className="referee-stat-label">TIMEOUT</span>
@@ -1854,13 +1859,13 @@ export default function RefereePanel() {
               <div className="referee-court-visual">
                 <CourtGrid
                   team={leftTeam}
+                  teamName={leftTeamName}
                   lineup={lineupLeft}
                   serving={serving}
                   liberoJerseys={liberoJerseysLeft}
                   liberoReplacements={gameData.liberoReplacements}
                   currentSet={currentSet}
                   highlight={courtHighlightTeam === leftTeam}
-                  logoSrc={logoLeft}
                 />
               </div>
               <div className="referee-court-controls">
@@ -1901,7 +1906,10 @@ export default function RefereePanel() {
 
             <div className="referee-court-container">
               <div className="referee-court-header">
-                <div className="referee-court-name">{rightTeamName}</div>
+                <div className="referee-court-title-row">
+                  {logoRight && <img className="referee-court-logo" src={logoRight} alt="" />}
+                  <div className="referee-court-name">{rightTeamName}</div>
+                </div>
                 <div className="referee-stats-row">
                   <div className="referee-stat">
                     <span className="referee-stat-label">TIMEOUT</span>
@@ -1924,13 +1932,13 @@ export default function RefereePanel() {
               <div className="referee-court-visual">
                 <CourtGrid
                   team={rightTeam}
+                  teamName={rightTeamName}
                   lineup={lineupRight}
                   serving={serving}
                   liberoJerseys={liberoJerseysRight}
                   liberoReplacements={gameData.liberoReplacements}
                   currentSet={currentSet}
                   highlight={courtHighlightTeam === rightTeam}
-                  logoSrc={logoRight}
                 />
               </div>
               <div className="referee-court-controls">

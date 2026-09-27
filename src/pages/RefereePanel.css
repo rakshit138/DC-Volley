@@ -362,6 +362,28 @@
   text-transform: uppercase;
 }
 
+.referee-court-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.referee-court-title-row .referee-court-name {
+  margin-bottom: 0;
+}
+
+.referee-court-logo {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.1);
+}
+
 .referee-stats-row {
   display: flex;
   justify-content: space-around;
@@ -457,7 +479,8 @@
 }
 
 .referee-court-pos.server .referee-pos-label,
-.referee-court-pos.server .referee-pos-jersey {
+.referee-court-pos.server .referee-pos-jersey,
+.referee-court-pos.server .referee-pos-player {
   color: #000;
 }
 
@@ -493,21 +516,18 @@
   text-shadow: 2px 2px 4px rgba(0,0,0,0.4);
 }
 
+.referee-court-pos.libero-on-court .referee-pos-player {
+  color: #f0e0f5;
+}
+
 .referee-libero-replaced-tag {
-  position: absolute;
-  top: 0;
-  right: 0;
-  transform: translate(40%, -45%);
-  background: #000;
-  color: #ffeb3b;
-  border: 2px solid #ffeb3b;
+  background: #ffe08a;
+  color: #000;
   border-radius: 4px;
   padding: 2px 5px;
-  font-size: 10px;
-  font-weight: bold;
+  font-size: 14px;
+  font-weight: 800;
   line-height: 1.1;
-  z-index: 12;
-  pointer-events: none;
   white-space: nowrap;
 }
 
@@ -528,7 +548,18 @@
   color: #fff;
   font-weight: 900;
   line-height: 1;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.referee-pos-player {
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 
 .referee-pos-logo-wrap {
