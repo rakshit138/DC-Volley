@@ -344,6 +344,8 @@
 
 .referee-court-header {
   grid-row: 1;
+  width: 75%;
+  justify-self: center;
   background: linear-gradient(180deg, rgba(16,30,58,0.92), rgba(11,21,42,0.92));
   padding: 7px 10px;
   border: 1px solid rgba(148, 178, 216, 0.25);
@@ -634,6 +636,8 @@
 
 .referee-court-controls {
   grid-row: 3;
+  width: 75%;
+  justify-self: center;
   padding: 10px;
   background: linear-gradient(180deg, rgba(15,28,54,0.9), rgba(10,19,38,0.9));
   border: 1px solid rgba(148, 178, 216, 0.25);
