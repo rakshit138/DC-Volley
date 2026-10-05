@@ -372,6 +372,29 @@ export function exportMatchLogPdf(gameData) {
     yPos += 5;
   }
   const off = data.officials || {};
+  const additionalOfficials = [
+    ['Match Supervisor', off.matchSupervisor, off.matchSupervisorCountry],
+    ['Match Commissioner', off.matchCommissioner, off.matchCommissionerCountry],
+    ['Third Referee', off.thirdReferee, off.thirdRefereeCountry],
+    ['Challenge Referee', off.challengeReferee, off.challengeRefereeCountry],
+    ['Substitute Referee', off.substituteReferee, off.substituteRefereeCountry],
+    ['Linesman 1', off.linesman1, off.linesman1Country],
+    ['Linesman 2', off.linesman2, off.linesman2Country],
+    ['Linesman 3', off.linesman3, off.linesman3Country],
+    ['Linesman 4', off.linesman4, off.linesman4Country]
+  ].filter(([, name]) => name);
+  if (additionalOfficials.length) {
+    doc.autoTable({
+      head: [['Additional Match Official', 'Name', 'Country']],
+      body: additionalOfficials.map(([role, name, country]) => [role, name, country || '-']),
+      startY: yPos + 2,
+      theme: 'grid',
+      headStyles: { fillColor: [83, 52, 131] },
+      styles: { fontSize: 8 },
+      margin: { left: 20, right: 20 }
+    });
+    yPos = doc.lastAutoTable.finalY + 5;
+  }
   if (off.coachA || off.coachB || off.asstCoachA || off.asstCoach2A) {
     yPos += 3;
     doc.text(`Team A Coach: ${off.coachA || 'N/A'} | Asst: ${off.asstCoachA || 'N/A'} | Asst 2: ${off.asstCoach2A || 'N/A'}`, 20, yPos);

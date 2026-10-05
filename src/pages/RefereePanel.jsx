@@ -1847,10 +1847,6 @@ export default function RefereePanel() {
                     <span className="referee-stat-val">{subLeft}/{subLimit}</span>
                   </div>
                   <div className="referee-stat">
-                    <span className="referee-stat-label">SAN</span>
-                    <span className="referee-stat-val">{sancLeft}</span>
-                  </div>
-                  <div className="referee-stat">
                     <span className="referee-stat-label">SERVE</span>
                     <span className="referee-stat-val">{serving === leftTeam ? 'YES' : 'NO'}</span>
                   </div>
@@ -1892,6 +1888,9 @@ export default function RefereePanel() {
             </div>
 
             <div className="referee-rally-strip">
+              <div className="referee-net-mesh" aria-hidden="true" />
+              <div className="referee-net-post referee-net-post--top" aria-hidden="true" />
+              <div className="referee-net-post referee-net-post--bottom" aria-hidden="true" />
               <button
                 type="button"
                 className={`referee-rally-btn ${rallyOn ? 'active' : ''}`}
@@ -1919,10 +1918,6 @@ export default function RefereePanel() {
                   <div className="referee-stat">
                     <span className="referee-stat-label">SUB</span>
                     <span className="referee-stat-val">{subRight}/{subLimit}</span>
-                  </div>
-                  <div className="referee-stat">
-                    <span className="referee-stat-label">SAN</span>
-                    <span className="referee-stat-val">{sancRight}</span>
                   </div>
                   <div className="referee-stat">
                     <span className="referee-stat-label">SERVE</span>

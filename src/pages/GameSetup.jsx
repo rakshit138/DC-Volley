@@ -537,6 +537,8 @@ export default function GameSetup() {
       }
 
       const mergedOfficials = {
+        ...officials,
+        ...(officialsSheet || {}),
         ref1: officialsSheet?.ref1 || officials.ref1,
         ref2: officialsSheet?.ref2 || officials.ref2,
         scorer: officialsSheet?.scorer || officials.scorer,
@@ -598,7 +600,8 @@ export default function GameSetup() {
           ref1: mergedOfficials.ref1,
           ref2: mergedOfficials.ref2,
           scorer: mergedOfficials.scorer,
-          assistScorer: mergedOfficials.assistScorer
+          assistScorer: mergedOfficials.assistScorer,
+          ...Object.fromEntries(Object.entries(mergedOfficials).filter(([key]) => /^(matchSupervisor|matchCommissioner|thirdReferee|challengeReferee|substituteReferee|linesman\d|ref[12]Country|scorerCountry|assistScorerCountry)/.test(key)))
         },
         coinToss: {
           winner: coinToss.winner,
@@ -1389,7 +1392,8 @@ export default function GameSetup() {
                   ref1: data.ref1 ?? prev.ref1,
                   ref2: data.ref2 ?? prev.ref2,
                   scorer: data.scorer ?? prev.scorer,
-                  assistScorer: data.assistScorer ?? prev.assistScorer
+                  assistScorer: data.assistScorer ?? prev.assistScorer,
+                  ...Object.fromEntries(Object.entries(data).filter(([key]) => /^(matchSupervisor|matchCommissioner|thirdReferee|challengeReferee|substituteReferee|linesman\d|ref[12]Country|scorerCountry|assistScorerCountry)/.test(key)))
                 }));
               }}
               onClose={() => {}}

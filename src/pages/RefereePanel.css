@@ -738,7 +738,7 @@
   border-radius: 6px;
   box-shadow: 0 2px 5px rgba(0,0,0,0.2);
   flex: 1;
-  min-height: 60px;
+  min-height: 84px;
   width: 100%;
   max-width: 108px;
   display: flex;
@@ -1417,6 +1417,48 @@
   font-weight: 800;
   border: 2px solid rgba(255, 255, 255, 0.85);
 }
+
+/* Match-body fidelity: ported from DC_Volley_1_combined_14 FINAL NEW.html.
+   The top bar and copyright footer intentionally retain the application skin. */
+.referee-main { background: transparent; }
+.referee-side-panel { width: 186px; background: rgba(13,24,45,.78); border-right: 1px solid rgba(110,170,255,.16); padding: 12px 10px; box-shadow: 8px 0 24px rgba(0,0,0,.35); backdrop-filter: blur(8px); }
+.referee-side-panel.right { border-left: 1px solid rgba(110,170,255,.16); border-right: 0; box-shadow: -8px 0 24px rgba(0,0,0,.35); }
+.referee-side-title { color: #fff; font-size: 12px; font-weight: 800; letter-spacing: 1.2px; margin-bottom: 10px; padding: 9px; background: linear-gradient(135deg,rgba(0,224,255,.16),rgba(0,224,255,.05)); border: 1px solid rgba(0,224,255,.3); border-radius: 10px; text-transform: uppercase; }
+.referee-lineup-list { background: transparent; padding: 0; }
+.referee-lineup-item { padding: 7px 8px; margin-bottom: 6px; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.06); border-left: 3px solid rgba(0,224,255,.45); border-radius: 8px; font-size: 11px; color: #eaf2ff; transition: background .15s,transform .15s; }
+.referee-lineup-item:hover { background: rgba(0,224,255,.09); transform: translateX(2px); }
+.referee-lineup-item.on-court { background: rgba(255,255,255,.045); border-left-color: rgba(0,224,255,.45); }
+.referee-lineup-item.on-bench { background: rgba(255,255,255,.045); opacity: 1; }
+.referee-lineup-pos { color: #ff4d6d; font-size: 12px; font-weight: 800; }
+
+.referee-score-section { background: linear-gradient(180deg,rgba(13,25,49,.96),rgba(9,17,34,.96)); padding: 14px 18px; gap: 14px; border-bottom: 1px solid rgba(110,170,255,.16); box-shadow: 0 8px 26px rgba(0,0,0,.45); backdrop-filter: blur(8px); }
+.referee-team-score { display: flex; align-items: center; gap: 12px; text-align: center; min-width: 0; }
+.referee-score-section .referee-team-score:last-child { flex-direction: row-reverse; }
+.referee-team-name { flex: 1; font-size: 26px; font-weight: 900; margin: 0; letter-spacing: 3px; text-transform: uppercase; padding: 16px 18px; border-radius: 12px; color: #fff !important; text-shadow: 0 2px 6px rgba(0,0,0,.45); box-shadow: 0 4px 14px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.22); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.referee-team-score:first-child .referee-team-name { background: linear-gradient(135deg,#ff2b55,#d10f3f); box-shadow: 0 6px 20px rgba(255,43,85,.45),inset 0 1px 0 rgba(255,255,255,.25); }
+.referee-team-score:last-child .referee-team-name { background: linear-gradient(135deg,#00e5c0,#009e85); box-shadow: 0 6px 20px rgba(0,229,192,.4),inset 0 1px 0 rgba(255,255,255,.25); }
+.referee-score-display-val { font-size: 56px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; font-family: inherit; background: #eef4ff; color: #0a1428 !important; text-shadow: none; border-radius: 14px; padding: 9px 22px; min-width: 104px; box-shadow: 0 4px 12px rgba(0,0,0,.4),inset 0 -2px 0 rgba(0,0,0,.12); }
+.referee-sets-small { color: #8ea6c4; font-size: 13px; white-space: nowrap; }
+.referee-set-center { display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: linear-gradient(160deg,rgba(102,126,234,.26),rgba(118,75,162,.26)); border: 1px solid rgba(140,160,255,.35); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,.14); backdrop-filter: blur(6px); }
+.referee-set-title { font-size: 18px; margin: 0; font-weight: 800; letter-spacing: 2px; white-space: nowrap; }
+.referee-set-dots { gap: 6px; }
+.referee-set-dot { width: 32px; height: 32px; border: 2px solid rgba(255,255,255,.55); font-size: 14px; font-weight: 800; background: rgba(8,14,28,.75); box-shadow: inset 0 2px 5px rgba(0,0,0,.5); }
+
+.referee-courts { grid-template-columns: auto 40px auto; grid-template-rows: auto auto auto; align-content: center; padding: 10px 16px 8px; gap: 0; }
+.referee-court-header { width: 100%; justify-self: stretch; border-color: rgba(110,170,255,.16); }
+.referee-court-visual { width: calc(min(100cqw - 8px, 128cqh)/2 - 26px); justify-self: stretch; height: clamp(190px,calc(100cqh - 218px),600px); }
+.referee-court-container:first-of-type .referee-court-visual { border-right: none; border-radius: 8px 0 0 8px; }
+.referee-court-container:last-of-type .referee-court-visual { border-left: none; border-radius: 0 8px 8px 0; }
+.referee-court-controls { width: 100%; justify-self: stretch; padding: 8px 10px; border-color: rgba(110,170,255,.16); border-radius: 0 0 12px 12px; }
+.referee-btn-group { gap: 6px; margin-bottom: 6px; }
+.referee-btn-group .referee-btn { padding: 7px; border-radius: 8px; font-size: 10px; }
+.referee-btn-point { font-size: 16px !important; padding: 10px !important; }
+.referee-rally-strip { position: relative; grid-column: 2; grid-row: 2; padding: 0; width: 40px; overflow: visible; }
+.referee-net-mesh { position: absolute; top: 9px; bottom: 9px; left: 50%; transform: translateX(-50%); width: 4px; background: #fdfdfd; border-radius: 2px; box-shadow: 0 0 6px rgba(0,0,0,.3); }
+.referee-net-post { position: absolute; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; border-radius: 50%; background: #fdfdfd; border: 2px solid #cfd8e3; box-shadow: 0 2px 6px rgba(0,0,0,.4); z-index: 1; }
+.referee-net-post--top { top: 0; }.referee-net-post--bottom { bottom: 0; }
+.referee-rally-btn { position: relative; z-index: 2; max-width: none; min-height: 0; flex: 0 0 auto; padding: 4px 1px; font-size: 7.5px; border-radius: 6px; }
+.referee-rally-status { position: relative; z-index: 2; color: #cfe3f5; font-size: 8px; margin-top: 2px; }
 
 @media (max-width: 900px) {
   .referee-side-panel { width: 140px; }

@@ -869,6 +869,7 @@ export async function undoLastPoint(gameCode) {
       teams,
       liberoReplacements,
       currentSet: la.previousCurrentSet,
+      swapped: !!la.previousSwapped,
       awaitingNextSet: true,
       setBreakStartedAt: serverTimestamp(),
       actionHistory: updatedActionHistory,
@@ -933,6 +934,7 @@ export async function undoLastPoint(gameCode) {
       actionHistory: updatedActionHistory,
       status: 'LIVE',
       currentSet: currentSet,
+      swapped: lastAction.previousSwapped ?? !!gameData.swapped,
       updatedAt: serverTimestamp()
     };
     // After removing a set win (or fixing a stuck "awaiting next set" state), allow play in this set again
@@ -1351,6 +1353,7 @@ export async function addPoint(gameCode, team, rallyActive = false) {
     previousLineupB: previousLineupB,
     previousLiberoReplacementsA: previousLiberoReplacementsA,
     previousLiberoReplacementsB: previousLiberoReplacementsB,
+    previousSwapped: !!gameData.swapped,
     setNumber: currentSet,
     previousSummaryLength: previousSummaryLength,
     sanctionSnapshot
@@ -1386,6 +1389,9 @@ export async function addPoint(gameCode, team, rallyActive = false) {
   
   let completed = false;
   let winner = null;
+  // FIVB deciding-set change of courts: exactly once when either side reaches 8.
+  const changeCourtAtEight = isDecidingSet && !set.courtChanged && (scoreA >= 8 || scoreB >= 8);
+  if (changeCourtAtEight) set.courtChanged = true;
   
   if ((scoreA >= target && scoreA - scoreB >= lead) || 
       (scoreB >= target && scoreB - scoreA >= lead)) {
@@ -1438,6 +1444,7 @@ export async function addPoint(gameCode, team, rallyActive = false) {
       matchSummary,
       status: isFinished ? 'FINISHED' : 'LIVE',
       currentSet,
+      swapped: changeCourtAtEight ? !gameData.swapped : !!gameData.swapped,
       awaitingNextSet: !isFinished,
       setBreakStartedAt: !isFinished ? serverTimestamp() : null,
       updatedAt: serverTimestamp()
@@ -1469,6 +1476,7 @@ export async function addPoint(gameCode, team, rallyActive = false) {
     teams,
     actionHistory: updatedActionHistory,
     matchSummary,
+    swapped: changeCourtAtEight ? !gameData.swapped : !!gameData.swapped,
     updatedAt: serverTimestamp()
   });
   
@@ -1908,6 +1916,7 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
   const nextSetAction = {
     type: 'nextSet',
     previousCurrentSet: currentSet,
+    previousSwapped: !!gameData.swapped,
     previousLineupA: [...(gameData.teams?.A?.lineup || [])],
     previousLineupB: [...(gameData.teams?.B?.lineup || [])],
     previousLiberoReplacementsA: JSON.parse(JSON.stringify(gameData.liberoReplacements?.A || [])),
@@ -1934,6 +1943,8 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
     sets,
     teams,
     currentSet: nextSet,
+    // All completed sets are followed by a change of ends.
+    swapped: !gameData.swapped,
     awaitingNextSet: false,
     actionHistory: mergedHistory,
     challengeSystem,

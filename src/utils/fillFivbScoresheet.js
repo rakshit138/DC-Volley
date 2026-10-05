@@ -269,8 +269,16 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
     const sd = sets[si] || null;
     if (!sd) return;
     const srv = sd.serving || lT;
-    const luL = sd['lineup'+lT] || [], luR = sd['lineup'+rT] || [];
-    const subsL = (sd.substitutions||{})[lT] || [], subsR = (sd.substitutions||{})[rT] || [];
+    // Current games store the starting six under startingLineup; preserve
+    // support for legacy exports that use lineupA/lineupB.
+    const luL = sd.startingLineup?.[lT] || sd['lineup'+lT] || [], luR = sd.startingLineup?.[rT] || sd['lineup'+rT] || [];
+    // Exceptional substitutions have their own live record so they do not count
+    // toward the normal limit, but they are still substitutions on the sheet.
+    const allSubs = (team) => [
+      ...((sd.substitutions || {})[team] || []),
+      ...((sd.exceptionalSubstitutions || {})[team] || []).map((sub) => ({ ...sub, exceptional: true }))
+    ].sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+    const subsL = allSubs(lT), subsR = allSubs(rT);
     const toL = (sd.timeouts||{})[lT] || [], toR = (sd.timeouts||{})[rT] || [];
     const scL = (sd.score||{})[lT] || 0, scR = (sd.score||{})[rT] || 0;
 
@@ -320,7 +328,7 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
         const cx = sideX2 + 5.534 + col*11.068 + dx;
         const sc = sub.score || {};
         if (!isReturn) {
-          T(String(sub.playerIn), cx, 65.8+dy, 9, true, 'C');
+          T(`${sub.exceptional ? 'E' : ''}${String(sub.playerIn)}`, cx, 65.8+dy, 9, true, 'C');
           T(String(sc[teamKey]||0), cx-0.7, 68.9+dy, 6, false, 'R');
           T(String(sc[oppKey]||0),  cx+1.3, 68.9+dy, 6, false);
         } else {

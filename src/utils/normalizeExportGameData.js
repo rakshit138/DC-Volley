@@ -99,6 +99,7 @@ export function normalizeExportGameData(gameData) {
     ref2: gameData.matchInfo?.ref2 || gameData.officials?.ref2,
     scorer: gameData.matchInfo?.scorer || gameData.officials?.scorer,
     assistScorer: gameData.matchInfo?.assistScorer || gameData.officials?.assistScorer,
+    ...Object.fromEntries(Object.entries(gameData.officials || {}).filter(([key]) => /^(matchSupervisor|matchCommissioner|thirdReferee|challengeReferee|substituteReferee|linesman\d|ref[12]Country|scorerCountry|assistScorerCountry)/.test(key))),
     logoA: gameData.matchInfo?.logoA || gameData.teams?.A?.logoData,
     logoB: gameData.matchInfo?.logoB || gameData.teams?.B?.logoData
   };
