@@ -228,7 +228,6 @@
 .officials-extra-row .officials-ref-label-name { flex: 1; }
 .officials-linesman-country { flex: 2; height: auto; min-height: 50px; padding: 5px 8px; display: block; }
 .officials-linesman-country .officials-ref-label { margin-bottom: 3px; }
-.officials-extra-spacer { flex: 2; min-width: 0; }
 
 .officials-ref-label-name {
   flex: 1;

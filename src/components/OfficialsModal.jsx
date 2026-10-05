@@ -421,13 +421,10 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
                     <div className="officials-ref-label">{label}</div>
                     <input type="text" className="officials-ref-name-input" placeholder="Name" value={additionalOfficials[key]} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, [key]: e.target.value }))} />
                   </div>
-                  {key.startsWith('linesman') && (
-                    <div className="officials-ref-sig-wrap officials-linesman-country">
-                      <div className="officials-ref-label">Country Code</div>
-                      <input type="text" className="officials-ref-name-input" placeholder="e.g. IND" maxLength={3} value={additionalOfficials[`${key}Country`]} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, [`${key}Country`]: e.target.value.toUpperCase() }))} />
-                    </div>
-                  )}
-                  {!key.startsWith('linesman') && <div className="officials-extra-spacer" aria-hidden="true" />}
+                  <div className="officials-ref-sig-wrap officials-linesman-country">
+                    <div className="officials-ref-label">Country Code</div>
+                    <input type="text" className="officials-ref-name-input" placeholder="e.g. IND" maxLength={3} value={additionalOfficials[`${key}Country`]} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, [`${key}Country`]: e.target.value.toUpperCase() }))} />
+                  </div>
                 </div>
               ))}
             </div>
