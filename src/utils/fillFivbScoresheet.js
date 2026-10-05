@@ -435,6 +435,55 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
     to5B.slice(0,2).forEach((to,ti)=>{ const sc=to.score||{};
       to5Entry(222.5, ti===0?199.28:204.75, sc.B||0, sc.A||0); });
 
+    // Deciding-set substitution boxes. Unlike panels 1–4, Team A has a
+    // second section after the 8-point court change, so substitutions must be
+    // written in the section where they occurred. The older exporter omitted
+    // this entire block, leaving player numbers and scores blank in Set 3/5.
+    const decidingSubs = (team) => [
+      ...((sd5.substitutions || {})[team] || []),
+      ...((sd5.exceptionalSubstitutions || {})[team] || []).map((sub) => ({ ...sub, exceptional: true }))
+    ].sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+    function hasChangedAt(sub) {
+      const score = sub.score || {};
+      return (Number(score.A) || 0) >= 8 || (Number(score.B) || 0) >= 8;
+    }
+    function drawDecidingSubs(team, lineup) {
+      const subs = decidingSubs(team);
+      subs.forEach((sub, index) => {
+        if (!sub?.playerIn) return;
+        let col = lineup.findIndex((player) => String(player) === String(sub.playerOut));
+        let isReturn = false;
+        if (col < 0) {
+          for (let prior = 0; prior < index; prior++) {
+            const earlier = subs[prior];
+            if (earlier && String(earlier.playerIn) === String(sub.playerOut)) {
+              col = lineup.findIndex((player) => String(player) === String(earlier.playerOut));
+              isReturn = true;
+              break;
+            }
+          }
+        }
+        if (col < 0) return;
+        // A uses the left section before 8 and right section at/after 8;
+        // B remains in the middle section throughout the deciding set.
+        const baseX = team === 'B' ? 153.94 : (hasChangedAt(sub) ? 247.54 : 76.0);
+        const cx = baseX + col * 11.068;
+        const score = sub.score || {};
+        const other = team === 'A' ? 'B' : 'A';
+        if (!isReturn) {
+          T(`${sub.exceptional ? 'E' : ''}${String(sub.playerIn)}`, cx, 180.5, 9, true, 'C');
+          T(String(score[team] || 0), cx - 0.7, 183.6, 6, false, 'R');
+          T(String(score[other] || 0), cx + 1.3, 183.6, 6, false);
+        } else {
+          CIRC(cx, 178.8, 2.4, 0.45);
+          T(String(score[team] || 0), cx - 0.7, 189.0, 6.8, false, 'R');
+          T(String(score[other] || 0), cx + 1.3, 189.0, 6.8, false);
+        }
+      });
+    }
+    drawDecidingSubs('A', lu5A);
+    drawDecidingSubs('B', lu5B);
+
     // ── SET5 point slashes ─────────────────────────────────────────
     // team A pre-change: single col 1-8; team B: 3x10 grid mid; team A post-change: 3x10 far right
     const log5 = pointLog(sd5, deciderIdx);
@@ -444,6 +493,8 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
       if (log5[i]==='A') cA++; else cB++;
       if (changeIdx<0 && (cA===8||cB===8)) { changeIdx=i; ptsAtChange=cA+':'+cB; }
     }
+    // A rally log gives the exact change score. For historical games without
+    // one, retain the best available score rather than omitting the entry.
     if (ptsAtChange==null && (sc5A>=8||sc5B>=8)) ptsAtChange=Math.min(sc5A,8)+':'+Math.min(sc5B,8);
     if (ptsAtChange!=null) T(ptsAtChange, 299.55, 161.6, 9, true, 'C');
     const preA = changeIdx>=0 ? Math.min(cAatIdx(log5,changeIdx),8) : Math.min(sc5A,8);

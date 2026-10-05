@@ -1799,7 +1799,7 @@ export default function RefereePanel() {
         <div className="referee-center">
           <div className="referee-score-section">
             <div className="referee-team-score">
-              <div className="referee-team-name" style={{ color: leftColor }}>{leftTeamName}</div>
+              <div className="referee-team-name" style={{ background: leftColor }}>{leftTeamName}</div>
               <div className="referee-score-display-val" style={{ color: leftColor }}>{leftScore}</div>
               <div className="referee-sets-small">Sets: {setsWon[leftTeam]}</div>
             </div>
@@ -1824,7 +1824,7 @@ export default function RefereePanel() {
               </div>
             </div>
             <div className="referee-team-score">
-              <div className="referee-team-name" style={{ color: rightColor }}>{rightTeamName}</div>
+              <div className="referee-team-name" style={{ background: rightColor }}>{rightTeamName}</div>
               <div className="referee-score-display-val" style={{ color: rightColor }}>{rightScore}</div>
               <div className="referee-sets-small">Sets: {setsWon[rightTeam]}</div>
             </div>
