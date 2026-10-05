@@ -1457,7 +1457,7 @@
 .referee-net-mesh { position: absolute; top: 9px; bottom: 9px; left: 50%; transform: translateX(-50%); width: 4px; background: #fdfdfd; border-radius: 2px; box-shadow: 0 0 6px rgba(0,0,0,.3); }
 .referee-net-post { position: absolute; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; border-radius: 50%; background: #fdfdfd; border: 2px solid #cfd8e3; box-shadow: 0 2px 6px rgba(0,0,0,.4); z-index: 1; }
 .referee-net-post--top { top: 0; }.referee-net-post--bottom { bottom: 0; }
-.referee-rally-btn { position: relative; z-index: 2; max-width: none; min-height: 0; flex: 0 0 auto; padding: 4px 1px; font-size: 7.5px; border-radius: 6px; }
+.referee-rally-btn { position: relative; z-index: 2; max-width: none; min-height: 72px; flex: 0 0 auto; padding: 4px 4px; font-size: 7.5px; border-radius: 6px; }
 .referee-rally-status { position: relative; z-index: 2; color: #cfe3f5; font-size: 8px; margin-top: 2px; }
 
 @media (max-width: 900px) {

@@ -355,7 +355,6 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
                   value={ref1Name}
                   onChange={(e) => setRef1(e.target.value)}
                 />
-                <input type="text" className="officials-ref-country-input" placeholder="Country code" maxLength={3} value={additionalOfficials.ref1Country} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, ref1Country: e.target.value.toUpperCase() }))} />
               </div>
               <div className="officials-ref-sig-wrap">
                 <canvas ref={firstRef[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
@@ -372,7 +371,6 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
                   value={ref2Name}
                   onChange={(e) => setRef2(e.target.value)}
                 />
-                <input type="text" className="officials-ref-country-input" placeholder="Country code" maxLength={3} value={additionalOfficials.ref2Country} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, ref2Country: e.target.value.toUpperCase() }))} />
               </div>
               <div className="officials-ref-sig-wrap">
                 <canvas ref={secondRef[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
@@ -389,7 +387,6 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
                   value={scorerName}
                   onChange={(e) => setScorer(e.target.value)}
                 />
-                <input type="text" className="officials-ref-country-input" placeholder="Country code" maxLength={3} value={additionalOfficials.scorerCountry} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, scorerCountry: e.target.value.toUpperCase() }))} />
               </div>
               <div className="officials-ref-sig-wrap">
                 <canvas ref={scorerSig[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
@@ -406,24 +403,31 @@ export default function OfficialsModal({ open, embedded, persistOnSave, postMatc
                   value={assistScorerName}
                   onChange={(e) => setAssistScorer(e.target.value)}
                 />
-                <input type="text" className="officials-ref-country-input" placeholder="Country code" maxLength={3} value={additionalOfficials.assistScorerCountry} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, assistScorerCountry: e.target.value.toUpperCase() }))} />
               </div>
               <div className="officials-ref-sig-wrap">
                 <canvas ref={assistScorerSig[0]} width={400} height={40} className="officials-ref-canvas" style={{ cursor: 'crosshair', display: 'block', background: '#0f3460', border: '2px dashed #533483', borderRadius: 5 }} title="Sign here" />
               </div>
               <button type="button" className="officials-ref-clear" onClick={assistScorerSig[1]}>Clear</button>
             </div>
-            <div className="officials-extra-grid">
+            <div className="officials-extra-rows">
               {[
                 ['Match Supervisor', 'matchSupervisor'], ['Match Commissioner', 'matchCommissioner'],
                 ['Third Referee', 'thirdReferee'], ['Challenge Referee', 'challengeReferee'],
                 ['Substitute Referee', 'substituteReferee'], ['Linesman 1', 'linesman1'],
                 ['Linesman 2', 'linesman2'], ['Linesman 3', 'linesman3'], ['Linesman 4', 'linesman4']
               ].map(([label, key]) => (
-                <div className="officials-extra-row" key={key}>
-                  <label>{label}</label>
-                  <input type="text" placeholder="Name" value={additionalOfficials[key]} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, [key]: e.target.value }))} />
-                  <input type="text" placeholder="Country code" maxLength={3} value={additionalOfficials[`${key}Country`]} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, [`${key}Country`]: e.target.value.toUpperCase() }))} />
+                <div className="officials-ref-row officials-extra-row" key={key}>
+                  <div className="officials-ref-label-name">
+                    <div className="officials-ref-label">{label}</div>
+                    <input type="text" className="officials-ref-name-input" placeholder="Name" value={additionalOfficials[key]} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, [key]: e.target.value }))} />
+                  </div>
+                  {key.startsWith('linesman') && (
+                    <div className="officials-ref-sig-wrap officials-linesman-country">
+                      <div className="officials-ref-label">Country Code</div>
+                      <input type="text" className="officials-ref-name-input" placeholder="e.g. IND" maxLength={3} value={additionalOfficials[`${key}Country`]} onChange={(e) => setAdditionalOfficials((prev) => ({ ...prev, [`${key}Country`]: e.target.value.toUpperCase() }))} />
+                    </div>
+                  )}
+                  {!key.startsWith('linesman') && <div className="officials-extra-spacer" aria-hidden="true" />}
                 </div>
               ))}
             </div>

@@ -222,12 +222,13 @@
   gap: 15px;
 }
 
-.officials-extra-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
-.officials-extra-row { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(120px, 1.4fr) 74px; gap: 6px; align-items: center; }
-.officials-extra-row label { font-size: 12px; font-weight: 700; }
-.officials-extra-row input { min-width: 0; }
-.officials-ref-country-input { width: 100%; margin-top: 5px; }
-@media (max-width: 720px) { .officials-extra-grid { grid-template-columns: 1fr; } }
+.officials-extra-rows { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+/* New roles deliberately reuse the original referee row and name-input styling. */
+.officials-extra-row { margin: 0; }
+.officials-extra-row .officials-ref-label-name { flex: 1; }
+.officials-linesman-country { flex: 2; height: auto; min-height: 50px; padding: 5px 8px; display: block; }
+.officials-linesman-country .officials-ref-label { margin-bottom: 3px; }
+.officials-extra-spacer { flex: 2; min-width: 0; }
 
 .officials-ref-label-name {
   flex: 1;
