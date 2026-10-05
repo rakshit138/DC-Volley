@@ -581,11 +581,6 @@
   text-transform: uppercase;
 }
 
-/* A libero exchange needs an extra line. Keep the position label visible by
-   omitting only the redundant team abbreviation on that one card. */
-.referee-court-pos:has(.referee-libero-replaced-tag) .referee-pos-player {
-  display: none;
-}
 
 /* The referee toolbar can make the court substantially shorter than in
    full-screen mode. Switch to a compact card treatment before content clips. */
@@ -593,10 +588,6 @@
   .referee-court-pos {
     padding: 3px;
     gap: 1px;
-  }
-
-  .referee-pos-player {
-    display: none;
   }
 
   .referee-pos-label {
@@ -1445,11 +1436,11 @@
 .referee-set-dot { width: 32px; height: 32px; border: 2px solid rgba(255,255,255,.55); font-size: 14px; font-weight: 800; background: rgba(8,14,28,.75); box-shadow: inset 0 2px 5px rgba(0,0,0,.5); }
 
 .referee-courts { grid-template-columns: auto 40px auto; grid-template-rows: auto auto auto; align-content: center; padding: 10px 16px 8px; gap: 0; }
-.referee-court-header { width: 100%; justify-self: stretch; border-color: rgba(110,170,255,.16); }
-.referee-court-visual { width: calc(min(100cqw - 8px, 128cqh)/2 - 26px); justify-self: stretch; height: clamp(190px,calc(100cqh - 218px),600px); }
+.referee-court-header { width: 115%; justify-self: center; border-color: rgba(110,170,255,.16); }
+.referee-court-visual { width: calc((min(100cqw - 8px, 128cqh) / 2 - 26px) * 1.15); justify-self: center; height: clamp(190px,calc(100cqh - 218px),600px); }
 .referee-court-container:first-of-type .referee-court-visual { border-right: none; border-radius: 8px 0 0 8px; }
 .referee-court-container:last-of-type .referee-court-visual { border-left: none; border-radius: 0 8px 8px 0; }
-.referee-court-controls { width: 100%; justify-self: stretch; padding: 8px 10px; border-color: rgba(110,170,255,.16); border-radius: 0 0 12px 12px; }
+.referee-court-controls { width: 115%; justify-self: center; padding: 8px 10px; border-color: rgba(110,170,255,.16); border-radius: 0 0 12px 12px; }
 .referee-btn-group { gap: 6px; margin-bottom: 6px; }
 .referee-btn-group .referee-btn { padding: 7px; border-radius: 8px; font-size: 10px; }
 .referee-btn-point { font-size: 16px !important; padding: 10px !important; }
