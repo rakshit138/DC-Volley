@@ -1870,6 +1870,10 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
   const gameData = gameSnap.data();
   const currentSet = gameData.currentSet || 1;
   const nextSet = currentSet + 1;
+  const format = Number(gameData.format || gameData.matchInfo?.format) || 3;
+  const isDecidingNextSet = (format === 3 && nextSet === 3) || (format === 5 && nextSet === 5);
+  const decidingToss = gameData.decidingSetToss?.setNumber === nextSet ? gameData.decidingSetToss : null;
+  const initialLeftTeam = decidingToss?.teamOnRefereeLeft || (gameData.swapped ? 'B' : 'A');
   let sets = [...(gameData.sets || [])];
   const teams = gameData.teams ? { ...gameData.teams } : { A: { players: [], lineup: [] }, B: { players: [], lineup: [] } };
   const sanctionSystem = gameData.sanctionSystem || {};
@@ -1904,6 +1908,8 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
       A: safeLineupA,
       B: safeLineupB
     },
+    // Preserve the toss-selected court orientation for the deciding-set PDF.
+    ...(isDecidingNextSet ? { initialLeftTeam } : {}),
     startTime: new Date()
   };
   
@@ -1943,8 +1949,9 @@ export async function setupNextSet(gameCode, lineups, firstServer) {
     sets,
     teams,
     currentSet: nextSet,
-    // All completed sets are followed by a change of ends.
-    swapped: !gameData.swapped,
+    // All completed sets change ends, except a deciding-set toss explicitly
+    // selects the starting court side for that set.
+    swapped: decidingToss ? decidingToss.teamOnRefereeLeft === 'B' : !gameData.swapped,
     awaitingNextSet: false,
     actionHistory: mergedHistory,
     challengeSystem,

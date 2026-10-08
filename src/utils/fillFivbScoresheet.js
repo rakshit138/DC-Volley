@@ -14,6 +14,7 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
   const sets = gameData.sets || [];
   const mi = gameData.matchInfo || {};
   const off = gameData.officials || {};
+  const officialName = (key) => mi[key] || off[key] || '';
   const plA = (gameData.teams && gameData.teams.A && gameData.teams.A.players) || [];
   const plB = (gameData.teams && gameData.teams.B && gameData.teams.B.players) || [];
   const tA = mi.teamAName || 'Team A', tB = mi.teamBName || 'Team B';
@@ -404,6 +405,10 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
   const sd5 = sets[deciderIdx] || null;
   if (sd5) {
     const srv5 = sd5.firstServer || sd5.serving || 'A';
+    // The deciding-set toss chooses the left team. Persisted set data wins so
+    // a historical export retains the actual sides used during the match.
+    const firstSectionTeam = sd5.initialLeftTeam || gameData.decidingSetToss?.teamOnRefereeLeft || 'A';
+    const middleSectionTeam = firstSectionTeam === 'A' ? 'B' : 'A';
     const lu5A = sd5.lineupA || [], lu5B = sd5.lineupB || [];
     const to5A = (sd5.timeouts||{}).A || [], to5B = (sd5.timeouts||{}).B || [];
     const sc5A = (sd5.score||{}).A || 0, sc5B = (sd5.score||{}).B || 0;
@@ -411,29 +416,33 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
     // times inside boxes: START (81.5-91.8), END (202.5-213.8)
     if (st5t) { T(FTh(st5t), 84.0, 160.6, 7.5, true, 'C'); T(FTm(st5t), 89.5, 160.6, 7.5, true, 'C'); }
     if (et5t) { T(FTh(et5t), 205.0, 160.5, 7.5, true, 'C'); T(FTm(et5t), 210.5, 160.5, 7.5, true, 'C'); }
-    // sec1: code spaced in name box (105.0-122.0) + letter A in circle (c 128.25,160.0)
-    spacedCode(abA, [107.8,113.5,119.2], 161.6, 9.5);
-    T('A', 128.25, 161.6, 10, true, 'C');
-    // sec2: code spaced in name box (163.1-180.0) + letter B in circle (c 156.85,160.0)
-    spacedCode(abB, [165.9,171.55,177.2], 161.6, 9.5);
-    T('B', 156.85, 161.5, 10, true, 'C');
-    // sec3 after change of court: letter only, in the circle (c 259.8,160.0)
-    T('A', 259.8, 161.6, 10.5, true, 'C');
-    if (srv5==='A') { XM(134.1, 158.2); XM(151.0, 161.9); }
+    const abFor = (team) => team === 'A' ? abA : abB;
+    const lineupFor = (team) => team === 'A' ? lu5A : lu5B;
+    // Section 1 is the toss-selected left team, section 2 the other team,
+    // and section 3 is section 1 after the change at 8 points.
+    spacedCode(abFor(firstSectionTeam), [107.8,113.5,119.2], 161.6, 9.5);
+    T(firstSectionTeam, 128.25, 161.6, 10, true, 'C');
+    spacedCode(abFor(middleSectionTeam), [165.9,171.55,177.2], 161.6, 9.5);
+    T(middleSectionTeam, 156.85, 161.5, 10, true, 'C');
+    T(firstSectionTeam, 259.8, 161.6, 10.5, true, 'C');
+    if (srv5===firstSectionTeam) { XM(134.1, 158.2); XM(151.0, 161.9); }
     else            { XM(151.0, 158.2); XM(134.1, 161.9); }
     for (let i=0;i<6;i++) {
-      if (lu5A[i]) { T(String(lu5A[i]), 76.0+i*11.068, 175.4, 10.5, true, 'C');
-                     T(String(lu5A[i]), 247.54+i*11.068, 175.4, 10.5, true, 'C'); }
-      if (lu5B[i]) T(String(lu5B[i]), 153.94+i*11.068, 175.4, 10.5, true, 'C');
+      const firstPlayer = lineupFor(firstSectionTeam)[i];
+      const middlePlayer = lineupFor(middleSectionTeam)[i];
+      if (firstPlayer) { T(String(firstPlayer), 76.0+i*11.068, 175.4, 10.5, true, 'C');
+                         T(String(firstPlayer), 247.54+i*11.068, 175.4, 10.5, true, 'C'); }
+      if (middlePlayer) T(String(middlePlayer), 153.94+i*11.068, 175.4, 10.5, true, 'C');
     }
     function to5Entry(cx, cy, s1, s2) {
       T(String(s1), cx-1.0, cy+1.5, 7.5, true, 'R');
       T(String(s2), cx+1.2, cy+1.5, 7.5, true);
     }
-    to5A.slice(0,2).forEach((to,ti)=>{ const sc=to.score||{};
-      to5Entry(142.6, ti===0?199.28:204.75, sc.A||0, sc.B||0); });
-    to5B.slice(0,2).forEach((to,ti)=>{ const sc=to.score||{};
-      to5Entry(222.5, ti===0?199.28:204.75, sc.B||0, sc.A||0); });
+    const timeoutsFor = (team) => team === 'A' ? to5A : to5B;
+    timeoutsFor(firstSectionTeam).slice(0,2).forEach((to,ti)=>{ const sc=to.score||{};
+      to5Entry(142.6, ti===0?199.28:204.75, sc[firstSectionTeam]||0, sc[middleSectionTeam]||0); });
+    timeoutsFor(middleSectionTeam).slice(0,2).forEach((to,ti)=>{ const sc=to.score||{};
+      to5Entry(222.5, ti===0?199.28:204.75, sc[middleSectionTeam]||0, sc[firstSectionTeam]||0); });
 
     // Deciding-set substitution boxes. Unlike panels 1–4, Team A has a
     // second section after the 8-point court change, so substitutions must be
@@ -453,20 +462,35 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
         if (!sub?.playerIn) return;
         let col = lineup.findIndex((player) => String(player) === String(sub.playerOut));
         let isReturn = false;
+        let pairedIndex = -1;
         if (col < 0) {
           for (let prior = 0; prior < index; prior++) {
             const earlier = subs[prior];
             if (earlier && String(earlier.playerIn) === String(sub.playerOut)) {
               col = lineup.findIndex((player) => String(player) === String(earlier.playerOut));
               isReturn = true;
+              pairedIndex = prior;
               break;
             }
           }
         }
         if (col < 0) return;
-        // A uses the left section before 8 and right section at/after 8;
-        // B remains in the middle section throughout the deciding set.
-        const baseX = team === 'B' ? 153.94 : (hasChangedAt(sub) ? 247.54 : 76.0);
+        // Keep a player-in number and its return circle together. If either
+        // half of the pair happens after the change at 8, both belong in the
+        // post-switch team section rather than being split across the sheet.
+        let placeAfterChange = hasChangedAt(sub);
+        if (!isReturn) {
+          const returnSub = subs.slice(index + 1).find((candidate) =>
+            candidate && String(candidate.playerOut) === String(sub.playerIn) &&
+            String(candidate.playerIn) === String(sub.playerOut)
+          );
+          placeAfterChange = placeAfterChange || !!(returnSub && hasChangedAt(returnSub));
+        } else if (pairedIndex >= 0) {
+          placeAfterChange = placeAfterChange || hasChangedAt(subs[pairedIndex]);
+        }
+        // The toss-selected team changes from section 1 to section 3 at 8;
+        // the other team remains in the central section.
+        const baseX = team === middleSectionTeam ? 153.94 : (placeAfterChange ? 247.54 : 76.0);
         const cx = baseX + col * 11.068;
         const score = sub.score || {};
         const other = team === 'A' ? 'B' : 'A';
@@ -481,31 +505,44 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
         }
       });
     }
-    drawDecidingSubs('A', lu5A);
-    drawDecidingSubs('B', lu5B);
+    drawDecidingSubs(firstSectionTeam, lineupFor(firstSectionTeam));
+    drawDecidingSubs(middleSectionTeam, lineupFor(middleSectionTeam));
 
     // ── SET5 point slashes ─────────────────────────────────────────
-    // team A pre-change: single col 1-8; team B: 3x10 grid mid; team A post-change: 3x10 far right
+    // Toss-selected team pre-change: single col 1-8; other team: middle
+    // grid; toss-selected team post-change: far-right grid.
     const log5 = pointLog(sd5, deciderIdx);
-    // find change moment (leading team reaches 8) and A's points at change
+    // Find the exact change moment and retain each side's score in its
+    // selected court order, not hard-coded Team A/Team B order.
     let cA=0, cB=0, changeIdx=-1, ptsAtChange=null;
     for (let i=0;i<log5.length;i++) {
       if (log5[i]==='A') cA++; else cB++;
-      if (changeIdx<0 && (cA===8||cB===8)) { changeIdx=i; ptsAtChange=cA+':'+cB; }
+      if (changeIdx<0 && (cA===8||cB===8)) {
+        changeIdx=i;
+        ptsAtChange = firstSectionTeam === 'A' ? cA+':'+cB : cB+':'+cA;
+      }
     }
     // A rally log gives the exact change score. For historical games without
     // one, retain the best available score rather than omitting the entry.
-    if (ptsAtChange==null && (sc5A>=8||sc5B>=8)) ptsAtChange=Math.min(sc5A,8)+':'+Math.min(sc5B,8);
+    if (ptsAtChange==null && (sc5A>=8||sc5B>=8)) {
+      const firstScore = firstSectionTeam === 'A' ? sc5A : sc5B;
+      const middleScore = middleSectionTeam === 'A' ? sc5A : sc5B;
+      ptsAtChange = Math.min(firstScore,8)+':'+Math.min(middleScore,8);
+    }
     if (ptsAtChange!=null) T(ptsAtChange, 299.55, 161.6, 9, true, 'C');
-    const preA = changeIdx>=0 ? Math.min(cAatIdx(log5,changeIdx),8) : Math.min(sc5A,8);
-    function cAatIdx(lg,idx){ let n=0; for(let i=0;i<=idx;i++) if(lg[i]==='A') n++; return n; }
-    for (let pn=1; pn<=Math.min(preA,8); pn++) {
+    const pointsForAtIndex = (team, idx) => {
+      let n=0; for(let i=0;i<=idx;i++) if(log5[i]===team) n++; return n;
+    };
+    const firstSetScore = firstSectionTeam === 'A' ? sc5A : sc5B;
+    const middleSetScore = middleSectionTeam === 'A' ? sc5A : sc5B;
+    const preFirst = changeIdx>=0 ? Math.min(pointsForAtIndex(firstSectionTeam,changeIdx),8) : Math.min(firstSetScore,8);
+    for (let pn=1; pn<=Math.min(preFirst,8); pn++) {
       const yc = 165.81 + (pn-1)*3.325;
       LN(140.9, yc+1.3, 143.8, yc-1.3, 0.5);
     }
-    if (sc5A>0 && sc5A<=preA) CIRC(142.33, 165.81+(sc5A-1)*3.325, 1.8, 0.5);
-    if (sd5.winner && preA < 8) { // cancel unused 1-8 column
-      const yT = 165.81 + preA*3.325 - 1.4, yB = 165.81 + 7*3.325 + 1.4;
+    if (firstSetScore>0 && firstSetScore<=preFirst) CIRC(142.33, 165.81+(firstSetScore-1)*3.325, 1.8, 0.5);
+    if (sd5.winner && preFirst < 8) { // cancel unused 1-8 column
+      const yT = 165.81 + preFirst*3.325 - 1.4, yB = 165.81 + 7*3.325 + 1.4;
       LN(140.7, yT, 144.0, yB, 0.55); LN(144.0, yT, 140.7, yB, 0.55);
       LN(140.7, yT, 144.0, yT, 0.55); LN(140.7, yB, 144.0, yB, 0.55);
     }
@@ -533,9 +570,9 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
         }
       }
     }
-    slash30(214.9, 1, sc5B, sc5B, sd5.winner ? sc5B : null);
-    if (sc5A>preA) slash30(308.57, preA+1, sc5A, sc5A, sd5.winner ? sc5A : null);
-    else if (sd5.winner) slash30(308.57, 1, 0, 0, 0); // team A never changed: cancel whole right grid
+    slash30(214.9, 1, middleSetScore, middleSetScore, sd5.winner ? middleSetScore : null);
+    if (firstSetScore>preFirst) slash30(308.57, preFirst+1, firstSetScore, firstSetScore, sd5.winner ? firstSetScore : null);
+    else if (sd5.winner) slash30(308.57, 1, 0, 0, 0); // no change: cancel the post-change grid
 
     // ── SET5 service rounds: 6 boxes (2 sub-cols x 3 rows) per column ──
     function s5Box(base, i, b) {
@@ -546,7 +583,7 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
     const s5 = { A:{nextCol:0,used:[0,0,0,0,0,0],aCol:-1,aBox:0,lwCol:-1,lwBox:0,lwPts:-1,lwBase:0}, B:{nextCol:0,used:[0,0,0,0,0,0],aCol:-1,aBox:0,lwCol:-1,lwBox:0,lwPts:-1,lwBase:0} };
     let sv = srv5, changed=false, pA=0, pB=0;
     const rc5 = sv==='A' ? 'B' : 'A';
-    function baseFor(t){ return t==='B' ? secB : (changed ? secA2 : secA1); }
+    function baseFor(t){ return t===middleSectionTeam ? secB : (changed ? secA2 : secA1); }
     s5[sv].used[0]=1; s5[sv].aCol=0; s5[sv].aBox=1; s5[sv].nextCol=1;
     { const [cx,cy]=s5Box(baseFor(sv),0,1); srTick(cx,cy); }
     s5[rc5].used[0]=1; s5[rc5].nextCol=1;
@@ -652,10 +689,10 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
   // APPROVAL (referee names)
   // ══════════════════════════════════════════════════════════════════
   // Rows: 1st 249.9-255.4 / 2nd 255.9-261.3 / Scorer 261.5-266.2 / Asst 266.7-272.4
-  T(mi.ref1||'', 100, 254.4, 8.5, true);
-  T(mi.ref2||'', 100, 260.3, 8.5, true);
-  T(mi.scorer||'', 100, 265.4, 8.5, true);
-  T(mi.assistScorer||'', 100, 271.3, 8.5, true);
+  T(officialName('ref1'), 100, 254.4, 8.5, true);
+  T(officialName('ref2'), 100, 260.3, 8.5, true);
+  T(officialName('scorer'), 100, 265.4, 8.5, true);
+  T(officialName('assistScorer'), 100, 271.3, 8.5, true);
   // Team Captain signatures in the approval bottom row (A ... Team Captains ... B)
   await SIG(sigs.captainSignA2 || sigs.captainSignA1, 96, 282.6, 42, 5.6);
   await SIG(sigs.captainSignB2 || sigs.captainSignB1, 176, 282.6, 42, 5.6);
@@ -688,7 +725,13 @@ export async function fillFIVBScoresheet(templateBytes, gameData, PDFLib) {
   });
 
   // REMARKS
-  const rem = gameData.remarks || '';
+  const additionalOfficials = [
+    ['MS', officialName('matchSupervisor')], ['MC', officialName('matchCommissioner')],
+    ['R3', officialName('thirdReferee')], ['CR', officialName('challengeReferee')],
+    ['SR', officialName('substituteReferee')], ['L1', officialName('linesman1')],
+    ['L2', officialName('linesman2')], ['L3', officialName('linesman3')], ['L4', officialName('linesman4')]
+  ].filter(([, name]) => name).map(([role, name]) => `${role}: ${name}`).join('  |  ');
+  const rem = [gameData.remarks || '', additionalOfficials ? `Officials — ${additionalOfficials}` : ''].filter(Boolean).join('  |  ');
   if (rem) {
     const words = rem.split(' '); let lines=[], cur='';
     words.forEach(w=>{ if((cur+' '+w).trim().length<=52){cur=(cur+' '+w).trim();} else {lines.push(cur);cur=w;} });

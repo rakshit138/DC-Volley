@@ -309,6 +309,7 @@ export default function RefereePanel() {
   const [fairPlayModalOpen, setFairPlayModalOpen] = useState(false);
   const [forfeitModalOpen, setForfeitModalOpen] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const broadcastWindowRef = useRef(null);
   const [rallyActive, setRallyActive] = useState(false);
   /** Prefer Firestore `rallyActive`; avoid treating `undefined` as false so UI matches after "Start rally". */
   const rallyOn = useMemo(() => {
@@ -1563,6 +1564,58 @@ export default function RefereePanel() {
     }
   };
 
+  const updateBroadcastBar = () => {
+    const broadcastWindow = broadcastWindowRef.current;
+    if (!broadcastWindow || broadcastWindow.closed || !gameData) return;
+    const set = gameData.sets?.[(gameData.currentSet || 1) - 1];
+    const teamName = (team) => gameData.matchInfo?.[`team${team}Name`] || gameData[`team${team}Name`] || `Team ${team}`;
+    const teamA = teamAbbreviation(teamName('A'));
+    const teamB = teamAbbreviation(teamName('B'));
+    const setsA = (gameData.sets || []).filter((row) => row?.winner === 'A').length;
+    const setsB = (gameData.sets || []).filter((row) => row?.winner === 'B').length;
+    const setText = (id, value) => { const node = broadcastWindow.document.getElementById(id); if (node) node.textContent = value; };
+    setText('bcCodeA', teamA);
+    setText('bcCodeB', teamB);
+    setText('bcScoreA', String(set?.score?.A || 0));
+    setText('bcScoreB', String(set?.score?.B || 0));
+    setText('bcSets', `${setsA} - ${setsB}`);
+    setText('bcServeA', set?.serving === 'A' ? '🏐' : '');
+    setText('bcServeB', set?.serving === 'B' ? '🏐' : '');
+    const timeoutA = broadcastWindow.document.getElementById('bcTimeoutA');
+    const timeoutB = broadcastWindow.document.getElementById('bcTimeoutB');
+    if (timeoutA) timeoutA.style.display = timeoutModal.open && timeoutModal.team === 'A' ? 'flex' : 'none';
+    if (timeoutB) timeoutB.style.display = timeoutModal.open && timeoutModal.team === 'B' ? 'flex' : 'none';
+  };
+
+  const openBroadcastBar = () => {
+    const existing = broadcastWindowRef.current;
+    if (existing && !existing.closed) {
+      existing.focus();
+      updateBroadcastBar();
+      return;
+    }
+    const broadcastWindow = window.open('', 'dcvolley_broadcast', 'width=780,height=220');
+    if (!broadcastWindow) {
+      setMessage('Broadcast window was blocked by the browser. Allow pop-ups and try again.');
+      return;
+    }
+    broadcastWindowRef.current = broadcastWindow;
+    broadcastWindow.document.write(`<!doctype html><html><head><title>DC Volley — Broadcast</title><style>
+      body{margin:0;background:#00ff00;display:flex;align-items:flex-end;justify-content:center;height:100vh;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;padding-bottom:24px}
+      .bar{display:flex;align-items:stretch;background:#0a1e42;border-radius:6px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+      .side{display:flex;align-items:center;gap:10px;padding:14px 22px;background:#1f52a0;color:#fff}.side.b{background:#16386f}
+      .code{font-size:26px;font-weight:900;letter-spacing:1.5px}.score{font-size:34px;font-weight:900;background:#fff;color:#0a1e42;border-radius:8px;padding:2px 14px;min-width:38px;text-align:center}
+      .sets{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 16px;background:#0a1e42;color:#ffd600}.sets .num{font-size:20px;font-weight:900}.sets .lbl{font-size:9px;letter-spacing:1px;color:#9fb3d0}
+      .serve{font-size:16px;width:16px;text-align:center}.timeout{display:none;align-items:center;padding:0 14px;background:#ffd600;color:#000;font-weight:900;font-size:13px;letter-spacing:1px}
+    </style></head><body><div class="bar"><div class="timeout" id="bcTimeoutA">TIME OUT</div><div class="side a"><span class="serve" id="bcServeA"></span><span class="code" id="bcCodeA">AAA</span><span class="score" id="bcScoreA">0</span></div><div class="sets"><span class="num" id="bcSets">0 - 0</span><span class="lbl">SETS</span></div><div class="side b"><span class="score" id="bcScoreB">0</span><span class="code" id="bcCodeB">BBB</span><span class="serve" id="bcServeB"></span></div><div class="timeout" id="bcTimeoutB">TIME OUT</div></div></body></html>`);
+    broadcastWindow.document.close();
+    updateBroadcastBar();
+  };
+
+  useEffect(() => {
+    updateBroadcastBar();
+  }, [gameData, timeoutModal]);
+
   if (loading) {
     return (
       <div className="referee-container">
@@ -1744,6 +1797,7 @@ export default function RefereePanel() {
           </button>
           <button type="button" className="referee-btn-small" onClick={() => window.open(`/lineup?code=${gameCode}`, '_blank', 'width=800,height=600')} style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: '#fff' }}>👥 Lineup</button>
           <button type="button" className="referee-btn-small" onClick={() => window.open(`/scoreboard?code=${gameCode}`, '_blank', 'width=1280,height=760,menubar=no,toolbar=no')} style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', color: '#fff' }}>📺 Scoreboard</button>
+          <button type="button" className="referee-btn-small" onClick={openBroadcastBar} style={{ background: 'linear-gradient(135deg, #0a1e42 0%, #1f52a0 100%)', color: '#fff' }}>📡 Broadcast</button>
           <button
             type="button"
             className="referee-btn-small referee-btn-officials"
